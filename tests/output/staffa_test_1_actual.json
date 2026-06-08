@@ -19,10 +19,87 @@
   "declared_thickness_mm": 2.0,
   "detected_thickness_mm": null,
   "holes": {
-    "circular": [],
+    "circular": [
+      {
+        "diameter_mm": 5.0,
+        "radius_mm": 2.5,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.0,
+        "center": [
+          -50.0,
+          13.788,
+          42.499
+        ],
+        "axis": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      },
+      {
+        "diameter_mm": 5.0,
+        "radius_mm": 2.5,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.0,
+        "center": [
+          50.0,
+          13.788,
+          42.499
+        ],
+        "axis": [
+          -1.0,
+          0.0,
+          0.0
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      },
+      {
+        "diameter_mm": 7.0,
+        "radius_mm": 3.5,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.0,
+        "center": [
+          -50.0,
+          -16.212,
+          42.499
+        ],
+        "axis": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      },
+      {
+        "diameter_mm": 7.0,
+        "radius_mm": 3.5,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.0,
+        "center": [
+          50.0,
+          -16.212,
+          42.499
+        ],
+        "axis": [
+          -1.0,
+          0.0,
+          0.0
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      }
+    ],
     "elongated": [],
     "polygonal": [],
-    "confidence": "low"
+    "confidence": "medium"
   },
   "bends": {
     "count": null,
@@ -30,7 +107,6 @@
   },
   "complexity_score": "unknown",
   "warnings": [
-    "Hole detection is not reported because this implementation has no high-confidence feature classifier yet.",
     "Bend detection is not reported because this implementation has no high-confidence sheet-metal classifier yet.",
     "Detected thickness is not reported because wall-thickness inference is not yet reliable."
   ]

@@ -16,6 +16,35 @@ STAFFA_TEST_FILE = PROJECT_ROOT / "tests" / "test_files" / "STAFFA TEST 1.stp"
 STAFFA_EXPECTED_FILE = PROJECT_ROOT / "tests" / "ground_truth" / "staffa_test_1_expected.json"
 
 
+def _skip_without_freecad_for_real_fixture() -> None:
+    health_response = client.get("/health")
+    health_payload = health_response.json()
+    if not health_payload["freecad_available"]:
+        if os.getenv("REVERSEPARTS_RUNNING_IN_DOCKER") == "1":
+            pytest.fail(f"FreeCAD must be available inside Docker: {health_payload['freecad_error']}")
+        pytest.skip(f"FreeCAD is required for the real STEP fixture: {health_payload['freecad_error']}")
+
+
+def _analyze_staffa_test_1() -> dict:
+    expected = json.loads(STAFFA_EXPECTED_FILE.read_text(encoding="utf-8"))
+    _skip_without_freecad_for_real_fixture()
+
+    with STAFFA_TEST_FILE.open("rb") as step_file:
+        response = client.post(
+            "/analyze-cad",
+            data={
+                "material": "alluminio",
+                "density_g_cm3": "2.70",
+                "declared_thickness_mm": str(expected["declared_thickness_mm"]),
+                "quantity": "1",
+            },
+            files={"file": ("STAFFA TEST 1.stp", step_file, "application/step")},
+        )
+
+    assert response.status_code == 200
+    return response.json()
+
+
 def test_health_returns_freecad_status():
     response = client.get("/health")
 
@@ -78,27 +107,7 @@ def test_analyze_cad_rejects_unparseable_step_file(monkeypatch):
 
 def test_analyze_cad_staffa_test_1_real_step_file():
     expected = json.loads(STAFFA_EXPECTED_FILE.read_text(encoding="utf-8"))
-    health_response = client.get("/health")
-    health_payload = health_response.json()
-    if not health_payload["freecad_available"]:
-        if os.getenv("REVERSEPARTS_RUNNING_IN_DOCKER") == "1":
-            pytest.fail(f"FreeCAD must be available inside Docker: {health_payload['freecad_error']}")
-        pytest.skip(f"FreeCAD is required for the real STEP fixture: {health_payload['freecad_error']}")
-
-    with STAFFA_TEST_FILE.open("rb") as step_file:
-        response = client.post(
-            "/analyze-cad",
-            data={
-                "material": "alluminio",
-                "density_g_cm3": "2.70",
-                "declared_thickness_mm": str(expected["declared_thickness_mm"]),
-                "quantity": "1",
-            },
-            files={"file": ("STAFFA TEST 1.stp", step_file, "application/step")},
-        )
-
-    assert response.status_code == 200
-    payload = response.json()
+    payload = _analyze_staffa_test_1()
     assert payload["source_file"] == "STAFFA TEST 1.stp"
     assert payload["volume_cm3"] is not None
     assert payload["surface_area_cm2"] is not None
@@ -112,6 +121,28 @@ def test_analyze_cad_staffa_test_1_real_step_file():
     assert raw_bounding_box["y"] is not None
     assert raw_bounding_box["z"] is not None
 
-    assert payload["holes"]["confidence"] == "low"
+    assert payload["holes"]["confidence"] in {"medium", "high"}
     assert payload["bends"]["confidence"] == "low"
     assert payload["warnings"]
+
+
+def test_detect_circular_holes_staffa_test_1():
+    payload = _analyze_staffa_test_1()
+
+    circular_holes = payload["holes"]["circular"]
+    assert len(circular_holes) >= 4
+
+    seven_mm_holes = [
+        hole
+        for hole in circular_holes
+        if hole["diameter_mm"] is not None and abs(hole["diameter_mm"] - 6.99) <= 0.15
+    ]
+    five_mm_holes = [
+        hole
+        for hole in circular_holes
+        if hole["diameter_mm"] is not None and abs(hole["diameter_mm"] - 4.99) <= 0.15
+    ]
+
+    assert len(seven_mm_holes) >= 2
+    assert len(five_mm_holes) >= 2
+    assert payload["holes"]["confidence"] in {"medium", "high"}

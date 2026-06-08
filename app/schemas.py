@@ -14,8 +14,12 @@ class Dimensions(BaseModel):
 
 class HoleFeature(BaseModel):
     diameter_mm: float | None = None
+    radius_mm: float | None = None
     length_mm: float | None = None
     width_mm: float | None = None
+    depth_mm: float | None = None
+    center: list[float] | None = None
+    axis: list[float] | None = None
     position_mm: Dimensions | None = None
     confidence: Confidence = "low"
 
