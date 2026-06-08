@@ -1,0 +1,52 @@
+{
+  "part_name": "STAFFA TEST 1-1",
+  "part_type": "staffa piegata in lamiera",
+  "material": "Alluminio Novelis_Advanz_6CM_s118_1-0mm",
+  "declared_thickness_mm": 2.0,
+  "dimensions_mm": {
+    "x": 98.0,
+    "y": 50.0,
+    "z": 49.0
+  },
+  "part_weight_kg": 0.050,
+  "blank_size_mm": {
+    "x": 195.85,
+    "y": 50.49
+  },
+  "blank_weight_kg": 0.053,
+  "blank_perimeter_mm": 491.78,
+  "holes": {
+    "circular": [
+      {
+        "diameter_mm": 6.99,
+        "count": 2
+      },
+      {
+        "diameter_mm": 4.99,
+        "count": 2
+      }
+    ],
+    "elongated": [
+      {
+        "length_mm": 51.37,
+        "count": 2
+      }
+    ],
+    "polygonal": [
+      {
+        "max_dimension_mm": 27.71,
+        "count": 2
+      }
+    ]
+  },
+  "bends": {
+    "count": 2,
+    "type": "simple flange",
+    "length_mm": 50.0
+  },
+  "process_steps": [
+    "sviluppo laser 2D",
+    "piegatrice",
+    "2 operazioni"
+  ]
+}
