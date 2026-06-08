@@ -55,7 +55,7 @@ docker build -t reverseparts-cad-ai .
 docker run --rm -p 8000:8000 reverseparts-cad-ai
 ```
 
-The container uses Ubuntu LTS, installs `python3-freecad`, configures `PYTHONPATH`, and starts Uvicorn on port `8000`.
+The container uses Ubuntu 22.04 LTS, installs `freecad` and `python3-freecad` when available, configures `PYTHONPATH` for FreeCAD Python modules, verifies `import FreeCAD, Part` during build, and starts Uvicorn on port `8000`.
 
 ## Test reale STAFFA TEST 1
 
