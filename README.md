@@ -82,6 +82,14 @@ docker run --rm reverseparts-cad-ai pytest tests -v
 
 Outside Docker, the real STAFFA test is skipped when FreeCAD is not available. Inside Docker, FreeCAD is required and the test fails if it cannot be imported.
 
+Generate and print the real analysis JSON:
+
+```powershell
+.\scripts\analyze_staffa.ps1
+```
+
+This writes `tests/output/staffa_test_1_actual.json` and prints the formatted JSON to the console.
+
 ## Test Fixtures
 
 `tests/test_files/` is intentionally kept ready for real CAD files such as `STAFFA TEST 1.stp`. Ground-truth JSON files can be added under `tests/ground_truth/`.
