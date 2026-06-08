@@ -57,6 +57,31 @@ docker run --rm -p 8000:8000 reverseparts-cad-ai
 
 The container uses Ubuntu LTS, installs `python3-freecad`, configures `PYTHONPATH`, and starts Uvicorn on port `8000`.
 
+## Test reale STAFFA TEST 1
+
+`tests/test_files/STAFFA TEST 1.stp` is the real STEP fixture used to verify CAD analysis with FreeCAD. The expected comparison data lives in `tests/ground_truth/staffa_test_1_expected.json`.
+
+Run the real test inside Docker, where FreeCAD is installed:
+
+```powershell
+.\scripts\test_real_staffa.ps1
+```
+
+On Linux/macOS:
+
+```sh
+sh scripts/test_real_staffa.sh
+```
+
+The scripts run:
+
+```sh
+docker build -t reverseparts-cad-ai .
+docker run --rm reverseparts-cad-ai pytest tests -v
+```
+
+Outside Docker, the real STAFFA test is skipped when FreeCAD is not available. Inside Docker, FreeCAD is required and the test fails if it cannot be imported.
+
 ## Test Fixtures
 
 `tests/test_files/` is intentionally kept ready for real CAD files such as `STAFFA TEST 1.stp`. Ground-truth JSON files can be added under `tests/ground_truth/`.

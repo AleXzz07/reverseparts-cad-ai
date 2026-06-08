@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -80,6 +81,8 @@ def test_analyze_cad_staffa_test_1_real_step_file():
     health_response = client.get("/health")
     health_payload = health_response.json()
     if not health_payload["freecad_available"]:
+        if os.getenv("REVERSEPARTS_RUNNING_IN_DOCKER") == "1":
+            pytest.fail(f"FreeCAD must be available inside Docker: {health_payload['freecad_error']}")
         pytest.skip(f"FreeCAD is required for the real STEP fixture: {health_payload['freecad_error']}")
 
     with STAFFA_TEST_FILE.open("rb") as step_file:
