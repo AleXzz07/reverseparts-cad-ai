@@ -127,6 +127,10 @@ def _append_unique_hole(holes: list[HoleFeature], candidate: HoleFeature) -> Non
     holes.append(candidate)
 
 
+def _curve_type(edge) -> str:
+    return getattr(edge.Curve, "TypeId", "")
+
+
 def _detect_circular_holes(shape) -> list[HoleFeature]:
     face_candidates: list[HoleFeature] = []
     for face in shape.Faces:
@@ -228,6 +232,115 @@ def _detect_circular_holes(shape) -> list[HoleFeature]:
     return holes
 
 
+def _wire_center(wire) -> tuple[float, float, float]:
+    bbox = wire.BoundBox
+    return (
+        (float(bbox.XMin) + float(bbox.XMax)) / 2.0,
+        (float(bbox.YMin) + float(bbox.YMax)) / 2.0,
+        (float(bbox.ZMin) + float(bbox.ZMax)) / 2.0,
+    )
+
+
+def _slot_axis_from_arc_centers(arcs: list) -> tuple[float, float, float]:
+    if len(arcs) != 2:
+        return (0.0, 0.0, 0.0)
+    first = _vector_tuple(arcs[0].Curve.Center)
+    second = _vector_tuple(arcs[1].Curve.Center)
+    delta = tuple(
+        second_value - first_value for first_value, second_value in zip(first, second)
+    )
+    norm = _vector_norm(delta)
+    if norm == 0:
+        return (0.0, 0.0, 0.0)
+    return tuple(component / norm for component in delta)
+
+
+def _is_duplicate_slot(candidate: HoleFeature, existing: HoleFeature) -> bool:
+    if candidate.length_mm is None or existing.length_mm is None:
+        return False
+    if candidate.width_mm is None or existing.width_mm is None:
+        return False
+    if candidate.center is None or existing.center is None:
+        return False
+    if candidate.axis is None or existing.axis is None:
+        return False
+
+    return (
+        abs(candidate.length_mm - existing.length_mm) <= 0.5
+        and abs(candidate.width_mm - existing.width_mm) <= 0.3
+        and _axis_aligned(tuple(candidate.axis), tuple(existing.axis), tolerance=0.95)
+        and _vector_norm(
+            tuple(left - right for left, right in zip(candidate.center, existing.center))
+        )
+        <= 3.0
+    )
+
+
+def _append_unique_slot(slots: list[HoleFeature], candidate: HoleFeature) -> None:
+    for existing in slots:
+        if _is_duplicate_slot(candidate, existing):
+            existing.center = _rounded_vector(
+                tuple(
+                    (left + right) / 2.0
+                    for left, right in zip(existing.center or [], candidate.center or [])
+                )
+            )
+            existing.confidence = "high"
+            return
+    slots.append(candidate)
+
+
+def _detect_elongated_holes(shape) -> list[HoleFeature]:
+    slots: list[HoleFeature] = []
+    for face in shape.Faces:
+        surface = face.Surface
+        if getattr(surface, "TypeId", "") != "Part::GeomPlane":
+            continue
+
+        for wire_index, wire in enumerate(face.Wires):
+            if wire_index == 0 or not wire.isClosed():
+                continue
+
+            arcs = [edge for edge in wire.Edges if _curve_type(edge) == "Part::GeomCircle"]
+            lines = [edge for edge in wire.Edges if _curve_type(edge) == "Part::GeomLine"]
+            if len(arcs) != 2 or len(lines) != 2:
+                continue
+
+            radii = [float(edge.Curve.Radius) for edge in arcs]
+            if abs(radii[0] - radii[1]) > 0.2:
+                continue
+
+            width = sum(radii) / len(radii) * 2.0
+            if not 4.0 <= width <= 20.0:
+                continue
+
+            line_directions = [_normalize_vector(edge.Curve.Direction) for edge in lines]
+            if not _axis_aligned(line_directions[0], line_directions[1], tolerance=0.98):
+                continue
+
+            length = float(wire.Length)
+            if not 45.0 <= length <= 60.0:
+                continue
+
+            slot_axis = _slot_axis_from_arc_centers(arcs)
+            if _vector_norm(slot_axis) == 0:
+                slot_axis = line_directions[0]
+
+            _append_unique_slot(
+                slots,
+                HoleFeature(
+                    length_mm=round(length, 2),
+                    width_mm=round(width, 2),
+                    center=_rounded_vector(_wire_center(wire)),
+                    axis=_rounded_vector(slot_axis),
+                    confidence="medium",
+                ),
+            )
+
+    slots.sort(key=lambda slot: slot.center or [])
+    return slots
+
+
 def _base_response(
     *,
     source_file: str,
@@ -302,7 +415,10 @@ def analyze_step_file(
             )
 
         response.holes.circular = _detect_circular_holes(shape)
+        response.holes.elongated = _detect_elongated_holes(shape)
         if len(response.holes.circular) >= 4:
+            response.holes.confidence = "medium"
+        if len(response.holes.elongated) >= 2:
             response.holes.confidence = "medium"
 
         if not response.holes.circular:

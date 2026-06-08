@@ -146,3 +146,18 @@ def test_detect_circular_holes_staffa_test_1():
     assert len(seven_mm_holes) >= 2
     assert len(five_mm_holes) >= 2
     assert payload["holes"]["confidence"] in {"medium", "high"}
+
+
+def test_detect_elongated_holes_staffa_test_1():
+    payload = _analyze_staffa_test_1()
+
+    elongated_holes = payload["holes"]["elongated"]
+    assert len(elongated_holes) >= 2
+
+    expected_length_holes = [
+        hole
+        for hole in elongated_holes
+        if hole["length_mm"] is not None and abs(hole["length_mm"] - 51.37) <= 0.25
+    ]
+
+    assert len(expected_length_holes) >= 2
