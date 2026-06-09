@@ -49,6 +49,14 @@ class Bends(BaseModel):
     items: list[BendFeature] = Field(default_factory=list)
 
 
+class Cutting(BaseModel):
+    outer_cut_length_mm: float | None = None
+    inner_cut_length_mm: float | None = None
+    total_cut_length_mm: float | None = None
+    confidence: Confidence = "low"
+    warnings: list[str] = Field(default_factory=list)
+
+
 class CadAnalysisResponse(BaseModel):
     part_name: str = ""
     source_file: str = ""
@@ -64,6 +72,7 @@ class CadAnalysisResponse(BaseModel):
     thickness_confidence: Confidence = "low"
     holes: Holes = Field(default_factory=Holes)
     bends: Bends = Field(default_factory=Bends)
+    cutting: Cutting = Field(default_factory=Cutting)
     complexity_score: Literal["unknown", "low", "medium", "high"] = "unknown"
     warnings: list[str] = Field(default_factory=list)
 

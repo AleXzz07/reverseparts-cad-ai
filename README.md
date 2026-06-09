@@ -36,6 +36,8 @@ Input `multipart/form-data`:
 
 The response separates declared values, measured CAD values, and estimated values. Unreliable features are returned as `null`, `[]`, or low confidence with a warning.
 
+The CAD response also includes a preliminary `cutting` section with outer, inner, and total laser cut length estimates when planar wire geometry and detected features are reliable enough.
+
 ## Local Development
 
 ```powershell
@@ -117,7 +119,7 @@ This reads `tests/output/staffa_test_1_actual.json`, writes `tests/output/staffa
 - `config/pricing_default.json`
 - `config/materials.json`
 
-The quote separates `estimated_internal_cost_eur` from `commercial_guidance`. The engine shows the configured minimum order value and minimum billable guidance, but it does not apply margin or decide the final commercial price.
+The quote separates `estimated_internal_cost_eur` from `commercial_guidance`. The engine shows the configured minimum order value and minimum billable guidance, but it does not apply margin or decide the final commercial price. When CAD analysis provides `cutting.total_cut_length_mm`, laser time is estimated from cut length; otherwise the quote falls back to the feature-based heuristic.
 
 ## Dataset Multi Pezzo
 

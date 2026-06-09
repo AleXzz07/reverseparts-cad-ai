@@ -250,6 +250,15 @@
       }
     ]
   },
+  "cutting": {
+    "outer_cut_length_mm": 284.0,
+    "inner_cut_length_mm": 233.66,
+    "total_cut_length_mm": 517.66,
+    "confidence": "medium",
+    "warnings": [
+      "Cut length is preliminary: outer loop is selected from the longest planar external wire and inner loop length is derived from deduplicated detected features."
+    ]
+  },
   "complexity_score": "unknown",
   "warnings": []
 }

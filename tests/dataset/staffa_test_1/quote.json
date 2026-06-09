@@ -22,24 +22,27 @@
     "complexity": "medium",
     "laser_cutting_complexity": "medium: profilo lamiera con fori circolari, asole e fori poligonali",
     "bending_complexity": "medium: 2 flange semplici da piegare",
-    "setup_required": true
+    "setup_required": true,
+    "laser_time_source": "cut_length"
   },
   "estimated_times_min": {
     "cad_check": 3.0,
-    "laser_cutting": 3.78,
+    "laser_cutting": 5.18,
     "bending": 1.9,
     "handling": 1.9,
-    "total": 10.58
+    "total": 11.98,
+    "laser_time_source": "cut_length",
+    "laser_cut_length_mm": 517.66
   },
   "estimated_internal_cost_eur": {
     "material": 0.3,
-    "laser": 4.54,
+    "laser": 6.22,
     "bending": 1.71,
     "cad_check": 2.4,
     "handling": 1.14,
     "setup": 15.0,
-    "total": 25.09,
-    "unit_cost": 25.09
+    "total": 26.77,
+    "unit_cost": 26.77
   },
   "commercial_guidance": {
     "minimum_order_value_eur": 40.0,
@@ -52,8 +55,8 @@
     {
       "quantity": 1,
       "estimated_internal_cost_eur": {
-        "total": 25.09,
-        "unit_cost": 25.09
+        "total": 26.77,
+        "unit_cost": 26.77
       },
       "commercial_guidance": {
         "minimum_order_applied": true,
@@ -63,56 +66,56 @@
     {
       "quantity": 5,
       "estimated_internal_cost_eur": {
-        "total": 52.23,
-        "unit_cost": 10.45
+        "total": 60.61,
+        "unit_cost": 12.12
       },
       "commercial_guidance": {
         "minimum_order_applied": false,
-        "minimum_billable_price_eur": 52.23
+        "minimum_billable_price_eur": 60.61
       }
     },
     {
       "quantity": 10,
       "estimated_internal_cost_eur": {
-        "total": 86.16,
-        "unit_cost": 8.62
+        "total": 102.92,
+        "unit_cost": 10.29
       },
       "commercial_guidance": {
         "minimum_order_applied": false,
-        "minimum_billable_price_eur": 86.16
+        "minimum_billable_price_eur": 102.92
       }
     },
     {
       "quantity": 25,
       "estimated_internal_cost_eur": {
-        "total": 187.95,
-        "unit_cost": 7.52
+        "total": 229.84,
+        "unit_cost": 9.19
       },
       "commercial_guidance": {
         "minimum_order_applied": false,
-        "minimum_billable_price_eur": 187.95
+        "minimum_billable_price_eur": 229.84
       }
     },
     {
       "quantity": 50,
       "estimated_internal_cost_eur": {
-        "total": 357.6,
-        "unit_cost": 7.15
+        "total": 441.4,
+        "unit_cost": 8.83
       },
       "commercial_guidance": {
         "minimum_order_applied": false,
-        "minimum_billable_price_eur": 357.6
+        "minimum_billable_price_eur": 441.4
       }
     },
     {
       "quantity": 100,
       "estimated_internal_cost_eur": {
-        "total": 696.9,
-        "unit_cost": 6.97
+        "total": 864.49,
+        "unit_cost": 8.64
       },
       "commercial_guidance": {
         "minimum_order_applied": false,
-        "minimum_billable_price_eur": 696.9
+        "minimum_billable_price_eur": 864.49
       }
     }
   ],
@@ -125,8 +128,7 @@
       "cad_check_rate_eur_min": 0.8,
       "handling_rate_eur_min": 0.6,
       "setup_cost_eur": 15.0,
-      "minimum_order_value_eur": 40.0,
-      "margin_percent": 25.0
+      "minimum_order_value_eur": 40.0
     },
     "material": {
       "density_g_cm3": 2.7,

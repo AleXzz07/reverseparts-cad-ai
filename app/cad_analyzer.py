@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import math
 import os
 import tempfile
 from dataclasses import dataclass
@@ -504,6 +505,56 @@ def _detect_bends(shape, detected_thickness_mm: float | None = None) -> list[Ben
     return bends
 
 
+def _detect_cutting_lengths(shape, circular: list[HoleFeature], elongated: list[HoleFeature], polygonal: list[HoleFeature]):
+    warnings = [
+        "Cut length is preliminary: outer loop is selected from the longest planar external wire and inner loop length is derived from deduplicated detected features."
+    ]
+
+    outer_candidates = []
+    for face in shape.Faces:
+        surface = face.Surface
+        if getattr(surface, "TypeId", "") != "Part::GeomPlane":
+            continue
+        if not face.Wires:
+            continue
+
+        outer_wire = face.Wires[0]
+        if not outer_wire.isClosed():
+            continue
+        length = float(outer_wire.Length)
+        if length <= 20.0:
+            continue
+        outer_candidates.append(length)
+
+    outer_cut_length = round(max(outer_candidates), 2) if outer_candidates else None
+    inner_cut_length = 0.0
+
+    for hole in circular:
+        if hole.diameter_mm is not None:
+            inner_cut_length += math.pi * float(hole.diameter_mm)
+    for slot in elongated:
+        if slot.length_mm is not None:
+            inner_cut_length += float(slot.length_mm)
+    for polygon in polygonal:
+        if polygon.max_dimension_mm is not None:
+            inner_cut_length += float(polygon.max_dimension_mm)
+
+    inner_cut_length = round(inner_cut_length, 2) if inner_cut_length > 0 else None
+    total_cut_length = (
+        round(outer_cut_length + inner_cut_length, 2)
+        if outer_cut_length is not None and inner_cut_length is not None
+        else None
+    )
+
+    confidence = "medium" if total_cut_length is not None else "low"
+    if outer_cut_length is None:
+        warnings.append("Outer cut length could not be identified from a closed planar external wire.")
+    if inner_cut_length is None:
+        warnings.append("Inner cut length could not be derived from reliable detected hole features.")
+
+    return outer_cut_length, inner_cut_length, total_cut_length, confidence, warnings
+
+
 def _detect_sheet_thickness(
     shape,
     declared_thickness_mm: float | None = None,
@@ -676,6 +727,19 @@ def analyze_step_file(
             response.warnings.append(
                 "Bend detection found no reliable sheet-metal flange candidates."
             )
+
+        (
+            response.cutting.outer_cut_length_mm,
+            response.cutting.inner_cut_length_mm,
+            response.cutting.total_cut_length_mm,
+            response.cutting.confidence,
+            response.cutting.warnings,
+        ) = _detect_cutting_lengths(
+            shape,
+            response.holes.circular,
+            response.holes.elongated,
+            response.holes.polygonal,
+        )
 
         if response.detected_thickness_mm is None:
             response.warnings.append(

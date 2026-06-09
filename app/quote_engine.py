@@ -11,6 +11,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_PRICING_CONFIG_PATH = PROJECT_ROOT / "config" / "pricing_default.json"
 DEFAULT_MATERIALS_CONFIG_PATH = PROJECT_ROOT / "config" / "materials.json"
 STANDARD_QUANTITY_BREAKS = (1, 5, 10, 25, 50, 100)
+LASER_CUTTING_SPEED_MM_MIN = 100.0
 
 
 @dataclass(frozen=True)
@@ -21,7 +22,6 @@ class QuoteParameters:
     handling_rate_eur_min: float
     setup_cost_eur: float
     minimum_order_value_eur: float
-    margin_percent: float
 
 
 def load_pricing_config(path: Path = DEFAULT_PRICING_CONFIG_PATH) -> QuoteParameters:
@@ -33,7 +33,6 @@ def load_pricing_config(path: Path = DEFAULT_PRICING_CONFIG_PATH) -> QuoteParame
         handling_rate_eur_min=float(data["handling_rate_eur_min"]),
         setup_cost_eur=float(data["setup_cost_eur"]),
         minimum_order_value_eur=float(data["minimum_order_value_eur"]),
-        margin_percent=float(data["margin_percent"]),
     )
 
 
@@ -56,7 +55,6 @@ def _parameters_to_dict(parameters: QuoteParameters) -> dict[str, float]:
         "handling_rate_eur_min": parameters.handling_rate_eur_min,
         "setup_cost_eur": parameters.setup_cost_eur,
         "minimum_order_value_eur": parameters.minimum_order_value_eur,
-        "margin_percent": parameters.margin_percent,
     }
 
 
@@ -115,14 +113,21 @@ def _estimate_amounts(
     estimated_weight_kg: float | None,
     material_config: dict[str, float] | None,
     parameters: QuoteParameters,
+    total_cut_length_mm: float | None,
 ) -> dict[str, Any]:
-    laser_feature_factor = (
-        circular_holes * 0.12
-        + elongated_holes * 0.35
-        + polygonal_holes * 0.3
-    )
+    if total_cut_length_mm is not None and total_cut_length_mm > 0:
+        laser_cutting = round(total_cut_length_mm / LASER_CUTTING_SPEED_MM_MIN * quantity, 2)
+        laser_time_source = "cut_length"
+    else:
+        laser_feature_factor = (
+            circular_holes * 0.12
+            + elongated_holes * 0.35
+            + polygonal_holes * 0.3
+        )
+        laser_cutting = round((2.0 + laser_feature_factor) * quantity, 2)
+        laser_time_source = "fallback_feature_based"
+
     cad_check = 3.0
-    laser_cutting = round((2.0 + laser_feature_factor) * quantity, 2)
     bending = round((0.8 + bends * 0.55) * quantity if bends else 0.0, 2)
     handling = round(1.5 + 0.4 * quantity, 2)
     total_time = round(cad_check + laser_cutting + bending + handling, 2)
@@ -160,6 +165,8 @@ def _estimate_amounts(
             "bending": bending,
             "handling": handling,
             "total": total_time,
+            "laser_time_source": laser_time_source,
+            "laser_cut_length_mm": total_cut_length_mm,
         },
         "estimated_internal_cost_eur": {
             "material": material_cost,
@@ -197,6 +204,7 @@ def quote_from_cad(
     elongated_holes = _feature_count(cad_data, "elongated")
     polygonal_holes = _feature_count(cad_data, "polygonal")
     bends = _bend_count(cad_data)
+    total_cut_length_mm = cad_data.get("cutting", {}).get("total_cut_length_mm")
 
     material_name = cad_data.get("declared_material")
     material_config = materials.get(str(material_name).lower()) if material_name else None
@@ -223,6 +231,7 @@ def quote_from_cad(
         estimated_weight_kg=estimated_weight_kg,
         material_config=material_config,
         parameters=parameters,
+        total_cut_length_mm=total_cut_length_mm,
     )
     quantity_breakdown = []
     for break_quantity in STANDARD_QUANTITY_BREAKS:
@@ -235,6 +244,7 @@ def quote_from_cad(
             estimated_weight_kg=estimated_weight_kg,
             material_config=material_config,
             parameters=parameters,
+            total_cut_length_mm=total_cut_length_mm,
         )
         quantity_breakdown.append(
             {
@@ -280,6 +290,7 @@ def quote_from_cad(
                 else "low: nessuna o poche pieghe rilevate"
             ),
             "setup_required": True,
+            "laser_time_source": amounts["estimated_times_min"]["laser_time_source"],
         },
         **amounts,
         "quantity_breakdown": quantity_breakdown,

@@ -199,3 +199,19 @@ def test_detect_bends_staffa_test_1():
         item["length_mm"] is not None and abs(item["length_mm"] - 50.0) <= 1.0
         for item in bends["items"]
     )
+
+
+def test_detect_cutting_lengths_staffa_test_1():
+    payload = _analyze_staffa_test_1()
+
+    cutting = payload["cutting"]
+    assert cutting["outer_cut_length_mm"] is not None
+    assert cutting["inner_cut_length_mm"] is not None
+    assert cutting["total_cut_length_mm"] is not None
+    assert cutting["inner_cut_length_mm"] > 200.0
+    assert cutting["total_cut_length_mm"] == round(
+        cutting["outer_cut_length_mm"] + cutting["inner_cut_length_mm"],
+        2,
+    )
+    assert cutting["confidence"] in {"medium", "high"}
+    assert isinstance(cutting["warnings"], list)

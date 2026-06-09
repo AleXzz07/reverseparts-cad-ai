@@ -8,8 +8,14 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 ACTUAL_FILE = PROJECT_ROOT / "tests" / "output" / "staffa_test_1_actual.json"
 
 
-def test_quote_from_cad_staffa_test_1():
+def _cad_data_without_cutting() -> dict:
     cad_data = json.loads(ACTUAL_FILE.read_text(encoding="utf-8"))
+    cad_data.pop("cutting", None)
+    return cad_data
+
+
+def test_quote_from_cad_staffa_test_1():
+    cad_data = _cad_data_without_cutting()
 
     quote = quote_from_cad(cad_data)
 
@@ -38,8 +44,9 @@ def test_quote_from_cad_staffa_test_1():
     assert quote["commercial_guidance"]["margin_applied"] is False
     assert quote["commercial_guidance"]["note"] == "Il margine commerciale deve essere deciso dall'azienda."
     assert quote["config_used"]["pricing"]["minimum_order_value_eur"] == 40.0
-    assert quote["config_used"]["pricing"]["margin_percent"] == 25.0
+    assert "margin_percent" not in quote["config_used"]["pricing"]
     assert quote["config_used"]["material"]["cost_eur_kg"] == 6.0
+    assert quote["estimated_times_min"]["laser_time_source"] == "fallback_feature_based"
     assert [item["quantity"] for item in quote["quantity_breakdown"]] == [1, 5, 10, 25, 50, 100]
     assert quote["quantity_breakdown"][0]["estimated_internal_cost_eur"]["unit_cost"] == 25.09
     assert quote["quantity_breakdown"][-1]["estimated_internal_cost_eur"]["unit_cost"] < 10.0
@@ -48,7 +55,7 @@ def test_quote_from_cad_staffa_test_1():
 
 
 def test_quote_from_cad_uses_requested_quantity():
-    cad_data = json.loads(ACTUAL_FILE.read_text(encoding="utf-8"))
+    cad_data = _cad_data_without_cutting()
 
     quote = quote_from_cad(cad_data, quantity=37)
 
@@ -57,6 +64,25 @@ def test_quote_from_cad_uses_requested_quantity():
     assert quote["estimated_internal_cost_eur"]["unit_cost"] == 7.28
     assert quote["commercial_guidance"]["minimum_order_applied"] is False
     assert quote["commercial_guidance"]["minimum_billable_price_eur"] == 269.38
+
+
+def test_quote_uses_cut_length_when_available():
+    cad_data = _cad_data_without_cutting()
+    cad_data["cutting"] = {
+        "outer_cut_length_mm": 300.0,
+        "inner_cut_length_mm": 200.0,
+        "total_cut_length_mm": 500.0,
+        "confidence": "medium",
+        "warnings": [],
+    }
+
+    quote = quote_from_cad(cad_data)
+
+    assert quote["estimated_times_min"]["laser_time_source"] == "cut_length"
+    assert quote["estimated_times_min"]["laser_cut_length_mm"] == 500.0
+    assert quote["estimated_times_min"]["laser_cutting"] == 5.0
+    assert quote["estimated_internal_cost_eur"]["laser"] == 6.0
+    assert quote["estimated_internal_cost_eur"]["total"] == 26.55
 
 
 def test_quote_files_writes_report(tmp_path):
