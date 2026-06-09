@@ -122,8 +122,8 @@ def test_analyze_cad_staffa_test_1_real_step_file():
     assert raw_bounding_box["z"] is not None
 
     assert payload["holes"]["confidence"] in {"medium", "high"}
-    assert payload["bends"]["confidence"] == "low"
-    assert payload["warnings"]
+    assert payload["bends"]["confidence"] in {"medium", "high"}
+    assert isinstance(payload["warnings"], list)
 
 
 def test_detect_circular_holes_staffa_test_1():
@@ -185,3 +185,17 @@ def test_detect_sheet_thickness_staffa_test_1():
     assert payload["detected_thickness_mm"] is not None
     assert abs(payload["detected_thickness_mm"] - 2.0) <= 0.1
     assert payload["thickness_confidence"] in {"medium", "high"}
+
+
+def test_detect_bends_staffa_test_1():
+    payload = _analyze_staffa_test_1()
+
+    bends = payload["bends"]
+    assert bends["count"] == 2
+    assert bends["confidence"] in {"medium", "high"}
+    assert len(bends["items"]) == 2
+    assert all(item["type"] == "simple flange" for item in bends["items"])
+    assert all(
+        item["length_mm"] is not None and abs(item["length_mm"] - 50.0) <= 1.0
+        for item in bends["items"]
+    )

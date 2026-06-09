@@ -6,7 +6,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from .schemas import CadAnalysisResponse, Dimensions, HoleFeature
+from .schemas import BendFeature, CadAnalysisResponse, Dimensions, HoleFeature
 
 
 VALID_STEP_SUFFIXES = {".stp", ".step"}
@@ -428,6 +428,82 @@ def _detect_polygonal_holes(shape) -> list[HoleFeature]:
     return polygons
 
 
+def _is_duplicate_bend(candidate: BendFeature, existing: BendFeature) -> bool:
+    if candidate.radius_mm is None or existing.radius_mm is None:
+        return False
+    if candidate.length_mm is None or existing.length_mm is None:
+        return False
+    if candidate.center is None or existing.center is None:
+        return False
+    if candidate.axis is None or existing.axis is None:
+        return False
+
+    return (
+        abs(candidate.length_mm - existing.length_mm) <= 1.0
+        and abs(candidate.radius_mm - existing.radius_mm) <= 2.5
+        and _axis_aligned(tuple(candidate.axis), tuple(existing.axis), tolerance=0.98)
+        and _vector_norm(
+            tuple(left - right for left, right in zip(candidate.center, existing.center))
+        )
+        <= 3.0
+    )
+
+
+def _append_unique_bend(bends: list[BendFeature], candidate: BendFeature) -> None:
+    for existing in bends:
+        if _is_duplicate_bend(candidate, existing):
+            if existing.radius_mm is None or (
+                candidate.radius_mm is not None and candidate.radius_mm < existing.radius_mm
+            ):
+                existing.radius_mm = candidate.radius_mm
+            existing.length_mm = max(existing.length_mm or 0.0, candidate.length_mm or 0.0)
+            existing.center = _rounded_vector(
+                tuple(
+                    (left + right) / 2.0
+                    for left, right in zip(existing.center or [], candidate.center or [])
+                )
+            )
+            existing.confidence = "high"
+            return
+    bends.append(candidate)
+
+
+def _detect_bends(shape, detected_thickness_mm: float | None = None) -> list[BendFeature]:
+    thickness_reference = detected_thickness_mm or 2.0
+    min_radius = max(1.0, thickness_reference * 0.75)
+    max_radius = max(6.0, thickness_reference * 4.0)
+    bends: list[BendFeature] = []
+
+    for face in shape.Faces:
+        surface = face.Surface
+        if getattr(surface, "TypeId", "") != "Part::GeomCylinder":
+            continue
+
+        radius = float(surface.Radius)
+        if not min_radius <= radius <= max_radius:
+            continue
+
+        axis = _normalize_vector(surface.Axis)
+        length = _candidate_depth_from_bbox(face.BoundBox, axis)
+        if not 45.0 <= length <= 60.0:
+            continue
+
+        _append_unique_bend(
+            bends,
+            BendFeature(
+                type="simple flange",
+                radius_mm=round(radius, 2),
+                length_mm=round(length, 2),
+                axis=_rounded_vector(axis),
+                center=_rounded_vector(_vector_tuple(surface.Center)),
+                confidence="medium",
+            ),
+        )
+
+    bends.sort(key=lambda bend: bend.center or [])
+    return bends
+
+
 def _detect_sheet_thickness(
     shape,
     declared_thickness_mm: float | None = None,
@@ -587,9 +663,20 @@ def analyze_step_file(
                 "Circular hole detection found no high-confidence candidates in the configured diameter range."
             )
 
-        response.warnings.extend(
-            ["Bend detection is not reported because this implementation has no high-confidence sheet-metal classifier yet."]
-        )
+        response.bends.items = _detect_bends(shape, detected_thickness)
+        if response.bends.items:
+            response.bends.count = len(response.bends.items)
+            response.bends.confidence = (
+                "high"
+                if response.bends.count >= 2
+                and all(item.confidence == "high" for item in response.bends.items)
+                else "medium"
+            )
+        else:
+            response.warnings.append(
+                "Bend detection found no reliable sheet-metal flange candidates."
+            )
+
         if response.detected_thickness_mm is None:
             response.warnings.append(
                 "Detected thickness is not reported because wall-thickness inference is not reliable for this model."

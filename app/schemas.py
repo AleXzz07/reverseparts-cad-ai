@@ -34,9 +34,19 @@ class Holes(BaseModel):
     confidence: Confidence = "low"
 
 
+class BendFeature(BaseModel):
+    type: str = "simple flange"
+    radius_mm: float | None = None
+    length_mm: float | None = None
+    axis: list[float] | None = None
+    center: list[float] | None = None
+    confidence: Confidence = "low"
+
+
 class Bends(BaseModel):
     count: int | None = None
     confidence: Confidence = "low"
+    items: list[BendFeature] = Field(default_factory=list)
 
 
 class CadAnalysisResponse(BaseModel):

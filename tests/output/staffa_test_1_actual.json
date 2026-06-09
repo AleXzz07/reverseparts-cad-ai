@@ -213,11 +213,43 @@
     "confidence": "medium"
   },
   "bends": {
-    "count": null,
-    "confidence": "low"
+    "count": 2,
+    "confidence": "high",
+    "items": [
+      {
+        "type": "simple flange",
+        "radius_mm": 3.0,
+        "length_mm": 50.0,
+        "axis": [
+          0.0,
+          1.0,
+          -0.0
+        ],
+        "center": [
+          -46.0,
+          -25.0,
+          5.0
+        ],
+        "confidence": "high"
+      },
+      {
+        "type": "simple flange",
+        "radius_mm": 3.0,
+        "length_mm": 50.0,
+        "axis": [
+          0.0,
+          1.0,
+          -0.0
+        ],
+        "center": [
+          46.0,
+          -25.0,
+          5.0
+        ],
+        "confidence": "high"
+      }
+    ]
   },
   "complexity_score": "unknown",
-  "warnings": [
-    "Bend detection is not reported because this implementation has no high-confidence sheet-metal classifier yet."
-  ]
+  "warnings": []
 }
