@@ -30,6 +30,7 @@ def test_quote_from_cad_staffa_test_1():
     assert quote["cost_drivers"]["setup_required"] is True
     assert quote["estimated_times_min"]["total"] > 0
     assert quote["estimated_internal_cost_eur"]["total"] == 25.09
+    assert quote["estimated_internal_cost_eur"]["unit_cost"] == 25.09
     assert quote["estimated_internal_cost_eur"]["material"] == 0.3
     assert quote["commercial_guidance"]["minimum_order_value_eur"] == 40.0
     assert quote["commercial_guidance"]["minimum_order_applied"] is True
@@ -39,8 +40,23 @@ def test_quote_from_cad_staffa_test_1():
     assert quote["config_used"]["pricing"]["minimum_order_value_eur"] == 40.0
     assert quote["config_used"]["pricing"]["margin_percent"] == 25.0
     assert quote["config_used"]["material"]["cost_eur_kg"] == 6.0
+    assert [item["quantity"] for item in quote["quantity_breakdown"]] == [1, 5, 10, 25, 50, 100]
+    assert quote["quantity_breakdown"][0]["estimated_internal_cost_eur"]["unit_cost"] == 25.09
+    assert quote["quantity_breakdown"][-1]["estimated_internal_cost_eur"]["unit_cost"] < 10.0
     assert quote["confidence"] in {"medium", "high"}
     assert quote["warnings"]
+
+
+def test_quote_from_cad_uses_requested_quantity():
+    cad_data = json.loads(ACTUAL_FILE.read_text(encoding="utf-8"))
+
+    quote = quote_from_cad(cad_data, quantity=37)
+
+    assert quote["quantity"] == 37
+    assert quote["estimated_internal_cost_eur"]["total"] == 269.38
+    assert quote["estimated_internal_cost_eur"]["unit_cost"] == 7.28
+    assert quote["commercial_guidance"]["minimum_order_applied"] is False
+    assert quote["commercial_guidance"]["minimum_billable_price_eur"] == 269.38
 
 
 def test_quote_files_writes_report(tmp_path):
@@ -53,4 +69,8 @@ def test_quote_files_writes_report(tmp_path):
     assert written == quote
     assert written["quantity"] == 3
     assert written["estimated_internal_cost_eur"]["total"] > 0
+    assert written["estimated_internal_cost_eur"]["unit_cost"] == round(
+        written["estimated_internal_cost_eur"]["total"] / 3,
+        2,
+    )
     assert written["commercial_guidance"]["minimum_billable_price_eur"] > 0

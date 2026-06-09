@@ -38,7 +38,8 @@
     "cad_check": 2.4,
     "handling": 1.14,
     "setup": 15.0,
-    "total": 25.09
+    "total": 25.09,
+    "unit_cost": 25.09
   },
   "commercial_guidance": {
     "minimum_order_value_eur": 40.0,
@@ -47,6 +48,74 @@
     "margin_applied": false,
     "note": "Il margine commerciale deve essere deciso dall'azienda."
   },
+  "quantity_breakdown": [
+    {
+      "quantity": 1,
+      "estimated_internal_cost_eur": {
+        "total": 25.09,
+        "unit_cost": 25.09
+      },
+      "commercial_guidance": {
+        "minimum_order_applied": true,
+        "minimum_billable_price_eur": 40.0
+      }
+    },
+    {
+      "quantity": 5,
+      "estimated_internal_cost_eur": {
+        "total": 52.23,
+        "unit_cost": 10.45
+      },
+      "commercial_guidance": {
+        "minimum_order_applied": false,
+        "minimum_billable_price_eur": 52.23
+      }
+    },
+    {
+      "quantity": 10,
+      "estimated_internal_cost_eur": {
+        "total": 86.16,
+        "unit_cost": 8.62
+      },
+      "commercial_guidance": {
+        "minimum_order_applied": false,
+        "minimum_billable_price_eur": 86.16
+      }
+    },
+    {
+      "quantity": 25,
+      "estimated_internal_cost_eur": {
+        "total": 187.95,
+        "unit_cost": 7.52
+      },
+      "commercial_guidance": {
+        "minimum_order_applied": false,
+        "minimum_billable_price_eur": 187.95
+      }
+    },
+    {
+      "quantity": 50,
+      "estimated_internal_cost_eur": {
+        "total": 357.6,
+        "unit_cost": 7.15
+      },
+      "commercial_guidance": {
+        "minimum_order_applied": false,
+        "minimum_billable_price_eur": 357.6
+      }
+    },
+    {
+      "quantity": 100,
+      "estimated_internal_cost_eur": {
+        "total": 696.9,
+        "unit_cost": 6.97
+      },
+      "commercial_guidance": {
+        "minimum_order_applied": false,
+        "minimum_billable_price_eur": 696.9
+      }
+    }
+  ],
   "config_used": {
     "pricing_config": "/workspace/config/pricing_default.json",
     "materials_config": "/workspace/config/materials.json",

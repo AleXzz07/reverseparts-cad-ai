@@ -104,6 +104,14 @@ Generate the preliminary process/cost quote:
 .\scripts\quote_staffa.ps1
 ```
 
+Examples with requested quantities:
+
+```powershell
+.\scripts\quote_staffa.ps1 -Quantity 1
+.\scripts\quote_staffa.ps1 -Quantity 25
+.\scripts\quote_staffa.ps1 -Quantity 100
+```
+
 This reads `tests/output/staffa_test_1_actual.json`, writes `tests/output/staffa_test_1_quote.json`, and prints a preliminary internal-cost estimate based on:
 
 - `config/pricing_default.json`

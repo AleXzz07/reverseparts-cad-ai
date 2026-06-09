@@ -10,6 +10,7 @@ from typing import Any
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_PRICING_CONFIG_PATH = PROJECT_ROOT / "config" / "pricing_default.json"
 DEFAULT_MATERIALS_CONFIG_PATH = PROJECT_ROOT / "config" / "materials.json"
+STANDARD_QUANTITY_BREAKS = (1, 5, 10, 25, 50, 100)
 
 
 @dataclass(frozen=True)
@@ -104,6 +105,82 @@ def _confidence(cad_data: dict[str, Any]) -> str:
     return "low"
 
 
+def _estimate_amounts(
+    *,
+    quantity: int,
+    circular_holes: int,
+    elongated_holes: int,
+    polygonal_holes: int,
+    bends: int,
+    estimated_weight_kg: float | None,
+    material_config: dict[str, float] | None,
+    parameters: QuoteParameters,
+) -> dict[str, Any]:
+    laser_feature_factor = (
+        circular_holes * 0.12
+        + elongated_holes * 0.35
+        + polygonal_holes * 0.3
+    )
+    cad_check = 3.0
+    laser_cutting = round((2.0 + laser_feature_factor) * quantity, 2)
+    bending = round((0.8 + bends * 0.55) * quantity if bends else 0.0, 2)
+    handling = round(1.5 + 0.4 * quantity, 2)
+    total_time = round(cad_check + laser_cutting + bending + handling, 2)
+
+    material_cost = (
+        _round_money(float(estimated_weight_kg) * material_config["cost_eur_kg"] * quantity)
+        if estimated_weight_kg is not None and material_config is not None
+        else None
+    )
+    cad_check_cost = _round_money(cad_check * parameters.cad_check_rate_eur_min)
+    laser_cost = _round_money(laser_cutting * parameters.laser_rate_eur_min)
+    bending_cost = _round_money(bending * parameters.bending_rate_eur_min)
+    handling_cost = _round_money(handling * parameters.handling_rate_eur_min)
+    setup_cost = _round_money(parameters.setup_cost_eur)
+    total_internal = _round_money(
+        (material_cost or 0.0)
+        + cad_check_cost
+        + laser_cost
+        + bending_cost
+        + handling_cost
+        + setup_cost
+    )
+    unit_cost = _round_money(total_internal / quantity)
+    minimum_order_applied = total_internal < parameters.minimum_order_value_eur
+    minimum_billable_price = (
+        _round_money(parameters.minimum_order_value_eur)
+        if minimum_order_applied
+        else total_internal
+    )
+
+    return {
+        "estimated_times_min": {
+            "cad_check": cad_check,
+            "laser_cutting": laser_cutting,
+            "bending": bending,
+            "handling": handling,
+            "total": total_time,
+        },
+        "estimated_internal_cost_eur": {
+            "material": material_cost,
+            "laser": laser_cost,
+            "bending": bending_cost,
+            "cad_check": cad_check_cost,
+            "handling": handling_cost,
+            "setup": setup_cost,
+            "total": total_internal,
+            "unit_cost": unit_cost,
+        },
+        "commercial_guidance": {
+            "minimum_order_value_eur": parameters.minimum_order_value_eur,
+            "minimum_order_applied": minimum_order_applied,
+            "minimum_billable_price_eur": minimum_billable_price,
+            "margin_applied": False,
+            "note": "Il margine commerciale deve essere deciso dall'azienda.",
+        },
+    }
+
+
 def quote_from_cad(
     cad_data: dict[str, Any],
     *,
@@ -137,35 +214,41 @@ def quote_from_cad(
         warnings.append("Spessore non disponibile: complessita processo meno affidabile.")
 
     complexity = _complexity(circular_holes, elongated_holes, polygonal_holes, bends)
-    laser_feature_factor = (
-        circular_holes * 0.12
-        + elongated_holes * 0.35
-        + polygonal_holes * 0.3
+    amounts = _estimate_amounts(
+        quantity=quantity,
+        circular_holes=circular_holes,
+        elongated_holes=elongated_holes,
+        polygonal_holes=polygonal_holes,
+        bends=bends,
+        estimated_weight_kg=estimated_weight_kg,
+        material_config=material_config,
+        parameters=parameters,
     )
-    laser_cutting = round((2.0 + laser_feature_factor) * quantity, 2)
-    bending = round((0.8 + bends * 0.55) * quantity if bends else 0.0, 2)
-    cad_check = 3.0
-    handling = round((1.5 + 0.4 * quantity), 2)
-    total_time = round(cad_check + laser_cutting + bending + handling, 2)
-
-    material_cost = (
-        _round_money(float(estimated_weight_kg) * material_config["cost_eur_kg"] * quantity)
-        if estimated_weight_kg is not None and material_config is not None
-        else None
-    )
-    cad_check_cost = _round_money(cad_check * parameters.cad_check_rate_eur_min)
-    laser_cost = _round_money(laser_cutting * parameters.laser_rate_eur_min)
-    bending_cost = _round_money(bending * parameters.bending_rate_eur_min)
-    handling_cost = _round_money(handling * parameters.handling_rate_eur_min)
-    setup_cost = _round_money(parameters.setup_cost_eur)
-    subtotal = (material_cost or 0.0) + cad_check_cost + laser_cost + bending_cost + handling_cost + setup_cost
-    total_internal = _round_money(subtotal)
-    minimum_order_applied = total_internal < parameters.minimum_order_value_eur
-    minimum_billable_price = (
-        _round_money(parameters.minimum_order_value_eur)
-        if minimum_order_applied
-        else total_internal
-    )
+    quantity_breakdown = []
+    for break_quantity in STANDARD_QUANTITY_BREAKS:
+        break_amounts = _estimate_amounts(
+            quantity=break_quantity,
+            circular_holes=circular_holes,
+            elongated_holes=elongated_holes,
+            polygonal_holes=polygonal_holes,
+            bends=bends,
+            estimated_weight_kg=estimated_weight_kg,
+            material_config=material_config,
+            parameters=parameters,
+        )
+        quantity_breakdown.append(
+            {
+                "quantity": break_quantity,
+                "estimated_internal_cost_eur": {
+                    "total": break_amounts["estimated_internal_cost_eur"]["total"],
+                    "unit_cost": break_amounts["estimated_internal_cost_eur"]["unit_cost"],
+                },
+                "commercial_guidance": {
+                    "minimum_order_applied": break_amounts["commercial_guidance"]["minimum_order_applied"],
+                    "minimum_billable_price_eur": break_amounts["commercial_guidance"]["minimum_billable_price_eur"],
+                },
+            }
+        )
 
     return {
         "part_name": cad_data.get("part_name", ""),
@@ -198,29 +281,8 @@ def quote_from_cad(
             ),
             "setup_required": True,
         },
-        "estimated_times_min": {
-            "cad_check": cad_check,
-            "laser_cutting": laser_cutting,
-            "bending": bending,
-            "handling": handling,
-            "total": total_time,
-        },
-        "estimated_internal_cost_eur": {
-            "material": material_cost,
-            "laser": laser_cost,
-            "bending": bending_cost,
-            "cad_check": cad_check_cost,
-            "handling": handling_cost,
-            "setup": setup_cost,
-            "total": total_internal,
-        },
-        "commercial_guidance": {
-            "minimum_order_value_eur": parameters.minimum_order_value_eur,
-            "minimum_order_applied": minimum_order_applied,
-            "minimum_billable_price_eur": minimum_billable_price,
-            "margin_applied": False,
-            "note": "Il margine commerciale deve essere deciso dall'azienda.",
-        },
+        **amounts,
+        "quantity_breakdown": quantity_breakdown,
         "config_used": {
             "pricing_config": str(pricing_config_path),
             "materials_config": str(materials_config_path),

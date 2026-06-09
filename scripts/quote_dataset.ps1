@@ -1,11 +1,11 @@
+param(
+    [Parameter(Position = 0)]
+    [int]$Quantity = 1
+)
+
 $ErrorActionPreference = "Stop"
 
 $ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-$Quantity = 1
-
-if ($args.Count -gt 0) {
-    $Quantity = [int]$args[0]
-}
 
 docker build -t reverseparts-cad-ai $ProjectRoot
 if ($LASTEXITCODE -ne 0) {
