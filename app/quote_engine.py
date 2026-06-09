@@ -2,21 +2,61 @@ from __future__ import annotations
 
 import argparse
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_PRICING_CONFIG_PATH = PROJECT_ROOT / "config" / "pricing_default.json"
+DEFAULT_MATERIALS_CONFIG_PATH = PROJECT_ROOT / "config" / "materials.json"
+
+
 @dataclass(frozen=True)
 class QuoteParameters:
-    material_cost_eur_kg: float = 6.0
-    laser_rate_eur_min: float = 1.2
-    bending_rate_eur_min: float = 0.9
-    setup_cost_eur: float = 15.0
-    margin_percent: float = 25.0
+    laser_rate_eur_min: float
+    bending_rate_eur_min: float
+    cad_check_rate_eur_min: float
+    handling_rate_eur_min: float
+    setup_cost_eur: float
+    minimum_order_value_eur: float
+    margin_percent: float
 
 
-DEFAULT_QUOTE_PARAMETERS = QuoteParameters()
+def load_pricing_config(path: Path = DEFAULT_PRICING_CONFIG_PATH) -> QuoteParameters:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return QuoteParameters(
+        laser_rate_eur_min=float(data["laser_rate_eur_min"]),
+        bending_rate_eur_min=float(data["bending_rate_eur_min"]),
+        cad_check_rate_eur_min=float(data["cad_check_rate_eur_min"]),
+        handling_rate_eur_min=float(data["handling_rate_eur_min"]),
+        setup_cost_eur=float(data["setup_cost_eur"]),
+        minimum_order_value_eur=float(data["minimum_order_value_eur"]),
+        margin_percent=float(data["margin_percent"]),
+    )
+
+
+def load_materials_config(path: Path = DEFAULT_MATERIALS_CONFIG_PATH) -> dict[str, dict[str, float]]:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return {
+        material_name: {
+            "density_g_cm3": float(values["density_g_cm3"]),
+            "cost_eur_kg": float(values["cost_eur_kg"]),
+        }
+        for material_name, values in data.items()
+    }
+
+
+def _parameters_to_dict(parameters: QuoteParameters) -> dict[str, float]:
+    return {
+        "laser_rate_eur_min": parameters.laser_rate_eur_min,
+        "bending_rate_eur_min": parameters.bending_rate_eur_min,
+        "cad_check_rate_eur_min": parameters.cad_check_rate_eur_min,
+        "handling_rate_eur_min": parameters.handling_rate_eur_min,
+        "setup_cost_eur": parameters.setup_cost_eur,
+        "minimum_order_value_eur": parameters.minimum_order_value_eur,
+        "margin_percent": parameters.margin_percent,
+    }
 
 
 def _round_money(value: float) -> float:
@@ -68,20 +108,29 @@ def quote_from_cad(
     cad_data: dict[str, Any],
     *,
     quantity: int = 1,
-    parameters: QuoteParameters = DEFAULT_QUOTE_PARAMETERS,
+    parameters: QuoteParameters | None = None,
+    materials: dict[str, dict[str, float]] | None = None,
+    pricing_config_path: Path = DEFAULT_PRICING_CONFIG_PATH,
+    materials_config_path: Path = DEFAULT_MATERIALS_CONFIG_PATH,
 ) -> dict[str, Any]:
+    parameters = parameters or load_pricing_config(pricing_config_path)
+    materials = materials or load_materials_config(materials_config_path)
     quantity = max(int(quantity), 1)
     circular_holes = _feature_count(cad_data, "circular")
     elongated_holes = _feature_count(cad_data, "elongated")
     polygonal_holes = _feature_count(cad_data, "polygonal")
     bends = _bend_count(cad_data)
 
+    material_name = cad_data.get("declared_material")
+    material_config = materials.get(str(material_name).lower()) if material_name else None
     estimated_weight_kg = cad_data.get("estimated_weight_kg")
     thickness_mm = cad_data.get("detected_thickness_mm") or cad_data.get("declared_thickness_mm")
     warnings = [
-        "Preventivo preliminare: parametri economici placeholder da validare con dati aziendali reali.",
+        "Preventivo preliminare: parametri economici caricati da config e da validare con dati aziendali reali.",
         "Prezzo finale indicativo, non usare come offerta definitiva senza revisione tecnica/commerciale.",
     ]
+    if material_config is None:
+        warnings.append("Materiale non presente in config/materials.json: costo materiale non calcolabile in modo affidabile.")
     if estimated_weight_kg is None:
         warnings.append("Peso stimato non disponibile: costo materiale non calcolabile in modo affidabile.")
     if thickness_mm is None:
@@ -100,25 +149,35 @@ def quote_from_cad(
     total_time = round(cad_check + laser_cutting + bending + handling, 2)
 
     material_cost = (
-        _round_money(float(estimated_weight_kg) * parameters.material_cost_eur_kg * quantity)
-        if estimated_weight_kg is not None
+        _round_money(float(estimated_weight_kg) * material_config["cost_eur_kg"] * quantity)
+        if estimated_weight_kg is not None and material_config is not None
         else None
     )
+    cad_check_cost = _round_money(cad_check * parameters.cad_check_rate_eur_min)
     laser_cost = _round_money(laser_cutting * parameters.laser_rate_eur_min)
     bending_cost = _round_money(bending * parameters.bending_rate_eur_min)
+    handling_cost = _round_money(handling * parameters.handling_rate_eur_min)
     setup_cost = _round_money(parameters.setup_cost_eur)
-    subtotal = (material_cost or 0.0) + laser_cost + bending_cost + setup_cost
+    subtotal = (material_cost or 0.0) + cad_check_cost + laser_cost + bending_cost + handling_cost + setup_cost
     total_internal = _round_money(subtotal)
-    suggested_price = _round_money(total_internal * (1.0 + parameters.margin_percent / 100.0))
+    price_before_minimum = _round_money(total_internal * (1.0 + parameters.margin_percent / 100.0))
+    minimum_order_applied = price_before_minimum < parameters.minimum_order_value_eur
+    final_suggested_price = (
+        _round_money(parameters.minimum_order_value_eur)
+        if minimum_order_applied
+        else price_before_minimum
+    )
 
     return {
         "part_name": cad_data.get("part_name", ""),
         "quantity": quantity,
         "process_plan": _process_plan(bends),
         "material": {
-            "name": cad_data.get("declared_material"),
+            "name": material_name,
             "thickness_mm": thickness_mm,
             "estimated_weight_kg": estimated_weight_kg,
+            "density_g_cm3": material_config["density_g_cm3"] if material_config else None,
+            "cost_eur_kg": material_config["cost_eur_kg"] if material_config else None,
         },
         "features_summary": {
             "circular_holes": circular_holes,
@@ -149,25 +208,43 @@ def quote_from_cad(
         },
         "estimated_cost_eur": {
             "material": material_cost,
+            "cad_check": cad_check_cost,
             "laser": laser_cost,
             "bending": bending_cost,
+            "handling": handling_cost,
             "setup": setup_cost,
             "total_internal": total_internal,
-            "suggested_price": suggested_price,
+            "suggested_price": price_before_minimum,
+            "price_before_minimum": price_before_minimum,
+            "minimum_order_applied": minimum_order_applied,
+            "final_suggested_price": final_suggested_price,
             "price_note": "indicativo",
         },
-        "pricing_parameters": {
-            **asdict(parameters),
-            "source": "placeholder configurabili in app/quote_engine.py",
+        "config_used": {
+            "pricing_config": str(pricing_config_path),
+            "materials_config": str(materials_config_path),
+            "pricing": _parameters_to_dict(parameters),
+            "material": material_config,
         },
         "confidence": _confidence(cad_data),
         "warnings": warnings,
     }
 
 
-def quote_files(actual_path: Path, output_path: Path, quantity: int = 1) -> dict[str, Any]:
+def quote_files(
+    actual_path: Path,
+    output_path: Path,
+    quantity: int = 1,
+    pricing_config_path: Path = DEFAULT_PRICING_CONFIG_PATH,
+    materials_config_path: Path = DEFAULT_MATERIALS_CONFIG_PATH,
+) -> dict[str, Any]:
     cad_data = json.loads(actual_path.read_text(encoding="utf-8"))
-    quote = quote_from_cad(cad_data, quantity=quantity)
+    quote = quote_from_cad(
+        cad_data,
+        quantity=quantity,
+        pricing_config_path=pricing_config_path,
+        materials_config_path=materials_config_path,
+    )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(quote, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return quote
@@ -178,9 +255,17 @@ def main() -> None:
     parser.add_argument("--actual", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--quantity", type=int, default=1)
+    parser.add_argument("--pricing-config", type=Path, default=DEFAULT_PRICING_CONFIG_PATH)
+    parser.add_argument("--materials-config", type=Path, default=DEFAULT_MATERIALS_CONFIG_PATH)
     args = parser.parse_args()
 
-    quote = quote_files(args.actual, args.output, quantity=args.quantity)
+    quote = quote_files(
+        args.actual,
+        args.output,
+        quantity=args.quantity,
+        pricing_config_path=args.pricing_config,
+        materials_config_path=args.materials_config,
+    )
     print(json.dumps(quote, indent=2, ensure_ascii=False))
 
 

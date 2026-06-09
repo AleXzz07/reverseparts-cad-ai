@@ -104,7 +104,12 @@ Generate the preliminary process/cost quote:
 .\scripts\quote_staffa.ps1
 ```
 
-This reads `tests/output/staffa_test_1_actual.json`, writes `tests/output/staffa_test_1_quote.json`, and prints an indicative quote based on configurable placeholder rates in `app/quote_engine.py`.
+This reads `tests/output/staffa_test_1_actual.json`, writes `tests/output/staffa_test_1_quote.json`, and prints an indicative quote based on:
+
+- `config/pricing_default.json`
+- `config/materials.json`
+
+The quote includes `config_used`, `price_before_minimum`, `minimum_order_applied`, and `final_suggested_price`.
 
 ## Test Fixtures
 

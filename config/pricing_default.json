@@ -1,0 +1,9 @@
+{
+  "laser_rate_eur_min": 1.2,
+  "bending_rate_eur_min": 0.9,
+  "cad_check_rate_eur_min": 0.8,
+  "handling_rate_eur_min": 0.6,
+  "setup_cost_eur": 15.0,
+  "minimum_order_value_eur": 40.0,
+  "margin_percent": 25.0
+}

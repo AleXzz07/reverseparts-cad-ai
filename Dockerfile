@@ -20,6 +20,7 @@ COPY requirements.txt .
 RUN python3 -m pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
+COPY config ./config
 COPY tests ./tests
 
 EXPOSE 8000

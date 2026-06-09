@@ -19,6 +19,7 @@ def test_quote_from_cad_staffa_test_1():
     assert quote["material"]["name"] == "alluminio"
     assert quote["material"]["thickness_mm"] == 2.0
     assert quote["material"]["estimated_weight_kg"] == 0.05
+    assert quote["material"]["cost_eur_kg"] == 6.0
     assert quote["features_summary"] == {
         "circular_holes": 4,
         "elongated_holes": 2,
@@ -30,8 +31,12 @@ def test_quote_from_cad_staffa_test_1():
     assert quote["estimated_times_min"]["total"] > 0
     assert quote["estimated_cost_eur"]["total_internal"] > 0
     assert quote["estimated_cost_eur"]["suggested_price"] > quote["estimated_cost_eur"]["total_internal"]
+    assert quote["estimated_cost_eur"]["price_before_minimum"] == quote["estimated_cost_eur"]["suggested_price"]
+    assert quote["estimated_cost_eur"]["minimum_order_applied"] is True
+    assert quote["estimated_cost_eur"]["final_suggested_price"] == 40.0
     assert quote["estimated_cost_eur"]["price_note"] == "indicativo"
-    assert quote["pricing_parameters"]["source"] == "placeholder configurabili in app/quote_engine.py"
+    assert quote["config_used"]["pricing"]["minimum_order_value_eur"] == 40.0
+    assert quote["config_used"]["material"]["cost_eur_kg"] == 6.0
     assert quote["confidence"] in {"medium", "high"}
     assert quote["warnings"]
 
@@ -45,4 +50,4 @@ def test_quote_files_writes_report(tmp_path):
     assert output_path.exists()
     assert written == quote
     assert written["quantity"] == 3
-    assert written["estimated_cost_eur"]["suggested_price"] > 0
+    assert written["estimated_cost_eur"]["final_suggested_price"] > 0

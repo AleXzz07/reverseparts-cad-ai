@@ -8,7 +8,9 @@
   "material": {
     "name": "alluminio",
     "thickness_mm": 2.0,
-    "estimated_weight_kg": 0.05
+    "estimated_weight_kg": 0.05,
+    "density_g_cm3": 2.7,
+    "cost_eur_kg": 6.0
   },
   "features_summary": {
     "circular_holes": 4,
@@ -31,24 +33,38 @@
   },
   "estimated_cost_eur": {
     "material": 0.3,
+    "cad_check": 2.4,
     "laser": 4.54,
     "bending": 1.71,
+    "handling": 1.14,
     "setup": 15.0,
-    "total_internal": 21.55,
-    "suggested_price": 26.94,
+    "total_internal": 25.09,
+    "suggested_price": 31.36,
+    "price_before_minimum": 31.36,
+    "minimum_order_applied": true,
+    "final_suggested_price": 40.0,
     "price_note": "indicativo"
   },
-  "pricing_parameters": {
-    "material_cost_eur_kg": 6.0,
-    "laser_rate_eur_min": 1.2,
-    "bending_rate_eur_min": 0.9,
-    "setup_cost_eur": 15.0,
-    "margin_percent": 25.0,
-    "source": "placeholder configurabili in app/quote_engine.py"
+  "config_used": {
+    "pricing_config": "/workspace/config/pricing_default.json",
+    "materials_config": "/workspace/config/materials.json",
+    "pricing": {
+      "laser_rate_eur_min": 1.2,
+      "bending_rate_eur_min": 0.9,
+      "cad_check_rate_eur_min": 0.8,
+      "handling_rate_eur_min": 0.6,
+      "setup_cost_eur": 15.0,
+      "minimum_order_value_eur": 40.0,
+      "margin_percent": 25.0
+    },
+    "material": {
+      "density_g_cm3": 2.7,
+      "cost_eur_kg": 6.0
+    }
   },
   "confidence": "medium",
   "warnings": [
-    "Preventivo preliminare: parametri economici placeholder da validare con dati aziendali reali.",
+    "Preventivo preliminare: parametri economici caricati da config e da validare con dati aziendali reali.",
     "Prezzo finale indicativo, non usare come offerta definitiva senza revisione tecnica/commerciale."
   ]
 }
