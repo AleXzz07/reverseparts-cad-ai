@@ -1,0 +1,142 @@
+{
+  "part_name": "STAFFA TEST 1",
+  "score_total": 88,
+  "status": "warning",
+  "checks": {
+    "dimensions": {
+      "status": "fail",
+      "message": "Bounding dimensions compared with ground truth.",
+      "axes": {
+        "x": {
+          "status": "fail",
+          "message": "Error 4.000 mm; tolerance 1.000 mm.",
+          "actual": 102.0,
+          "expected": 98.0,
+          "error": 4.0,
+          "tolerance": 1.0,
+          "unit": "mm"
+        },
+        "y": {
+          "status": "pass",
+          "message": "Error 0.000 mm; tolerance 1.000 mm.",
+          "actual": 50.0,
+          "expected": 50.0,
+          "error": 0.0,
+          "tolerance": 1.0,
+          "unit": "mm"
+        },
+        "z": {
+          "status": "fail",
+          "message": "Error 2.000 mm; tolerance 1.000 mm.",
+          "actual": 51.0,
+          "expected": 49.0,
+          "error": 2.0,
+          "tolerance": 1.0,
+          "unit": "mm"
+        }
+      }
+    },
+    "volume": {
+      "status": "warning",
+      "message": "Value not available for comparison.",
+      "actual": 18.488,
+      "expected": null,
+      "tolerance": 0.0,
+      "unit": "cm3"
+    },
+    "area": {
+      "status": "warning",
+      "message": "Value not available for comparison.",
+      "actual": 199.419,
+      "expected": null,
+      "tolerance": 0.0,
+      "unit": "cm2"
+    },
+    "weight": {
+      "status": "pass",
+      "message": "Weight error 0.00%; tolerance 5.00%.",
+      "actual": 0.05,
+      "expected": 0.05,
+      "error_percent": 0.0,
+      "tolerance_percent": 5.0
+    },
+    "declared_thickness": {
+      "status": "pass",
+      "message": "Error 0.000 mm; tolerance 0.100 mm.",
+      "actual": 2.0,
+      "expected": 2.0,
+      "error": 0.0,
+      "tolerance": 0.1,
+      "unit": "mm"
+    },
+    "detected_thickness": {
+      "status": "pass",
+      "message": "Error 0.000 mm; tolerance 0.100 mm.",
+      "actual": 2.0,
+      "expected": 2.0,
+      "error": 0.0,
+      "tolerance": 0.1,
+      "unit": "mm"
+    },
+    "circular_holes": {
+      "status": "pass",
+      "message": "Circular holes grouped by diameter.",
+      "groups": [
+        {
+          "diameter_mm": 6.99,
+          "expected_count": 2,
+          "actual_count": 2,
+          "status": "pass"
+        },
+        {
+          "diameter_mm": 4.99,
+          "expected_count": 2,
+          "actual_count": 2,
+          "status": "pass"
+        }
+      ]
+    },
+    "elongated_holes": {
+      "status": "pass",
+      "message": "Elongated holes grouped by slot length.",
+      "groups": [
+        {
+          "length_mm": 51.37,
+          "expected_count": 2,
+          "actual_count": 2,
+          "status": "pass"
+        }
+      ]
+    },
+    "polygonal_holes": {
+      "status": "pass",
+      "message": "Polygonal holes grouped by maximum dimension.",
+      "groups": [
+        {
+          "max_dimension_mm": 27.71,
+          "expected_count": 2,
+          "actual_count": 2,
+          "status": "pass"
+        }
+      ]
+    },
+    "bends": {
+      "status": "pass",
+      "message": "Bends/flanges compared by count, confidence, and length.",
+      "actual_count": 2,
+      "expected_count": 2,
+      "confidence": "high",
+      "length_matches": 2,
+      "expected_length_mm": 50.0
+    }
+  },
+  "warnings": [
+    "dimensions: Bounding dimensions compared with ground truth.",
+    "volume: Value not available for comparison.",
+    "area: Value not available for comparison."
+  ],
+  "next_improvements": [
+    "Calibrate effective_dimensions_mm against the AutoForm reference dimensions.",
+    "Add volume_cm3 and surface_area_cm2 to ground truth when validated values are available."
+  ]
+}

@@ -90,6 +90,14 @@ Generate and print the real analysis JSON:
 
 This writes `tests/output/staffa_test_1_actual.json` and prints the formatted JSON to the console.
 
+Generate the validation report against the AutoForm ground truth:
+
+```powershell
+.\scripts\evaluate_staffa.ps1
+```
+
+This compares `tests/output/staffa_test_1_actual.json` with `tests/ground_truth/staffa_test_1_expected.json`, writes `tests/output/staffa_test_1_evaluation.json`, and prints the formatted report.
+
 ## Test Fixtures
 
 `tests/test_files/` is intentionally kept ready for real CAD files such as `STAFFA TEST 1.stp`. Ground-truth JSON files can be added under `tests/ground_truth/`.
