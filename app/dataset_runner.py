@@ -102,13 +102,14 @@ def evaluate_dataset(dataset_dir: Path = DEFAULT_DATASET_DIR) -> list[dict[str, 
     return reports
 
 
-def quote_dataset(dataset_dir: Path = DEFAULT_DATASET_DIR, quantity: int = 1) -> list[dict[str, Any]]:
+def quote_dataset(dataset_dir: Path = DEFAULT_DATASET_DIR, quantity: int = 1, material: str | None = None) -> list[dict[str, Any]]:
     quotes = []
     for case_dir in iter_dataset_cases(dataset_dir):
         quote = quote_files(
             case_dir / "actual.json",
             case_dir / "quote.json",
             quantity=quantity,
+            material=material,
         )
         quotes.append({"case": case_dir.name, "quote": quote})
     return quotes
@@ -119,14 +120,18 @@ def main() -> None:
     parser.add_argument("command", choices=("analyze", "evaluate", "quote"))
     parser.add_argument("--dataset-dir", type=Path, default=DEFAULT_DATASET_DIR)
     parser.add_argument("--quantity", type=int, default=1)
+    parser.add_argument("--material", type=str, default=None)
     args = parser.parse_args()
 
-    if args.command == "analyze":
-        result = analyze_dataset(args.dataset_dir, quantity=args.quantity)
-    elif args.command == "evaluate":
-        result = evaluate_dataset(args.dataset_dir)
-    else:
-        result = quote_dataset(args.dataset_dir, quantity=args.quantity)
+    try:
+        if args.command == "analyze":
+            result = analyze_dataset(args.dataset_dir, quantity=args.quantity)
+        elif args.command == "evaluate":
+            result = evaluate_dataset(args.dataset_dir)
+        else:
+            result = quote_dataset(args.dataset_dir, quantity=args.quantity, material=args.material)
+    except ValueError as exc:
+        parser.exit(2, f"error: {exc}\n")
 
     print(json.dumps(result, indent=2, ensure_ascii=False))
 

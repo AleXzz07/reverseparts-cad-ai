@@ -79,6 +79,11 @@ def _round_money(value: float) -> float:
     return round(value, 2)
 
 
+def _material_error(material_name: str, materials: dict[str, dict[str, float]]) -> ValueError:
+    available = ", ".join(sorted(materials)) or "none"
+    return ValueError(f"Materiale non presente in config/materials.json: {material_name}. Materiali disponibili: {available}.")
+
+
 def _feature_count(cad_data: dict[str, Any], group: str) -> int:
     return len(cad_data.get("holes", {}).get(group, []) or [])
 
@@ -263,6 +268,7 @@ def quote_from_cad(
     cad_data: dict[str, Any],
     *,
     quantity: int = 1,
+    material: str | None = None,
     parameters: QuoteParameters | None = None,
     materials: dict[str, dict[str, float]] | None = None,
     pricing_config_path: Path = DEFAULT_PRICING_CONFIG_PATH,
@@ -278,9 +284,19 @@ def quote_from_cad(
     bends_count_available = _bend_count_is_declared(cad_data)
     total_cut_length_mm = cad_data.get("cutting", {}).get("total_cut_length_mm")
 
-    material_name = cad_data.get("declared_material")
-    material_config = materials.get(str(material_name).lower()) if material_name else None
-    estimated_weight_kg = cad_data.get("estimated_weight_kg")
+    material_name = material or cad_data.get("declared_material")
+    material_key = str(material_name).lower() if material_name else None
+    material_config = materials.get(material_key or "") if material_key else None
+    if material is not None and material_config is None:
+        raise _material_error(str(material), materials)
+
+    volume_cm3 = cad_data.get("volume_cm3")
+    if material_config is not None and volume_cm3 is not None:
+        estimated_weight_kg = round(float(volume_cm3) * material_config["density_g_cm3"] / 1000, 3)
+        weight_source = "recalculated_from_volume"
+    else:
+        estimated_weight_kg = cad_data.get("estimated_weight_kg")
+        weight_source = "cad_estimate" if estimated_weight_kg is not None else None
     thickness_mm = cad_data.get("detected_thickness_mm") or cad_data.get("declared_thickness_mm")
     warnings = [
         "Preventivo preliminare: parametri economici caricati da config e da validare con dati aziendali reali.",
@@ -290,6 +306,8 @@ def quote_from_cad(
         warnings.append("Materiale non presente in config/materials.json: costo materiale non calcolabile in modo affidabile.")
     if estimated_weight_kg is None:
         warnings.append("Peso stimato non disponibile: costo materiale non calcolabile in modo affidabile.")
+    if material_config is not None and volume_cm3 is None:
+        warnings.append("Volume CAD non disponibile: peso materiale mantenuto dalla stima CAD originale.")
     if thickness_mm is None:
         warnings.append("Spessore non disponibile: complessita processo meno affidabile.")
     if not bends_count_available:
@@ -344,10 +362,11 @@ def quote_from_cad(
         "process_plan": _process_plan(bends),
         "material": {
             "name": material_name,
-            "thickness_mm": thickness_mm,
-            "estimated_weight_kg": estimated_weight_kg,
             "density_g_cm3": material_config["density_g_cm3"] if material_config else None,
             "cost_eur_kg": material_config["cost_eur_kg"] if material_config else None,
+            "estimated_weight_kg": estimated_weight_kg,
+            "weight_source": weight_source,
+            "thickness_mm": thickness_mm,
         },
         "features_summary": {
             "circular_holes": circular_holes,
@@ -387,6 +406,7 @@ def quote_files(
     actual_path: Path,
     output_path: Path,
     quantity: int = 1,
+    material: str | None = None,
     pricing_config_path: Path = DEFAULT_PRICING_CONFIG_PATH,
     materials_config_path: Path = DEFAULT_MATERIALS_CONFIG_PATH,
 ) -> dict[str, Any]:
@@ -394,6 +414,7 @@ def quote_files(
     quote = quote_from_cad(
         cad_data,
         quantity=quantity,
+        material=material,
         pricing_config_path=pricing_config_path,
         materials_config_path=materials_config_path,
     )
@@ -407,17 +428,22 @@ def main() -> None:
     parser.add_argument("--actual", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--quantity", type=int, default=1)
+    parser.add_argument("--material", type=str, default=None)
     parser.add_argument("--pricing-config", type=Path, default=DEFAULT_PRICING_CONFIG_PATH)
     parser.add_argument("--materials-config", type=Path, default=DEFAULT_MATERIALS_CONFIG_PATH)
     args = parser.parse_args()
 
-    quote = quote_files(
-        args.actual,
-        args.output,
-        quantity=args.quantity,
-        pricing_config_path=args.pricing_config,
-        materials_config_path=args.materials_config,
-    )
+    try:
+        quote = quote_files(
+            args.actual,
+            args.output,
+            quantity=args.quantity,
+            material=args.material,
+            pricing_config_path=args.pricing_config,
+            materials_config_path=args.materials_config,
+        )
+    except ValueError as exc:
+        parser.exit(2, f"error: {exc}\n")
     print(json.dumps(quote, indent=2, ensure_ascii=False))
 
 

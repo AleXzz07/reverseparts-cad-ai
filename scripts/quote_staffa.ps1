@@ -1,6 +1,8 @@
 param(
     [Parameter(Position = 0)]
-    [int]$Quantity = 1
+    [int]$Quantity = 1,
+
+    [string]$Material = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -20,13 +22,20 @@ if (-not (Test-Path $ActualPath)) {
     }
 }
 
+$QuoteArgs = @(
+    "--actual", "/workspace/tests/output/staffa_test_1_actual.json",
+    "--output", "/workspace/tests/output/staffa_test_1_quote.json",
+    "--quantity", "$Quantity"
+)
+
+if (-not [string]::IsNullOrWhiteSpace($Material)) {
+    $QuoteArgs += @("--material", $Material)
+}
+
 docker run --rm `
     -v "${ProjectRoot}:/workspace" `
     -w /workspace `
     reverseparts-cad-ai `
-    python3 -m app.quote_engine `
-    --actual /workspace/tests/output/staffa_test_1_actual.json `
-    --output /workspace/tests/output/staffa_test_1_quote.json `
-    --quantity $Quantity
+    python3 -m app.quote_engine @QuoteArgs
 
 exit $LASTEXITCODE

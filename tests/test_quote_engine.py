@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from app.quote_engine import quote_files, quote_from_cad
 
 
@@ -25,6 +27,7 @@ def test_quote_from_cad_staffa_test_1():
     assert quote["material"]["name"] == "alluminio"
     assert quote["material"]["thickness_mm"] == 2.0
     assert quote["material"]["estimated_weight_kg"] == 0.05
+    assert quote["material"]["weight_source"] == "recalculated_from_volume"
     assert quote["material"]["cost_eur_kg"] == 6.0
     assert quote["features_summary"] == {
         "circular_holes": 4,
@@ -80,6 +83,30 @@ def test_quote_from_cad_uses_requested_quantity():
     assert quote["estimated_internal_cost_eur"]["unit_cost"] == 6.28
     assert quote["commercial_guidance"]["minimum_order_applied"] is False
     assert quote["commercial_guidance"]["minimum_billable_price_eur"] == 232.25
+
+
+def test_quote_from_cad_uses_selected_material():
+    cad_data = _cad_data_without_cutting()
+
+    quote = quote_from_cad(cad_data, quantity=37, material="acciaio")
+
+    assert quote["material"]["name"] == "acciaio"
+    assert quote["material"]["density_g_cm3"] == 7.85
+    assert quote["material"]["cost_eur_kg"] == 2.0
+    assert quote["material"]["estimated_weight_kg"] == 0.145
+    assert quote["material"]["weight_source"] == "recalculated_from_volume"
+    assert quote["estimated_internal_cost_eur"]["material"] == 10.73
+    assert quote["config_used"]["material"] == {
+        "density_g_cm3": 7.85,
+        "cost_eur_kg": 2.0,
+    }
+
+
+def test_quote_from_cad_rejects_unknown_material():
+    cad_data = _cad_data_without_cutting()
+
+    with pytest.raises(ValueError, match="Materiale non presente in config/materials.json: titanio"):
+        quote_from_cad(cad_data, material="titanio")
 
 
 def test_quote_uses_cut_length_when_available():

@@ -112,12 +112,17 @@ Examples with requested quantities:
 .\scripts\quote_staffa.ps1 -Quantity 1
 .\scripts\quote_staffa.ps1 -Quantity 25
 .\scripts\quote_staffa.ps1 -Quantity 100
+.\scripts\quote_staffa.ps1 -Quantity 37 -Material alluminio
+.\scripts\quote_staffa.ps1 -Quantity 37 -Material acciaio
+.\scripts\quote_staffa.ps1 -Quantity 37 -Material inox
 ```
 
 This reads `tests/output/staffa_test_1_actual.json`, writes `tests/output/staffa_test_1_quote.json`, and prints a preliminary internal-cost estimate based on:
 
 - `config/pricing_default.json`
 - `config/materials.json`
+
+Use `-Material` to choose a material key from `config/materials.json`. If the selected material exists and `volume_cm3` is available, the quote recalculates weight as `volume_cm3 * density_g_cm3 / 1000` and marks `material.weight_source` as `recalculated_from_volume`. Unknown materials return a clear error with the available material keys.
 
 The quote separates `estimated_internal_cost_eur` from `commercial_guidance`. The engine shows the configured minimum order value and minimum billable guidance, but it does not apply margin or decide the final commercial price. When CAD analysis provides `cutting.total_cut_length_mm`, laser time uses the configured cut speed, pierce time, pierce count, and extra handling time per piece; otherwise the quote falls back to the feature-based heuristic. The resulting quote includes `laser_details` with `cut_length_mm`, `cut_speed_mm_min`, `pierce_count`, `pierce_time_sec`, and `laser_time_min_per_piece`.
 
