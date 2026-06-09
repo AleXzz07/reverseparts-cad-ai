@@ -177,3 +177,11 @@ def test_detect_polygonal_holes_staffa_test_1():
     ]
 
     assert len(expected_dimension_holes) >= 2
+
+
+def test_detect_sheet_thickness_staffa_test_1():
+    payload = _analyze_staffa_test_1()
+
+    assert payload["detected_thickness_mm"] is not None
+    assert abs(payload["detected_thickness_mm"] - 2.0) <= 0.1
+    assert payload["thickness_confidence"] in {"medium", "high"}

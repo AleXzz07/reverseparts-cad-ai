@@ -88,6 +88,10 @@ def _candidate_depth_from_bbox(bbox, axis: tuple[float, float, float]) -> float:
     return sum(abs(component) * length for component, length in zip(axis, lengths))
 
 
+def _plane_offset(normal: tuple[float, float, float], point: tuple[float, float, float]) -> float:
+    return _dot(normal, point)
+
+
 def _is_duplicate_hole(candidate: HoleFeature, existing: HoleFeature) -> bool:
     if candidate.diameter_mm is None or existing.diameter_mm is None:
         return False
@@ -424,6 +428,70 @@ def _detect_polygonal_holes(shape) -> list[HoleFeature]:
     return polygons
 
 
+def _detect_sheet_thickness(
+    shape,
+    declared_thickness_mm: float | None = None,
+) -> tuple[float | None, str]:
+    planes = []
+    for face in shape.Faces:
+        surface = face.Surface
+        if getattr(surface, "TypeId", "") != "Part::GeomPlane":
+            continue
+
+        normal = _normalize_vector(surface.Axis)
+        point = _vector_tuple(surface.Position)
+        planes.append(
+            {
+                "area": float(face.Area),
+                "normal": normal,
+                "offset": _plane_offset(normal, point),
+            }
+        )
+
+    candidates: list[float] = []
+    for left_index, left in enumerate(planes):
+        for right in planes[left_index + 1 :]:
+            alignment = _dot(left["normal"], right["normal"])
+            if abs(alignment) < 0.98:
+                continue
+
+            distance = (
+                abs(left["offset"] - right["offset"])
+                if alignment > 0
+                else abs(left["offset"] + right["offset"])
+            )
+            if not 1.0 <= distance <= 5.0:
+                continue
+
+            area_ratio = min(left["area"], right["area"]) / max(
+                left["area"],
+                right["area"],
+            )
+            if area_ratio < 0.85:
+                continue
+
+            candidates.append(round(distance, 2))
+
+    if not candidates:
+        return None, "low"
+
+    grouped: dict[float, int] = {}
+    for candidate in candidates:
+        grouped[candidate] = grouped.get(candidate, 0) + 1
+
+    dominant_value, dominant_count = max(
+        grouped.items(),
+        key=lambda item: (item[1], -item[0]),
+    )
+    confidence = "medium"
+    if dominant_count >= 2:
+        confidence = "high"
+    if declared_thickness_mm is not None and abs(dominant_value - declared_thickness_mm) <= 0.25:
+        confidence = "high"
+
+    return dominant_value, confidence
+
+
 def _base_response(
     *,
     source_file: str,
@@ -497,6 +565,13 @@ def analyze_step_file(
                 response.volume_cm3 * density_g_cm3 * max(quantity, 1) / 1000.0
             )
 
+        detected_thickness, thickness_confidence = _detect_sheet_thickness(
+            shape,
+            declared_thickness_mm=declared_thickness_mm,
+        )
+        response.detected_thickness_mm = detected_thickness
+        response.thickness_confidence = thickness_confidence
+
         response.holes.circular = _detect_circular_holes(shape)
         response.holes.elongated = _detect_elongated_holes(shape)
         response.holes.polygonal = _detect_polygonal_holes(shape)
@@ -513,11 +588,12 @@ def analyze_step_file(
             )
 
         response.warnings.extend(
-            [
-                "Bend detection is not reported because this implementation has no high-confidence sheet-metal classifier yet.",
-                "Detected thickness is not reported because wall-thickness inference is not yet reliable.",
-            ]
+            ["Bend detection is not reported because this implementation has no high-confidence sheet-metal classifier yet."]
         )
+        if response.detected_thickness_mm is None:
+            response.warnings.append(
+                "Detected thickness is not reported because wall-thickness inference is not reliable for this model."
+            )
     except Exception as exc:
         response.warnings.append(f"FreeCAD failed to parse the STEP file: {exc}")
     finally:

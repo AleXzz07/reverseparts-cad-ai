@@ -51,6 +51,7 @@ class CadAnalysisResponse(BaseModel):
     density_g_cm3: float | None = None
     declared_thickness_mm: float | None = None
     detected_thickness_mm: float | None = None
+    thickness_confidence: Confidence = "low"
     holes: Holes = Field(default_factory=Holes)
     bends: Bends = Field(default_factory=Bends)
     complexity_score: Literal["unknown", "low", "medium", "high"] = "unknown"

@@ -17,7 +17,8 @@
   "declared_material": "alluminio",
   "density_g_cm3": 2.7,
   "declared_thickness_mm": 2.0,
-  "detected_thickness_mm": null,
+  "detected_thickness_mm": 2.0,
+  "thickness_confidence": "high",
   "holes": {
     "circular": [
       {
@@ -217,7 +218,6 @@
   },
   "complexity_score": "unknown",
   "warnings": [
-    "Bend detection is not reported because this implementation has no high-confidence sheet-metal classifier yet.",
-    "Detected thickness is not reported because wall-thickness inference is not yet reliable."
+    "Bend detection is not reported because this implementation has no high-confidence sheet-metal classifier yet."
   ]
 }
