@@ -98,6 +98,14 @@ Generate the validation report against the AutoForm ground truth:
 
 This compares `tests/output/staffa_test_1_actual.json` with `tests/ground_truth/staffa_test_1_expected.json`, writes `tests/output/staffa_test_1_evaluation.json`, and prints the formatted report.
 
+Generate the preliminary process/cost quote:
+
+```powershell
+.\scripts\quote_staffa.ps1
+```
+
+This reads `tests/output/staffa_test_1_actual.json`, writes `tests/output/staffa_test_1_quote.json`, and prints an indicative quote based on configurable placeholder rates in `app/quote_engine.py`.
+
 ## Test Fixtures
 
 `tests/test_files/` is intentionally kept ready for real CAD files such as `STAFFA TEST 1.stp`. Ground-truth JSON files can be added under `tests/ground_truth/`.
