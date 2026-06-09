@@ -11,7 +11,6 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_PRICING_CONFIG_PATH = PROJECT_ROOT / "config" / "pricing_default.json"
 DEFAULT_MATERIALS_CONFIG_PATH = PROJECT_ROOT / "config" / "materials.json"
 STANDARD_QUANTITY_BREAKS = (1, 5, 10, 25, 50, 100)
-LASER_CUTTING_SPEED_MM_MIN = 100.0
 
 
 @dataclass(frozen=True)
@@ -20,6 +19,9 @@ class QuoteParameters:
     bending_rate_eur_min: float
     cad_check_rate_eur_min: float
     handling_rate_eur_min: float
+    laser_cut_speed_mm_min: float
+    laser_pierce_time_sec: float
+    laser_extra_handling_sec_per_piece: float
     setup_cost_eur: float
     minimum_order_value_eur: float
 
@@ -31,6 +33,9 @@ def load_pricing_config(path: Path = DEFAULT_PRICING_CONFIG_PATH) -> QuoteParame
         bending_rate_eur_min=float(data["bending_rate_eur_min"]),
         cad_check_rate_eur_min=float(data["cad_check_rate_eur_min"]),
         handling_rate_eur_min=float(data["handling_rate_eur_min"]),
+        laser_cut_speed_mm_min=float(data["laser_cut_speed_mm_min"]),
+        laser_pierce_time_sec=float(data["laser_pierce_time_sec"]),
+        laser_extra_handling_sec_per_piece=float(data["laser_extra_handling_sec_per_piece"]),
         setup_cost_eur=float(data["setup_cost_eur"]),
         minimum_order_value_eur=float(data["minimum_order_value_eur"]),
     )
@@ -53,6 +58,9 @@ def _parameters_to_dict(parameters: QuoteParameters) -> dict[str, float]:
         "bending_rate_eur_min": parameters.bending_rate_eur_min,
         "cad_check_rate_eur_min": parameters.cad_check_rate_eur_min,
         "handling_rate_eur_min": parameters.handling_rate_eur_min,
+        "laser_cut_speed_mm_min": parameters.laser_cut_speed_mm_min,
+        "laser_pierce_time_sec": parameters.laser_pierce_time_sec,
+        "laser_extra_handling_sec_per_piece": parameters.laser_extra_handling_sec_per_piece,
         "setup_cost_eur": parameters.setup_cost_eur,
         "minimum_order_value_eur": parameters.minimum_order_value_eur,
     }
@@ -71,6 +79,10 @@ def _bend_count(cad_data: dict[str, Any]) -> int:
     if count is not None:
         return int(count)
     return len(cad_data.get("bends", {}).get("items", []) or [])
+
+
+def _pierce_count(circular_holes: int, elongated_holes: int, polygonal_holes: int) -> int:
+    return 1 + circular_holes + elongated_holes + polygonal_holes
 
 
 def _process_plan(bends: int) -> list[str]:
@@ -116,8 +128,21 @@ def _estimate_amounts(
     total_cut_length_mm: float | None,
 ) -> dict[str, Any]:
     if total_cut_length_mm is not None and total_cut_length_mm > 0:
-        laser_cutting = round(total_cut_length_mm / LASER_CUTTING_SPEED_MM_MIN * quantity, 2)
+        pierce_count = _pierce_count(circular_holes, elongated_holes, polygonal_holes)
+        laser_time_min_per_piece = (
+            total_cut_length_mm / parameters.laser_cut_speed_mm_min
+            + pierce_count * parameters.laser_pierce_time_sec / 60
+            + parameters.laser_extra_handling_sec_per_piece / 60
+        )
+        laser_cutting = round(laser_time_min_per_piece * quantity, 2)
         laser_time_source = "cut_length"
+        laser_details = {
+            "cut_length_mm": total_cut_length_mm,
+            "cut_speed_mm_min": parameters.laser_cut_speed_mm_min,
+            "pierce_count": pierce_count,
+            "pierce_time_sec": parameters.laser_pierce_time_sec,
+            "laser_time_min_per_piece": round(laser_time_min_per_piece, 4),
+        }
     else:
         laser_feature_factor = (
             circular_holes * 0.12
@@ -126,6 +151,13 @@ def _estimate_amounts(
         )
         laser_cutting = round((2.0 + laser_feature_factor) * quantity, 2)
         laser_time_source = "fallback_feature_based"
+        laser_details = {
+            "cut_length_mm": None,
+            "cut_speed_mm_min": parameters.laser_cut_speed_mm_min,
+            "pierce_count": None,
+            "pierce_time_sec": parameters.laser_pierce_time_sec,
+            "laser_time_min_per_piece": None,
+        }
 
     cad_check = 3.0
     bending = round((0.8 + bends * 0.55) * quantity if bends else 0.0, 2)
@@ -185,6 +217,7 @@ def _estimate_amounts(
             "margin_applied": False,
             "note": "Il margine commerciale deve essere deciso dall'azienda.",
         },
+        "laser_details": laser_details,
     }
 
 
@@ -257,6 +290,7 @@ def quote_from_cad(
                     "minimum_order_applied": break_amounts["commercial_guidance"]["minimum_order_applied"],
                     "minimum_billable_price_eur": break_amounts["commercial_guidance"]["minimum_billable_price_eur"],
                 },
+                "laser_details": break_amounts["laser_details"],
             }
         )
 

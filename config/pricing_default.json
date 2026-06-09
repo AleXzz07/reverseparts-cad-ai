@@ -3,6 +3,9 @@
   "bending_rate_eur_min": 0.9,
   "cad_check_rate_eur_min": 0.8,
   "handling_rate_eur_min": 0.6,
+  "laser_cut_speed_mm_min": 2500,
+  "laser_pierce_time_sec": 0.8,
+  "laser_extra_handling_sec_per_piece": 10,
   "setup_cost_eur": 15.0,
   "minimum_order_value_eur": 40.0
 }

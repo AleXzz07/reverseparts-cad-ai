@@ -27,22 +27,22 @@
   },
   "estimated_times_min": {
     "cad_check": 3.0,
-    "laser_cutting": 5.18,
+    "laser_cutting": 0.49,
     "bending": 1.9,
     "handling": 1.9,
-    "total": 11.98,
+    "total": 7.29,
     "laser_time_source": "cut_length",
     "laser_cut_length_mm": 517.66
   },
   "estimated_internal_cost_eur": {
     "material": 0.3,
-    "laser": 6.22,
+    "laser": 0.59,
     "bending": 1.71,
     "cad_check": 2.4,
     "handling": 1.14,
     "setup": 15.0,
-    "total": 26.77,
-    "unit_cost": 26.77
+    "total": 21.14,
+    "unit_cost": 21.14
   },
   "commercial_guidance": {
     "minimum_order_value_eur": 40.0,
@@ -51,71 +51,120 @@
     "margin_applied": false,
     "note": "Il margine commerciale deve essere deciso dall'azienda."
   },
+  "laser_details": {
+    "cut_length_mm": 517.66,
+    "cut_speed_mm_min": 2500.0,
+    "pierce_count": 9,
+    "pierce_time_sec": 0.8,
+    "laser_time_min_per_piece": 0.4937
+  },
   "quantity_breakdown": [
     {
       "quantity": 1,
       "estimated_internal_cost_eur": {
-        "total": 26.77,
-        "unit_cost": 26.77
+        "total": 21.14,
+        "unit_cost": 21.14
       },
       "commercial_guidance": {
         "minimum_order_applied": true,
         "minimum_billable_price_eur": 40.0
+      },
+      "laser_details": {
+        "cut_length_mm": 517.66,
+        "cut_speed_mm_min": 2500.0,
+        "pierce_count": 9,
+        "pierce_time_sec": 0.8,
+        "laser_time_min_per_piece": 0.4937
       }
     },
     {
       "quantity": 5,
       "estimated_internal_cost_eur": {
-        "total": 60.61,
-        "unit_cost": 12.12
+        "total": 32.51,
+        "unit_cost": 6.5
       },
       "commercial_guidance": {
-        "minimum_order_applied": false,
-        "minimum_billable_price_eur": 60.61
+        "minimum_order_applied": true,
+        "minimum_billable_price_eur": 40.0
+      },
+      "laser_details": {
+        "cut_length_mm": 517.66,
+        "cut_speed_mm_min": 2500.0,
+        "pierce_count": 9,
+        "pierce_time_sec": 0.8,
+        "laser_time_min_per_piece": 0.4937
       }
     },
     {
       "quantity": 10,
       "estimated_internal_cost_eur": {
-        "total": 102.92,
-        "unit_cost": 10.29
+        "total": 46.73,
+        "unit_cost": 4.67
       },
       "commercial_guidance": {
         "minimum_order_applied": false,
-        "minimum_billable_price_eur": 102.92
+        "minimum_billable_price_eur": 46.73
+      },
+      "laser_details": {
+        "cut_length_mm": 517.66,
+        "cut_speed_mm_min": 2500.0,
+        "pierce_count": 9,
+        "pierce_time_sec": 0.8,
+        "laser_time_min_per_piece": 0.4937
       }
     },
     {
       "quantity": 25,
       "estimated_internal_cost_eur": {
-        "total": 229.84,
-        "unit_cost": 9.19
+        "total": 89.36,
+        "unit_cost": 3.57
       },
       "commercial_guidance": {
         "minimum_order_applied": false,
-        "minimum_billable_price_eur": 229.84
+        "minimum_billable_price_eur": 89.36
+      },
+      "laser_details": {
+        "cut_length_mm": 517.66,
+        "cut_speed_mm_min": 2500.0,
+        "pierce_count": 9,
+        "pierce_time_sec": 0.8,
+        "laser_time_min_per_piece": 0.4937
       }
     },
     {
       "quantity": 50,
       "estimated_internal_cost_eur": {
-        "total": 441.4,
-        "unit_cost": 8.83
+        "total": 160.43,
+        "unit_cost": 3.21
       },
       "commercial_guidance": {
         "minimum_order_applied": false,
-        "minimum_billable_price_eur": 441.4
+        "minimum_billable_price_eur": 160.43
+      },
+      "laser_details": {
+        "cut_length_mm": 517.66,
+        "cut_speed_mm_min": 2500.0,
+        "pierce_count": 9,
+        "pierce_time_sec": 0.8,
+        "laser_time_min_per_piece": 0.4937
       }
     },
     {
       "quantity": 100,
       "estimated_internal_cost_eur": {
-        "total": 864.49,
-        "unit_cost": 8.64
+        "total": 302.54,
+        "unit_cost": 3.03
       },
       "commercial_guidance": {
         "minimum_order_applied": false,
-        "minimum_billable_price_eur": 864.49
+        "minimum_billable_price_eur": 302.54
+      },
+      "laser_details": {
+        "cut_length_mm": 517.66,
+        "cut_speed_mm_min": 2500.0,
+        "pierce_count": 9,
+        "pierce_time_sec": 0.8,
+        "laser_time_min_per_piece": 0.4937
       }
     }
   ],
@@ -127,6 +176,9 @@
       "bending_rate_eur_min": 0.9,
       "cad_check_rate_eur_min": 0.8,
       "handling_rate_eur_min": 0.6,
+      "laser_cut_speed_mm_min": 2500.0,
+      "laser_pierce_time_sec": 0.8,
+      "laser_extra_handling_sec_per_piece": 10.0,
       "setup_cost_eur": 15.0,
       "minimum_order_value_eur": 40.0
     },

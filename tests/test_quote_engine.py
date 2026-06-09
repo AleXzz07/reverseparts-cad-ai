@@ -45,8 +45,13 @@ def test_quote_from_cad_staffa_test_1():
     assert quote["commercial_guidance"]["note"] == "Il margine commerciale deve essere deciso dall'azienda."
     assert quote["config_used"]["pricing"]["minimum_order_value_eur"] == 40.0
     assert "margin_percent" not in quote["config_used"]["pricing"]
+    assert quote["config_used"]["pricing"]["laser_cut_speed_mm_min"] == 2500.0
+    assert quote["config_used"]["pricing"]["laser_pierce_time_sec"] == 0.8
+    assert quote["config_used"]["pricing"]["laser_extra_handling_sec_per_piece"] == 10.0
     assert quote["config_used"]["material"]["cost_eur_kg"] == 6.0
     assert quote["estimated_times_min"]["laser_time_source"] == "fallback_feature_based"
+    assert quote["laser_details"]["cut_length_mm"] is None
+    assert quote["laser_details"]["pierce_count"] is None
     assert [item["quantity"] for item in quote["quantity_breakdown"]] == [1, 5, 10, 25, 50, 100]
     assert quote["quantity_breakdown"][0]["estimated_internal_cost_eur"]["unit_cost"] == 25.09
     assert quote["quantity_breakdown"][-1]["estimated_internal_cost_eur"]["unit_cost"] < 10.0
@@ -80,9 +85,16 @@ def test_quote_uses_cut_length_when_available():
 
     assert quote["estimated_times_min"]["laser_time_source"] == "cut_length"
     assert quote["estimated_times_min"]["laser_cut_length_mm"] == 500.0
-    assert quote["estimated_times_min"]["laser_cutting"] == 5.0
-    assert quote["estimated_internal_cost_eur"]["laser"] == 6.0
-    assert quote["estimated_internal_cost_eur"]["total"] == 26.55
+    assert quote["estimated_times_min"]["laser_cutting"] == 0.49
+    assert quote["laser_details"] == {
+        "cut_length_mm": 500.0,
+        "cut_speed_mm_min": 2500.0,
+        "pierce_count": 9,
+        "pierce_time_sec": 0.8,
+        "laser_time_min_per_piece": 0.4867,
+    }
+    assert quote["estimated_internal_cost_eur"]["laser"] == 0.59
+    assert quote["estimated_internal_cost_eur"]["total"] == 21.14
 
 
 def test_quote_files_writes_report(tmp_path):
