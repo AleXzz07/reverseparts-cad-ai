@@ -22,6 +22,9 @@ class QuoteParameters:
     laser_cut_speed_mm_min: float
     laser_pierce_time_sec: float
     laser_extra_handling_sec_per_piece: float
+    bending_setup_time_min: float
+    bending_time_sec_per_bend: float
+    bending_extra_handling_sec_per_piece: float
     setup_cost_eur: float
     minimum_order_value_eur: float
 
@@ -36,6 +39,9 @@ def load_pricing_config(path: Path = DEFAULT_PRICING_CONFIG_PATH) -> QuoteParame
         laser_cut_speed_mm_min=float(data["laser_cut_speed_mm_min"]),
         laser_pierce_time_sec=float(data["laser_pierce_time_sec"]),
         laser_extra_handling_sec_per_piece=float(data["laser_extra_handling_sec_per_piece"]),
+        bending_setup_time_min=float(data["bending_setup_time_min"]),
+        bending_time_sec_per_bend=float(data["bending_time_sec_per_bend"]),
+        bending_extra_handling_sec_per_piece=float(data["bending_extra_handling_sec_per_piece"]),
         setup_cost_eur=float(data["setup_cost_eur"]),
         minimum_order_value_eur=float(data["minimum_order_value_eur"]),
     )
@@ -61,6 +67,9 @@ def _parameters_to_dict(parameters: QuoteParameters) -> dict[str, float]:
         "laser_cut_speed_mm_min": parameters.laser_cut_speed_mm_min,
         "laser_pierce_time_sec": parameters.laser_pierce_time_sec,
         "laser_extra_handling_sec_per_piece": parameters.laser_extra_handling_sec_per_piece,
+        "bending_setup_time_min": parameters.bending_setup_time_min,
+        "bending_time_sec_per_bend": parameters.bending_time_sec_per_bend,
+        "bending_extra_handling_sec_per_piece": parameters.bending_extra_handling_sec_per_piece,
         "setup_cost_eur": parameters.setup_cost_eur,
         "minimum_order_value_eur": parameters.minimum_order_value_eur,
     }
@@ -79,6 +88,10 @@ def _bend_count(cad_data: dict[str, Any]) -> int:
     if count is not None:
         return int(count)
     return len(cad_data.get("bends", {}).get("items", []) or [])
+
+
+def _bend_count_is_declared(cad_data: dict[str, Any]) -> bool:
+    return cad_data.get("bends", {}).get("count") is not None
 
 
 def _pierce_count(circular_holes: int, elongated_holes: int, polygonal_holes: int) -> int:
@@ -122,6 +135,7 @@ def _estimate_amounts(
     elongated_holes: int,
     polygonal_holes: int,
     bends: int,
+    bends_count_available: bool,
     estimated_weight_kg: float | None,
     material_config: dict[str, float] | None,
     parameters: QuoteParameters,
@@ -160,7 +174,30 @@ def _estimate_amounts(
         }
 
     cad_check = 3.0
-    bending = round((0.8 + bends * 0.55) * quantity if bends else 0.0, 2)
+    if bends_count_available:
+        bending_time_min_per_piece = (
+            bends * parameters.bending_time_sec_per_bend
+            + parameters.bending_extra_handling_sec_per_piece
+        ) / 60
+        bending = round(parameters.bending_setup_time_min + bending_time_min_per_piece * quantity, 2)
+        bending_details = {
+            "bends_count": bends,
+            "bending_setup_time_min": parameters.bending_setup_time_min,
+            "bending_time_sec_per_bend": parameters.bending_time_sec_per_bend,
+            "bending_extra_handling_sec_per_piece": parameters.bending_extra_handling_sec_per_piece,
+            "bending_time_min_per_piece": round(bending_time_min_per_piece, 4),
+            "bending_time_total_min": bending,
+        }
+    else:
+        bending = round((0.8 + bends * 0.55) * quantity if bends else 0.0, 2)
+        bending_details = {
+            "bends_count": None,
+            "bending_setup_time_min": None,
+            "bending_time_sec_per_bend": None,
+            "bending_extra_handling_sec_per_piece": None,
+            "bending_time_min_per_piece": None,
+            "bending_time_total_min": bending,
+        }
     handling = round(1.5 + 0.4 * quantity, 2)
     total_time = round(cad_check + laser_cutting + bending + handling, 2)
 
@@ -218,6 +255,7 @@ def _estimate_amounts(
             "note": "Il margine commerciale deve essere deciso dall'azienda.",
         },
         "laser_details": laser_details,
+        "bending_details": bending_details,
     }
 
 
@@ -237,6 +275,7 @@ def quote_from_cad(
     elongated_holes = _feature_count(cad_data, "elongated")
     polygonal_holes = _feature_count(cad_data, "polygonal")
     bends = _bend_count(cad_data)
+    bends_count_available = _bend_count_is_declared(cad_data)
     total_cut_length_mm = cad_data.get("cutting", {}).get("total_cut_length_mm")
 
     material_name = cad_data.get("declared_material")
@@ -253,6 +292,8 @@ def quote_from_cad(
         warnings.append("Peso stimato non disponibile: costo materiale non calcolabile in modo affidabile.")
     if thickness_mm is None:
         warnings.append("Spessore non disponibile: complessita processo meno affidabile.")
+    if not bends_count_available:
+        warnings.append("Conteggio pieghe non disponibile: tempo piegatura calcolato con fallback euristico.")
 
     complexity = _complexity(circular_holes, elongated_holes, polygonal_holes, bends)
     amounts = _estimate_amounts(
@@ -261,6 +302,7 @@ def quote_from_cad(
         elongated_holes=elongated_holes,
         polygonal_holes=polygonal_holes,
         bends=bends,
+        bends_count_available=bends_count_available,
         estimated_weight_kg=estimated_weight_kg,
         material_config=material_config,
         parameters=parameters,
@@ -274,6 +316,7 @@ def quote_from_cad(
             elongated_holes=elongated_holes,
             polygonal_holes=polygonal_holes,
             bends=bends,
+            bends_count_available=bends_count_available,
             estimated_weight_kg=estimated_weight_kg,
             material_config=material_config,
             parameters=parameters,
@@ -291,6 +334,7 @@ def quote_from_cad(
                     "minimum_billable_price_eur": break_amounts["commercial_guidance"]["minimum_billable_price_eur"],
                 },
                 "laser_details": break_amounts["laser_details"],
+                "bending_details": break_amounts["bending_details"],
             }
         )
 

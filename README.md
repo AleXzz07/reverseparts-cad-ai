@@ -121,6 +121,8 @@ This reads `tests/output/staffa_test_1_actual.json`, writes `tests/output/staffa
 
 The quote separates `estimated_internal_cost_eur` from `commercial_guidance`. The engine shows the configured minimum order value and minimum billable guidance, but it does not apply margin or decide the final commercial price. When CAD analysis provides `cutting.total_cut_length_mm`, laser time uses the configured cut speed, pierce time, pierce count, and extra handling time per piece; otherwise the quote falls back to the feature-based heuristic. The resulting quote includes `laser_details` with `cut_length_mm`, `cut_speed_mm_min`, `pierce_count`, `pierce_time_sec`, and `laser_time_min_per_piece`.
 
+Bending time uses `bending_setup_time_min` once per order plus a per-piece time based on `bending_time_sec_per_bend` and `bending_extra_handling_sec_per_piece`. If the CAD analysis does not provide `bends.count`, the engine uses the previous heuristic and adds a warning. The quote includes `bending_details` with the configured inputs and calculated per-piece and total bending time.
+
 ## Dataset Multi Pezzo
 
 Real CAD test parts can be organized under `tests/dataset/`, one folder per part:

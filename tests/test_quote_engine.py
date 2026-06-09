@@ -35,8 +35,8 @@ def test_quote_from_cad_staffa_test_1():
     assert quote["cost_drivers"]["complexity"] == "medium"
     assert quote["cost_drivers"]["setup_required"] is True
     assert quote["estimated_times_min"]["total"] > 0
-    assert quote["estimated_internal_cost_eur"]["total"] == 25.09
-    assert quote["estimated_internal_cost_eur"]["unit_cost"] == 25.09
+    assert quote["estimated_internal_cost_eur"]["total"] == 28.47
+    assert quote["estimated_internal_cost_eur"]["unit_cost"] == 28.47
     assert quote["estimated_internal_cost_eur"]["material"] == 0.3
     assert quote["commercial_guidance"]["minimum_order_value_eur"] == 40.0
     assert quote["commercial_guidance"]["minimum_order_applied"] is True
@@ -48,12 +48,23 @@ def test_quote_from_cad_staffa_test_1():
     assert quote["config_used"]["pricing"]["laser_cut_speed_mm_min"] == 2500.0
     assert quote["config_used"]["pricing"]["laser_pierce_time_sec"] == 0.8
     assert quote["config_used"]["pricing"]["laser_extra_handling_sec_per_piece"] == 10.0
+    assert quote["config_used"]["pricing"]["bending_setup_time_min"] == 5.0
+    assert quote["config_used"]["pricing"]["bending_time_sec_per_bend"] == 12.0
+    assert quote["config_used"]["pricing"]["bending_extra_handling_sec_per_piece"] == 15.0
     assert quote["config_used"]["material"]["cost_eur_kg"] == 6.0
     assert quote["estimated_times_min"]["laser_time_source"] == "fallback_feature_based"
     assert quote["laser_details"]["cut_length_mm"] is None
     assert quote["laser_details"]["pierce_count"] is None
+    assert quote["bending_details"] == {
+        "bends_count": 2,
+        "bending_setup_time_min": 5.0,
+        "bending_time_sec_per_bend": 12.0,
+        "bending_extra_handling_sec_per_piece": 15.0,
+        "bending_time_min_per_piece": 0.65,
+        "bending_time_total_min": 5.65,
+    }
     assert [item["quantity"] for item in quote["quantity_breakdown"]] == [1, 5, 10, 25, 50, 100]
-    assert quote["quantity_breakdown"][0]["estimated_internal_cost_eur"]["unit_cost"] == 25.09
+    assert quote["quantity_breakdown"][0]["estimated_internal_cost_eur"]["unit_cost"] == 28.47
     assert quote["quantity_breakdown"][-1]["estimated_internal_cost_eur"]["unit_cost"] < 10.0
     assert quote["confidence"] in {"medium", "high"}
     assert quote["warnings"]
@@ -65,10 +76,10 @@ def test_quote_from_cad_uses_requested_quantity():
     quote = quote_from_cad(cad_data, quantity=37)
 
     assert quote["quantity"] == 37
-    assert quote["estimated_internal_cost_eur"]["total"] == 269.38
-    assert quote["estimated_internal_cost_eur"]["unit_cost"] == 7.28
+    assert quote["estimated_internal_cost_eur"]["total"] == 232.25
+    assert quote["estimated_internal_cost_eur"]["unit_cost"] == 6.28
     assert quote["commercial_guidance"]["minimum_order_applied"] is False
-    assert quote["commercial_guidance"]["minimum_billable_price_eur"] == 269.38
+    assert quote["commercial_guidance"]["minimum_billable_price_eur"] == 232.25
 
 
 def test_quote_uses_cut_length_when_available():
@@ -94,7 +105,28 @@ def test_quote_uses_cut_length_when_available():
         "laser_time_min_per_piece": 0.4867,
     }
     assert quote["estimated_internal_cost_eur"]["laser"] == 0.59
-    assert quote["estimated_internal_cost_eur"]["total"] == 21.14
+    assert quote["estimated_internal_cost_eur"]["bending"] == 5.09
+    assert quote["estimated_internal_cost_eur"]["total"] == 24.52
+
+
+def test_quote_uses_bending_fallback_when_bends_count_is_missing():
+    cad_data = _cad_data_without_cutting()
+    cad_data["bends"]["count"] = None
+
+    quote = quote_from_cad(cad_data)
+
+    assert quote["estimated_times_min"]["bending"] == 1.9
+    assert quote["estimated_internal_cost_eur"]["bending"] == 1.71
+    assert quote["estimated_internal_cost_eur"]["total"] == 25.09
+    assert quote["bending_details"] == {
+        "bends_count": None,
+        "bending_setup_time_min": None,
+        "bending_time_sec_per_bend": None,
+        "bending_extra_handling_sec_per_piece": None,
+        "bending_time_min_per_piece": None,
+        "bending_time_total_min": 1.9,
+    }
+    assert "Conteggio pieghe non disponibile: tempo piegatura calcolato con fallback euristico." in quote["warnings"]
 
 
 def test_quote_files_writes_report(tmp_path):
