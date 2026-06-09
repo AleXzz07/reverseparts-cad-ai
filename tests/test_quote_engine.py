@@ -29,13 +29,15 @@ def test_quote_from_cad_staffa_test_1():
     assert quote["cost_drivers"]["complexity"] == "medium"
     assert quote["cost_drivers"]["setup_required"] is True
     assert quote["estimated_times_min"]["total"] > 0
-    assert quote["estimated_cost_eur"]["total_internal"] > 0
-    assert quote["estimated_cost_eur"]["suggested_price"] > quote["estimated_cost_eur"]["total_internal"]
-    assert quote["estimated_cost_eur"]["price_before_minimum"] == quote["estimated_cost_eur"]["suggested_price"]
-    assert quote["estimated_cost_eur"]["minimum_order_applied"] is True
-    assert quote["estimated_cost_eur"]["final_suggested_price"] == 40.0
-    assert quote["estimated_cost_eur"]["price_note"] == "indicativo"
+    assert quote["estimated_internal_cost_eur"]["total"] == 25.09
+    assert quote["estimated_internal_cost_eur"]["material"] == 0.3
+    assert quote["commercial_guidance"]["minimum_order_value_eur"] == 40.0
+    assert quote["commercial_guidance"]["minimum_order_applied"] is True
+    assert quote["commercial_guidance"]["minimum_billable_price_eur"] == 40.0
+    assert quote["commercial_guidance"]["margin_applied"] is False
+    assert quote["commercial_guidance"]["note"] == "Il margine commerciale deve essere deciso dall'azienda."
     assert quote["config_used"]["pricing"]["minimum_order_value_eur"] == 40.0
+    assert quote["config_used"]["pricing"]["margin_percent"] == 25.0
     assert quote["config_used"]["material"]["cost_eur_kg"] == 6.0
     assert quote["confidence"] in {"medium", "high"}
     assert quote["warnings"]
@@ -50,4 +52,5 @@ def test_quote_files_writes_report(tmp_path):
     assert output_path.exists()
     assert written == quote
     assert written["quantity"] == 3
-    assert written["estimated_cost_eur"]["final_suggested_price"] > 0
+    assert written["estimated_internal_cost_eur"]["total"] > 0
+    assert written["commercial_guidance"]["minimum_billable_price_eur"] > 0

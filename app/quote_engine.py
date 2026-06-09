@@ -127,7 +127,7 @@ def quote_from_cad(
     thickness_mm = cad_data.get("detected_thickness_mm") or cad_data.get("declared_thickness_mm")
     warnings = [
         "Preventivo preliminare: parametri economici caricati da config e da validare con dati aziendali reali.",
-        "Prezzo finale indicativo, non usare come offerta definitiva senza revisione tecnica/commerciale.",
+        "Il motore non applica margine e non decide il prezzo finale commerciale.",
     ]
     if material_config is None:
         warnings.append("Materiale non presente in config/materials.json: costo materiale non calcolabile in modo affidabile.")
@@ -160,12 +160,11 @@ def quote_from_cad(
     setup_cost = _round_money(parameters.setup_cost_eur)
     subtotal = (material_cost or 0.0) + cad_check_cost + laser_cost + bending_cost + handling_cost + setup_cost
     total_internal = _round_money(subtotal)
-    price_before_minimum = _round_money(total_internal * (1.0 + parameters.margin_percent / 100.0))
-    minimum_order_applied = price_before_minimum < parameters.minimum_order_value_eur
-    final_suggested_price = (
+    minimum_order_applied = total_internal < parameters.minimum_order_value_eur
+    minimum_billable_price = (
         _round_money(parameters.minimum_order_value_eur)
         if minimum_order_applied
-        else price_before_minimum
+        else total_internal
     )
 
     return {
@@ -206,19 +205,21 @@ def quote_from_cad(
             "handling": handling,
             "total": total_time,
         },
-        "estimated_cost_eur": {
+        "estimated_internal_cost_eur": {
             "material": material_cost,
-            "cad_check": cad_check_cost,
             "laser": laser_cost,
             "bending": bending_cost,
+            "cad_check": cad_check_cost,
             "handling": handling_cost,
             "setup": setup_cost,
-            "total_internal": total_internal,
-            "suggested_price": price_before_minimum,
-            "price_before_minimum": price_before_minimum,
+            "total": total_internal,
+        },
+        "commercial_guidance": {
+            "minimum_order_value_eur": parameters.minimum_order_value_eur,
             "minimum_order_applied": minimum_order_applied,
-            "final_suggested_price": final_suggested_price,
-            "price_note": "indicativo",
+            "minimum_billable_price_eur": minimum_billable_price,
+            "margin_applied": False,
+            "note": "Il margine commerciale deve essere deciso dall'azienda.",
         },
         "config_used": {
             "pricing_config": str(pricing_config_path),

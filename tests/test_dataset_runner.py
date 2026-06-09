@@ -38,3 +38,5 @@ def test_staffa_test_1_dataset_evaluate_and_quote(tmp_path):
     assert evaluation["status"] == "pass"
     assert quote["part_name"] == "STAFFA TEST 1"
     assert quote["features_summary"]["bends"] == 2
+    assert quote["estimated_internal_cost_eur"]["total"] > 0
+    assert quote["commercial_guidance"]["margin_applied"] is False

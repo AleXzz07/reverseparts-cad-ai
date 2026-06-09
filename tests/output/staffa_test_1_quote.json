@@ -31,19 +31,21 @@
     "handling": 1.9,
     "total": 10.58
   },
-  "estimated_cost_eur": {
+  "estimated_internal_cost_eur": {
     "material": 0.3,
-    "cad_check": 2.4,
     "laser": 4.54,
     "bending": 1.71,
+    "cad_check": 2.4,
     "handling": 1.14,
     "setup": 15.0,
-    "total_internal": 25.09,
-    "suggested_price": 31.36,
-    "price_before_minimum": 31.36,
+    "total": 25.09
+  },
+  "commercial_guidance": {
+    "minimum_order_value_eur": 40.0,
     "minimum_order_applied": true,
-    "final_suggested_price": 40.0,
-    "price_note": "indicativo"
+    "minimum_billable_price_eur": 40.0,
+    "margin_applied": false,
+    "note": "Il margine commerciale deve essere deciso dall'azienda."
   },
   "config_used": {
     "pricing_config": "/workspace/config/pricing_default.json",
@@ -65,6 +67,6 @@
   "confidence": "medium",
   "warnings": [
     "Preventivo preliminare: parametri economici caricati da config e da validare con dati aziendali reali.",
-    "Prezzo finale indicativo, non usare come offerta definitiva senza revisione tecnica/commerciale."
+    "Il motore non applica margine e non decide il prezzo finale commerciale."
   ]
 }
