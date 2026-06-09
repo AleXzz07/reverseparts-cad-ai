@@ -290,6 +290,38 @@ def _append_unique_slot(slots: list[HoleFeature], candidate: HoleFeature) -> Non
     slots.append(candidate)
 
 
+def _is_duplicate_polygon(candidate: HoleFeature, existing: HoleFeature) -> bool:
+    if candidate.max_dimension_mm is None or existing.max_dimension_mm is None:
+        return False
+    if candidate.center is None or existing.center is None:
+        return False
+    if candidate.axis is None or existing.axis is None:
+        return False
+
+    return (
+        abs(candidate.max_dimension_mm - existing.max_dimension_mm) <= 0.5
+        and _axis_aligned(tuple(candidate.axis), tuple(existing.axis), tolerance=0.95)
+        and _vector_norm(
+            tuple(left - right for left, right in zip(candidate.center, existing.center))
+        )
+        <= 3.0
+    )
+
+
+def _append_unique_polygon(polygons: list[HoleFeature], candidate: HoleFeature) -> None:
+    for existing in polygons:
+        if _is_duplicate_polygon(candidate, existing):
+            existing.center = _rounded_vector(
+                tuple(
+                    (left + right) / 2.0
+                    for left, right in zip(existing.center or [], candidate.center or [])
+                )
+            )
+            existing.confidence = "high"
+            return
+    polygons.append(candidate)
+
+
 def _detect_elongated_holes(shape) -> list[HoleFeature]:
     slots: list[HoleFeature] = []
     for face in shape.Faces:
@@ -339,6 +371,57 @@ def _detect_elongated_holes(shape) -> list[HoleFeature]:
 
     slots.sort(key=lambda slot: slot.center or [])
     return slots
+
+
+def _detect_polygonal_holes(shape) -> list[HoleFeature]:
+    polygons: list[HoleFeature] = []
+    for face in shape.Faces:
+        surface = face.Surface
+        if getattr(surface, "TypeId", "") != "Part::GeomPlane":
+            continue
+
+        for wire_index, wire in enumerate(face.Wires):
+            if wire_index == 0 or not wire.isClosed():
+                continue
+
+            edges = list(wire.Edges)
+            if len(edges) < 3:
+                continue
+            if any(_curve_type(edge) != "Part::GeomLine" for edge in edges):
+                continue
+
+            max_dimension = float(wire.Length)
+            if not 20.0 <= max_dimension <= 35.0:
+                continue
+
+            bbox = wire.BoundBox
+            bbox_dimensions = Dimensions(
+                x=round(float(bbox.XLength), 3),
+                y=round(float(bbox.YLength), 3),
+                z=round(float(bbox.ZLength), 3),
+            )
+            nonzero_bbox_dimensions = [
+                value
+                for value in (bbox_dimensions.x, bbox_dimensions.y, bbox_dimensions.z)
+                if value is not None and value > 1.0
+            ]
+            if len(nonzero_bbox_dimensions) < 2:
+                continue
+
+            _append_unique_polygon(
+                polygons,
+                HoleFeature(
+                    num_sides=len(edges),
+                    max_dimension_mm=round(max_dimension, 2),
+                    bounding_box_mm=bbox_dimensions,
+                    center=_rounded_vector(_wire_center(wire)),
+                    axis=_rounded_vector(_normalize_vector(surface.Axis)),
+                    confidence="medium",
+                ),
+            )
+
+    polygons.sort(key=lambda polygon: polygon.center or [])
+    return polygons
 
 
 def _base_response(
@@ -416,9 +499,12 @@ def analyze_step_file(
 
         response.holes.circular = _detect_circular_holes(shape)
         response.holes.elongated = _detect_elongated_holes(shape)
+        response.holes.polygonal = _detect_polygonal_holes(shape)
         if len(response.holes.circular) >= 4:
             response.holes.confidence = "medium"
         if len(response.holes.elongated) >= 2:
+            response.holes.confidence = "medium"
+        if len(response.holes.polygonal) >= 2:
             response.holes.confidence = "medium"
 
         if not response.holes.circular:

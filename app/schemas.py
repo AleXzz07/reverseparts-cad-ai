@@ -13,6 +13,9 @@ class Dimensions(BaseModel):
 
 
 class HoleFeature(BaseModel):
+    num_sides: int | None = None
+    max_dimension_mm: float | None = None
+    bounding_box_mm: Dimensions | None = None
     diameter_mm: float | None = None
     radius_mm: float | None = None
     length_mm: float | None = None

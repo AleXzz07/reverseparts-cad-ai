@@ -161,3 +161,19 @@ def test_detect_elongated_holes_staffa_test_1():
     ]
 
     assert len(expected_length_holes) >= 2
+
+
+def test_detect_polygonal_holes_staffa_test_1():
+    payload = _analyze_staffa_test_1()
+
+    polygonal_holes = payload["holes"]["polygonal"]
+    assert len(polygonal_holes) >= 2
+
+    expected_dimension_holes = [
+        hole
+        for hole in polygonal_holes
+        if hole["max_dimension_mm"] is not None
+        and abs(hole["max_dimension_mm"] - 27.71) <= 0.25
+    ]
+
+    assert len(expected_dimension_holes) >= 2
