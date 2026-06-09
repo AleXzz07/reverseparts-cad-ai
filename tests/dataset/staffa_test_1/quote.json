@@ -1,0 +1,70 @@
+{
+  "part_name": "STAFFA TEST 1",
+  "quantity": 1,
+  "process_plan": [
+    "laser 2D",
+    "piegatura"
+  ],
+  "material": {
+    "name": "alluminio",
+    "thickness_mm": 2.0,
+    "estimated_weight_kg": 0.05,
+    "density_g_cm3": 2.7,
+    "cost_eur_kg": 6.0
+  },
+  "features_summary": {
+    "circular_holes": 4,
+    "elongated_holes": 2,
+    "polygonal_holes": 2,
+    "bends": 2
+  },
+  "cost_drivers": {
+    "complexity": "medium",
+    "laser_cutting_complexity": "medium: profilo lamiera con fori circolari, asole e fori poligonali",
+    "bending_complexity": "medium: 2 flange semplici da piegare",
+    "setup_required": true
+  },
+  "estimated_times_min": {
+    "cad_check": 3.0,
+    "laser_cutting": 3.78,
+    "bending": 1.9,
+    "handling": 1.9,
+    "total": 10.58
+  },
+  "estimated_cost_eur": {
+    "material": 0.3,
+    "cad_check": 2.4,
+    "laser": 4.54,
+    "bending": 1.71,
+    "handling": 1.14,
+    "setup": 15.0,
+    "total_internal": 25.09,
+    "suggested_price": 31.36,
+    "price_before_minimum": 31.36,
+    "minimum_order_applied": true,
+    "final_suggested_price": 40.0,
+    "price_note": "indicativo"
+  },
+  "config_used": {
+    "pricing_config": "/workspace/config/pricing_default.json",
+    "materials_config": "/workspace/config/materials.json",
+    "pricing": {
+      "laser_rate_eur_min": 1.2,
+      "bending_rate_eur_min": 0.9,
+      "cad_check_rate_eur_min": 0.8,
+      "handling_rate_eur_min": 0.6,
+      "setup_cost_eur": 15.0,
+      "minimum_order_value_eur": 40.0,
+      "margin_percent": 25.0
+    },
+    "material": {
+      "density_g_cm3": 2.7,
+      "cost_eur_kg": 6.0
+    }
+  },
+  "confidence": "medium",
+  "warnings": [
+    "Preventivo preliminare: parametri economici caricati da config e da validare con dati aziendali reali.",
+    "Prezzo finale indicativo, non usare come offerta definitiva senza revisione tecnica/commerciale."
+  ]
+}

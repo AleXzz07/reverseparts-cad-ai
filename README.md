@@ -111,6 +111,31 @@ This reads `tests/output/staffa_test_1_actual.json`, writes `tests/output/staffa
 
 The quote includes `config_used`, `price_before_minimum`, `minimum_order_applied`, and `final_suggested_price`.
 
+## Dataset Multi Pezzo
+
+Real CAD test parts can be organized under `tests/dataset/`, one folder per part:
+
+```text
+tests/dataset/<case_name>/
+  input.stp
+  expected.json
+  actual.json
+  evaluation.json
+  quote.json
+```
+
+`tests/dataset/staffa_test_1/` mirrors the existing STAFFA TEST 1 fixture in this scalable format.
+
+Process every dataset folder inside Docker:
+
+```powershell
+.\scripts\analyze_dataset.ps1
+.\scripts\evaluate_dataset.ps1
+.\scripts\quote_dataset.ps1
+```
+
+The older `analyze_staffa`, `evaluate_staffa`, and `quote_staffa` scripts are kept for direct STAFFA TEST 1 compatibility.
+
 ## Test Fixtures
 
 `tests/test_files/` is intentionally kept ready for real CAD files such as `STAFFA TEST 1.stp`. Ground-truth JSON files can be added under `tests/ground_truth/`.

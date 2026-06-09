@@ -1,0 +1,255 @@
+{
+  "part_name": "STAFFA TEST 1",
+  "source_file": "input.stp",
+  "raw_bounding_box_mm": {
+    "x": 102.0,
+    "y": 50.0,
+    "z": 51.0
+  },
+  "effective_dimensions_mm": {
+    "x": 102.0,
+    "y": 50.0,
+    "z": 51.0
+  },
+  "volume_cm3": 18.488,
+  "surface_area_cm2": 199.419,
+  "estimated_weight_kg": 0.05,
+  "declared_material": "alluminio",
+  "density_g_cm3": 2.7,
+  "declared_thickness_mm": 2.0,
+  "detected_thickness_mm": 2.0,
+  "thickness_confidence": "high",
+  "holes": {
+    "circular": [
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 5.0,
+        "radius_mm": 2.5,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.0,
+        "center": [
+          -50.0,
+          13.788,
+          42.499
+        ],
+        "axis": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      },
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 5.0,
+        "radius_mm": 2.5,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.0,
+        "center": [
+          50.0,
+          13.788,
+          42.499
+        ],
+        "axis": [
+          -1.0,
+          0.0,
+          0.0
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      },
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 7.0,
+        "radius_mm": 3.5,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.0,
+        "center": [
+          -50.0,
+          -16.212,
+          42.499
+        ],
+        "axis": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      },
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 7.0,
+        "radius_mm": 3.5,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.0,
+        "center": [
+          50.0,
+          -16.212,
+          42.499
+        ],
+        "axis": [
+          -1.0,
+          0.0,
+          0.0
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      }
+    ],
+    "elongated": [
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": null,
+        "radius_mm": null,
+        "length_mm": 51.42,
+        "width_mm": 10.0,
+        "depth_mm": null,
+        "center": [
+          -50.0,
+          5.0,
+          28.0
+        ],
+        "axis": [
+          0.0,
+          -1.0,
+          0.0
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      },
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": null,
+        "radius_mm": null,
+        "length_mm": 51.42,
+        "width_mm": 10.0,
+        "depth_mm": null,
+        "center": [
+          50.0,
+          5.0,
+          28.0
+        ],
+        "axis": [
+          0.0,
+          -1.0,
+          0.0
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      }
+    ],
+    "polygonal": [
+      {
+        "num_sides": 6,
+        "max_dimension_mm": 27.71,
+        "bounding_box_mm": {
+          "x": 0.0,
+          "y": 9.238,
+          "z": 8.0
+        },
+        "diameter_mm": null,
+        "radius_mm": null,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": null,
+        "center": [
+          -50.0,
+          -12.261,
+          18.591
+        ],
+        "axis": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      },
+      {
+        "num_sides": 6,
+        "max_dimension_mm": 27.71,
+        "bounding_box_mm": {
+          "x": 0.0,
+          "y": 9.238,
+          "z": 8.0
+        },
+        "diameter_mm": null,
+        "radius_mm": null,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": null,
+        "center": [
+          50.0,
+          -12.261,
+          18.591
+        ],
+        "axis": [
+          -1.0,
+          0.0,
+          0.0
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      }
+    ],
+    "confidence": "medium"
+  },
+  "bends": {
+    "count": 2,
+    "confidence": "high",
+    "items": [
+      {
+        "type": "simple flange",
+        "radius_mm": 3.0,
+        "length_mm": 50.0,
+        "axis": [
+          0.0,
+          1.0,
+          -0.0
+        ],
+        "center": [
+          -46.0,
+          -25.0,
+          5.0
+        ],
+        "confidence": "high"
+      },
+      {
+        "type": "simple flange",
+        "radius_mm": 3.0,
+        "length_mm": 50.0,
+        "axis": [
+          0.0,
+          1.0,
+          -0.0
+        ],
+        "center": [
+          46.0,
+          -25.0,
+          5.0
+        ],
+        "confidence": "high"
+      }
+    ]
+  },
+  "complexity_score": "unknown",
+  "warnings": []
+}
