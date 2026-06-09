@@ -16,8 +16,11 @@ def test_evaluate_staffa_report_core_checks():
     report = evaluate_staffa(actual, expected)
 
     assert report["part_name"] == "STAFFA TEST 1"
-    assert 0 <= report["score_total"] <= 100
-    assert report["status"] in {"pass", "warning", "fail"}
+    assert report["score_total"] >= 95
+    assert report["status"] == "pass"
+    assert report["checks"]["dimensions"]["status"] == "pass"
+    assert report["checks"]["volume"]["status"] == "pass"
+    assert report["checks"]["area"]["status"] == "pass"
     assert report["checks"]["weight"]["status"] == "pass"
     assert report["checks"]["declared_thickness"]["status"] == "pass"
     assert report["checks"]["detected_thickness"]["status"] == "pass"

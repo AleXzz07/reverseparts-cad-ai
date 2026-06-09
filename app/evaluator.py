@@ -228,12 +228,13 @@ def evaluate_staffa(actual: dict[str, Any], expected: dict[str, Any]) -> dict[st
     expected_dimensions = expected.get("dimensions_mm") or {}
     actual_holes = actual.get("holes", {})
     expected_holes = expected.get("holes", {})
+    expected_weight = expected.get("estimated_weight_kg", expected.get("part_weight_kg"))
 
     checks = {
         "dimensions": _dimensions_check(actual_dimensions, expected_dimensions),
         "volume": _numeric_check(actual.get("volume_cm3"), expected.get("volume_cm3"), 0.0, "cm3"),
         "area": _numeric_check(actual.get("surface_area_cm2"), expected.get("surface_area_cm2"), 0.0, "cm2"),
-        "weight": _weight_check(actual.get("estimated_weight_kg"), expected.get("part_weight_kg")),
+        "weight": _weight_check(actual.get("estimated_weight_kg"), expected_weight),
         "declared_thickness": _numeric_check(
             actual.get("declared_thickness_mm"),
             expected.get("declared_thickness_mm"),

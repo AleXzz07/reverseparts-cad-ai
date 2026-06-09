@@ -1,18 +1,18 @@
 {
   "part_name": "STAFFA TEST 1",
-  "score_total": 88,
-  "status": "warning",
+  "score_total": 100,
+  "status": "pass",
   "checks": {
     "dimensions": {
-      "status": "fail",
+      "status": "pass",
       "message": "Bounding dimensions compared with ground truth.",
       "axes": {
         "x": {
-          "status": "fail",
-          "message": "Error 4.000 mm; tolerance 1.000 mm.",
+          "status": "pass",
+          "message": "Error 0.000 mm; tolerance 1.000 mm.",
           "actual": 102.0,
-          "expected": 98.0,
-          "error": 4.0,
+          "expected": 102.0,
+          "error": 0.0,
           "tolerance": 1.0,
           "unit": "mm"
         },
@@ -26,29 +26,31 @@
           "unit": "mm"
         },
         "z": {
-          "status": "fail",
-          "message": "Error 2.000 mm; tolerance 1.000 mm.",
+          "status": "pass",
+          "message": "Error 0.000 mm; tolerance 1.000 mm.",
           "actual": 51.0,
-          "expected": 49.0,
-          "error": 2.0,
+          "expected": 51.0,
+          "error": 0.0,
           "tolerance": 1.0,
           "unit": "mm"
         }
       }
     },
     "volume": {
-      "status": "warning",
-      "message": "Value not available for comparison.",
+      "status": "pass",
+      "message": "Error 0.000 cm3; tolerance 0.000 cm3.",
       "actual": 18.488,
-      "expected": null,
+      "expected": 18.488,
+      "error": 0.0,
       "tolerance": 0.0,
       "unit": "cm3"
     },
     "area": {
-      "status": "warning",
-      "message": "Value not available for comparison.",
+      "status": "pass",
+      "message": "Error 0.000 cm2; tolerance 0.000 cm2.",
       "actual": 199.419,
-      "expected": null,
+      "expected": 199.419,
+      "error": 0.0,
       "tolerance": 0.0,
       "unit": "cm2"
     },
@@ -130,13 +132,6 @@
       "expected_length_mm": 50.0
     }
   },
-  "warnings": [
-    "dimensions: Bounding dimensions compared with ground truth.",
-    "volume: Value not available for comparison.",
-    "area: Value not available for comparison."
-  ],
-  "next_improvements": [
-    "Calibrate effective_dimensions_mm against the AutoForm reference dimensions.",
-    "Add volume_cm3 and surface_area_cm2 to ground truth when validated values are available."
-  ]
+  "warnings": [],
+  "next_improvements": []
 }

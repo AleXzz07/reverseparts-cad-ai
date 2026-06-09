@@ -4,10 +4,13 @@
   "material": "Alluminio Novelis_Advanz_6CM_s118_1-0mm",
   "declared_thickness_mm": 2.0,
   "dimensions_mm": {
-    "x": 98.0,
+    "x": 102.0,
     "y": 50.0,
-    "z": 49.0
+    "z": 51.0
   },
+  "volume_cm3": 18.488,
+  "surface_area_cm2": 199.419,
+  "estimated_weight_kg": 0.05,
   "part_weight_kg": 0.050,
   "blank_size_mm": {
     "x": 195.85,
