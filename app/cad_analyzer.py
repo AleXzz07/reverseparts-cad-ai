@@ -11,6 +11,8 @@ from .schemas import BendFeature, CadAnalysisResponse, Dimensions, HoleFeature
 
 
 VALID_STEP_SUFFIXES = {".stp", ".step"}
+CIRCULAR_HOLE_MIN_DIAMETER_MM = 4.0
+CIRCULAR_HOLE_MAX_DIAMETER_MM = 20.0
 FREECAD_PATH_CANDIDATES = (
     "/usr/lib/freecad-python3/lib",
     "/usr/lib/freecad/lib",
@@ -145,7 +147,7 @@ def _detect_circular_holes(shape) -> list[HoleFeature]:
 
         radius = float(surface.Radius)
         diameter = radius * 2.0
-        if not 4.0 <= diameter <= 8.0:
+        if not CIRCULAR_HOLE_MIN_DIAMETER_MM <= diameter <= CIRCULAR_HOLE_MAX_DIAMETER_MM:
             continue
 
         axis = _normalize_vector(surface.Axis)
@@ -175,7 +177,7 @@ def _detect_circular_holes(shape) -> list[HoleFeature]:
 
         radius = float(curve.Radius)
         diameter = radius * 2.0
-        if not 4.0 <= diameter <= 8.0:
+        if not CIRCULAR_HOLE_MIN_DIAMETER_MM <= diameter <= CIRCULAR_HOLE_MAX_DIAMETER_MM:
             continue
 
         circular_edges.append(

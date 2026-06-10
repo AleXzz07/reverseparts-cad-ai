@@ -1,0 +1,166 @@
+{
+  "part_name": "STAFFA U TEST 1",
+  "source_file": "input.stp",
+  "raw_bounding_box_mm": {
+    "x": 80.0,
+    "y": 50.0,
+    "z": 30.0
+  },
+  "effective_dimensions_mm": {
+    "x": 80.0,
+    "y": 50.0,
+    "z": 30.0
+  },
+  "volume_cm3": 12.812,
+  "surface_area_cm2": 137.371,
+  "estimated_weight_kg": 0.035,
+  "declared_material": "alluminio",
+  "density_g_cm3": 2.7,
+  "declared_thickness_mm": null,
+  "detected_thickness_mm": 2.0,
+  "thickness_confidence": "high",
+  "holes": {
+    "circular": [
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 4.0,
+        "radius_mm": 2.0,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.0,
+        "center": [
+          10.528,
+          38.945,
+          1.0
+        ],
+        "axis": [
+          0.0,
+          -0.0,
+          -1.0
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      },
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 7.0,
+        "radius_mm": 3.5,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.0,
+        "center": [
+          46.512,
+          37.934,
+          1.0
+        ],
+        "axis": [
+          -0.0,
+          -0.0,
+          -1.0
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      },
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 7.0,
+        "radius_mm": 3.5,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.0,
+        "center": [
+          53.587,
+          19.943,
+          1.0
+        ],
+        "axis": [
+          0.0,
+          0.0,
+          -1.0
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      },
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 13.0,
+        "radius_mm": 6.5,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.0,
+        "center": [
+          22.759,
+          14.585,
+          1.0
+        ],
+        "axis": [
+          0.0,
+          0.0,
+          -1.0
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      }
+    ],
+    "elongated": [],
+    "polygonal": [],
+    "confidence": "medium"
+  },
+  "bends": {
+    "count": 2,
+    "confidence": "high",
+    "items": [
+      {
+        "type": "simple flange",
+        "radius_mm": 3.0,
+        "length_mm": 50.0,
+        "axis": [
+          0.0,
+          1.0,
+          0.0
+        ],
+        "center": [
+          5.0,
+          25.0,
+          5.0
+        ],
+        "confidence": "high"
+      },
+      {
+        "type": "simple flange",
+        "radius_mm": 3.0,
+        "length_mm": 50.0,
+        "axis": [
+          0.0,
+          1.0,
+          0.0
+        ],
+        "center": [
+          75.0,
+          0.0,
+          5.0
+        ],
+        "confidence": "high"
+      }
+    ]
+  },
+  "cutting": {
+    "outer_cut_length_mm": 269.13,
+    "inner_cut_length_mm": 97.39,
+    "total_cut_length_mm": 366.52,
+    "confidence": "medium",
+    "warnings": [
+      "Cut length is preliminary: outer loop is selected from the longest planar external wire and inner loop length is derived from deduplicated detected features."
+    ]
+  },
+  "complexity_score": "unknown",
+  "warnings": []
+}

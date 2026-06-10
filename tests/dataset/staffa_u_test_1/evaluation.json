@@ -1,0 +1,141 @@
+{
+  "part_name": "STAFFA U TEST 1",
+  "score_total": 100,
+  "status": "pass",
+  "checks": {
+    "dimensions": {
+      "status": "pass",
+      "message": "Bounding dimensions compared with ground truth.",
+      "axes": {
+        "x": {
+          "status": "pass",
+          "message": "Error 0.000 mm; tolerance 1.000 mm.",
+          "actual": 80.0,
+          "expected": 80.0,
+          "error": 0.0,
+          "tolerance": 1.0,
+          "unit": "mm"
+        },
+        "y": {
+          "status": "pass",
+          "message": "Error 0.000 mm; tolerance 1.000 mm.",
+          "actual": 50.0,
+          "expected": 50.0,
+          "error": 0.0,
+          "tolerance": 1.0,
+          "unit": "mm"
+        },
+        "z": {
+          "status": "pass",
+          "message": "Error 0.000 mm; tolerance 1.000 mm.",
+          "actual": 30.0,
+          "expected": 30.0,
+          "error": 0.0,
+          "tolerance": 1.0,
+          "unit": "mm"
+        }
+      }
+    },
+    "volume": {
+      "status": "pass",
+      "message": "Error 0.000 cm3; tolerance 0.000 cm3.",
+      "actual": 12.812,
+      "expected": 12.812,
+      "error": 0.0,
+      "tolerance": 0.0,
+      "unit": "cm3"
+    },
+    "area": {
+      "status": "pass",
+      "message": "Error 0.000 cm2; tolerance 0.000 cm2.",
+      "actual": 137.371,
+      "expected": 137.371,
+      "error": 0.0,
+      "tolerance": 0.0,
+      "unit": "cm2"
+    },
+    "weight": {
+      "status": "pass",
+      "message": "Weight error 0.00%; tolerance 5.00%.",
+      "actual": 0.035,
+      "expected": 0.035,
+      "error_percent": 0.0,
+      "tolerance_percent": 5.0
+    },
+    "declared_thickness": {
+      "status": "warning",
+      "message": "Value not available for comparison.",
+      "actual": null,
+      "expected": null,
+      "tolerance": 0.1,
+      "unit": "mm"
+    },
+    "detected_thickness": {
+      "status": "pass",
+      "message": "Error 0.000 mm; tolerance 0.100 mm.",
+      "actual": 2.0,
+      "expected": 2.0,
+      "error": 0.0,
+      "tolerance": 0.1,
+      "unit": "mm"
+    },
+    "circular_holes": {
+      "status": "pass",
+      "message": "Circular holes grouped by diameter.",
+      "groups": [
+        {
+          "diameter_mm": 4.0,
+          "expected_count": 1,
+          "actual_count": 1,
+          "status": "pass"
+        },
+        {
+          "diameter_mm": 7.0,
+          "expected_count": 2,
+          "actual_count": 2,
+          "status": "pass"
+        },
+        {
+          "diameter_mm": 13.0,
+          "expected_count": 1,
+          "actual_count": 1,
+          "status": "pass"
+        }
+      ]
+    },
+    "elongated_holes": {
+      "status": "pass",
+      "message": "No elongated holes expected.",
+      "expected_count": 0,
+      "actual_count": 0
+    },
+    "polygonal_holes": {
+      "status": "pass",
+      "message": "No polygonal holes expected.",
+      "expected_count": 0,
+      "actual_count": 0
+    },
+    "bends": {
+      "status": "pass",
+      "message": "Bends/flanges compared by count, confidence, and length.",
+      "actual_count": 2,
+      "expected_count": 2,
+      "confidence": "high",
+      "length_matches": 2,
+      "expected_length_mm": 50.0
+    },
+    "cutting_total": {
+      "status": "pass",
+      "message": "Error 0.000 mm; tolerance 1.000 mm.",
+      "actual": 366.52,
+      "expected": 366.52,
+      "error": 0.0,
+      "tolerance": 1.0,
+      "unit": "mm"
+    }
+  },
+  "warnings": [
+    "declared_thickness: Value not available for comparison."
+  ],
+  "next_improvements": []
+}

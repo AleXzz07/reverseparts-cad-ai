@@ -191,6 +191,7 @@ Current dataset cases:
 - `tests/dataset/staffa_test_1/`: bent sheet-metal bracket with laser features and two flanges.
 - `tests/dataset/lamiera_piana_test_1/`: flat sheet-metal laser-only part with circular holes and no bending operation.
 - `tests/dataset/staffa_1_piega_test_1/`: simple sheet-metal bracket with two circular holes and one bending operation.
+- `tests/dataset/staffa_u_test_1/`: U-shaped sheet-metal bracket with four circular holes and two bending operations.
 
 Process every dataset folder inside Docker:
 
