@@ -70,6 +70,19 @@ The endpoint analyzes the STEP file, then returns:
 }
 ```
 
+### `POST /quote-pdf`
+
+Input JSON:
+
+```json
+{
+  "analysis": {},
+  "quote": {}
+}
+```
+
+Returns a downloadable `application/pdf` document titled `REVERSEPARTS - Preventivo tecnico interno`. The PDF contains part data, internal cost lines, technical timing details, and the preliminary quote note for commercial review.
+
 ## Local Development
 
 ```powershell

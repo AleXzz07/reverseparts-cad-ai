@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Response, UploadFile
 
 from .cad_analyzer import VALID_STEP_SUFFIXES, analyze_step_file, get_freecad_status
+from .pdf_report import generate_quote_pdf
 from .quote_engine import load_materials_config, quote_from_cad
-from .schemas import AnalyzeAndQuoteResponse, CadAnalysisResponse, HealthResponse, QuoteRequest
+from .schemas import AnalyzeAndQuoteResponse, CadAnalysisResponse, HealthResponse, QuotePdfRequest, QuoteRequest
 
 
 app = FastAPI(
@@ -122,6 +123,16 @@ def quote(request: QuoteRequest) -> dict[str, Any]:
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/quote-pdf")
+def quote_pdf(request: QuotePdfRequest) -> Response:
+    pdf_bytes = generate_quote_pdf(request.analysis, request.quote)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": 'attachment; filename="reverseparts_preventivo.pdf"'},
+    )
 
 
 @app.post("/analyze-and-quote", response_model=AnalyzeAndQuoteResponse)

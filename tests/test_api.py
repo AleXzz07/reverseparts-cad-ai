@@ -15,6 +15,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 STAFFA_TEST_FILE = PROJECT_ROOT / "tests" / "test_files" / "STAFFA TEST 1.stp"
 STAFFA_EXPECTED_FILE = PROJECT_ROOT / "tests" / "ground_truth" / "staffa_test_1_expected.json"
 STAFFA_ACTUAL_FILE = PROJECT_ROOT / "tests" / "output" / "staffa_test_1_actual.json"
+STAFFA_QUOTE_FILE = PROJECT_ROOT / "tests" / "output" / "staffa_test_1_quote.json"
 
 
 def _skip_without_freecad_for_real_fixture() -> None:
@@ -157,6 +158,24 @@ def test_quote_endpoint_validates_quantity():
     )
 
     assert response.status_code == 422
+
+
+def test_quote_pdf_endpoint_returns_pdf():
+    analysis = json.loads(STAFFA_ACTUAL_FILE.read_text(encoding="utf-8"))
+    quote = json.loads(STAFFA_QUOTE_FILE.read_text(encoding="utf-8"))
+
+    response = client.post(
+        "/quote-pdf",
+        json={
+            "analysis": analysis,
+            "quote": quote,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/pdf"
+    assert len(response.content) > 1000
+    assert response.content.startswith(b"%PDF")
 
 
 def test_analyze_cad_staffa_test_1_real_step_file():

@@ -93,3 +93,8 @@ class QuoteRequest(BaseModel):
 class AnalyzeAndQuoteResponse(BaseModel):
     analysis: dict[str, Any]
     quote: dict[str, Any]
+
+
+class QuotePdfRequest(BaseModel):
+    analysis: dict[str, Any]
+    quote: dict[str, Any]
