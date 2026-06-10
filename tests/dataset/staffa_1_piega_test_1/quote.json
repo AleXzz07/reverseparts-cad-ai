@@ -1,0 +1,266 @@
+{
+  "part_name": "STAFFA 1 PIEGA TEST 1",
+  "quantity": 1,
+  "process_plan": [
+    "laser 2D",
+    "piegatura"
+  ],
+  "material": {
+    "name": "alluminio",
+    "density_g_cm3": 2.7,
+    "cost_eur_kg": 6.0,
+    "estimated_weight_kg": 0.031,
+    "weight_source": "recalculated_from_volume",
+    "thickness_mm": 2.0
+  },
+  "features_summary": {
+    "circular_holes": 2,
+    "elongated_holes": 0,
+    "polygonal_holes": 0,
+    "bends": 1
+  },
+  "cost_drivers": {
+    "complexity": "low",
+    "laser_cutting_complexity": "low: geometria semplice",
+    "bending_complexity": "low: nessuna o poche pieghe rilevate",
+    "setup_required": true,
+    "laser_time_source": "cut_length"
+  },
+  "estimated_times_min": {
+    "cad_check": 3.0,
+    "laser_cutting": 0.32,
+    "bending": 5.45,
+    "handling": 1.9,
+    "total": 10.67,
+    "laser_time_source": "cut_length",
+    "laser_cut_length_mm": 290.84
+  },
+  "estimated_internal_cost_eur": {
+    "material": 0.19,
+    "laser": 0.38,
+    "bending": 4.91,
+    "cad_check": 2.4,
+    "handling": 1.14,
+    "setup": 15.0,
+    "total": 24.02,
+    "unit_cost": 24.02
+  },
+  "commercial_guidance": {
+    "minimum_order_value_eur": 40.0,
+    "minimum_order_applied": true,
+    "minimum_billable_price_eur": 40.0,
+    "margin_applied": false,
+    "note": "Il margine commerciale deve essere deciso dall'azienda."
+  },
+  "laser_details": {
+    "cut_length_mm": 290.84,
+    "material_laser_profile_used": true,
+    "cut_speed_mm_min": 2500.0,
+    "pierce_count": 3,
+    "pierce_time_sec": 0.8,
+    "laser_time_min_per_piece": 0.323
+  },
+  "bending_details": {
+    "bends_count": 1,
+    "bending_setup_time_min": 5.0,
+    "bending_time_sec_per_bend": 12.0,
+    "bending_extra_handling_sec_per_piece": 15.0,
+    "bending_time_min_per_piece": 0.45,
+    "bending_time_total_min": 5.45
+  },
+  "quantity_breakdown": [
+    {
+      "quantity": 1,
+      "estimated_internal_cost_eur": {
+        "total": 24.02,
+        "unit_cost": 24.02
+      },
+      "commercial_guidance": {
+        "minimum_order_applied": true,
+        "minimum_billable_price_eur": 40.0
+      },
+      "laser_details": {
+        "cut_length_mm": 290.84,
+        "material_laser_profile_used": true,
+        "cut_speed_mm_min": 2500.0,
+        "pierce_count": 3,
+        "pierce_time_sec": 0.8,
+        "laser_time_min_per_piece": 0.323
+      },
+      "bending_details": {
+        "bends_count": 1,
+        "bending_setup_time_min": 5.0,
+        "bending_time_sec_per_bend": 12.0,
+        "bending_extra_handling_sec_per_piece": 15.0,
+        "bending_time_min_per_piece": 0.45,
+        "bending_time_total_min": 5.45
+      }
+    },
+    {
+      "quantity": 5,
+      "estimated_internal_cost_eur": {
+        "total": 28.9,
+        "unit_cost": 5.78
+      },
+      "commercial_guidance": {
+        "minimum_order_applied": true,
+        "minimum_billable_price_eur": 40.0
+      },
+      "laser_details": {
+        "cut_length_mm": 290.84,
+        "material_laser_profile_used": true,
+        "cut_speed_mm_min": 2500.0,
+        "pierce_count": 3,
+        "pierce_time_sec": 0.8,
+        "laser_time_min_per_piece": 0.323
+      },
+      "bending_details": {
+        "bends_count": 1,
+        "bending_setup_time_min": 5.0,
+        "bending_time_sec_per_bend": 12.0,
+        "bending_extra_handling_sec_per_piece": 15.0,
+        "bending_time_min_per_piece": 0.45,
+        "bending_time_total_min": 7.25
+      }
+    },
+    {
+      "quantity": 10,
+      "estimated_internal_cost_eur": {
+        "total": 34.99,
+        "unit_cost": 3.5
+      },
+      "commercial_guidance": {
+        "minimum_order_applied": true,
+        "minimum_billable_price_eur": 40.0
+      },
+      "laser_details": {
+        "cut_length_mm": 290.84,
+        "material_laser_profile_used": true,
+        "cut_speed_mm_min": 2500.0,
+        "pierce_count": 3,
+        "pierce_time_sec": 0.8,
+        "laser_time_min_per_piece": 0.323
+      },
+      "bending_details": {
+        "bends_count": 1,
+        "bending_setup_time_min": 5.0,
+        "bending_time_sec_per_bend": 12.0,
+        "bending_extra_handling_sec_per_piece": 15.0,
+        "bending_time_min_per_piece": 0.45,
+        "bending_time_total_min": 9.5
+      }
+    },
+    {
+      "quantity": 25,
+      "estimated_internal_cost_eur": {
+        "total": 53.27,
+        "unit_cost": 2.13
+      },
+      "commercial_guidance": {
+        "minimum_order_applied": false,
+        "minimum_billable_price_eur": 53.27
+      },
+      "laser_details": {
+        "cut_length_mm": 290.84,
+        "material_laser_profile_used": true,
+        "cut_speed_mm_min": 2500.0,
+        "pierce_count": 3,
+        "pierce_time_sec": 0.8,
+        "laser_time_min_per_piece": 0.323
+      },
+      "bending_details": {
+        "bends_count": 1,
+        "bending_setup_time_min": 5.0,
+        "bending_time_sec_per_bend": 12.0,
+        "bending_extra_handling_sec_per_piece": 15.0,
+        "bending_time_min_per_piece": 0.45,
+        "bending_time_total_min": 16.25
+      }
+    },
+    {
+      "quantity": 50,
+      "estimated_internal_cost_eur": {
+        "total": 83.73,
+        "unit_cost": 1.67
+      },
+      "commercial_guidance": {
+        "minimum_order_applied": false,
+        "minimum_billable_price_eur": 83.73
+      },
+      "laser_details": {
+        "cut_length_mm": 290.84,
+        "material_laser_profile_used": true,
+        "cut_speed_mm_min": 2500.0,
+        "pierce_count": 3,
+        "pierce_time_sec": 0.8,
+        "laser_time_min_per_piece": 0.323
+      },
+      "bending_details": {
+        "bends_count": 1,
+        "bending_setup_time_min": 5.0,
+        "bending_time_sec_per_bend": 12.0,
+        "bending_extra_handling_sec_per_piece": 15.0,
+        "bending_time_min_per_piece": 0.45,
+        "bending_time_total_min": 27.5
+      }
+    },
+    {
+      "quantity": 100,
+      "estimated_internal_cost_eur": {
+        "total": 144.66,
+        "unit_cost": 1.45
+      },
+      "commercial_guidance": {
+        "minimum_order_applied": false,
+        "minimum_billable_price_eur": 144.66
+      },
+      "laser_details": {
+        "cut_length_mm": 290.84,
+        "material_laser_profile_used": true,
+        "cut_speed_mm_min": 2500.0,
+        "pierce_count": 3,
+        "pierce_time_sec": 0.8,
+        "laser_time_min_per_piece": 0.323
+      },
+      "bending_details": {
+        "bends_count": 1,
+        "bending_setup_time_min": 5.0,
+        "bending_time_sec_per_bend": 12.0,
+        "bending_extra_handling_sec_per_piece": 15.0,
+        "bending_time_min_per_piece": 0.45,
+        "bending_time_total_min": 50.0
+      }
+    }
+  ],
+  "config_used": {
+    "pricing_config": "/workspace/config/pricing_default.json",
+    "materials_config": "/workspace/config/materials.json",
+    "pricing": {
+      "laser_rate_eur_min": 1.2,
+      "bending_rate_eur_min": 0.9,
+      "cad_check_rate_eur_min": 0.8,
+      "handling_rate_eur_min": 0.6,
+      "laser_cut_speed_mm_min": 2500.0,
+      "laser_pierce_time_sec": 0.8,
+      "laser_extra_handling_sec_per_piece": 10.0,
+      "bending_setup_time_min": 5.0,
+      "bending_time_sec_per_bend": 12.0,
+      "bending_extra_handling_sec_per_piece": 15.0,
+      "setup_cost_eur": 15.0,
+      "minimum_order_value_eur": 40.0
+    },
+    "material": {
+      "density_g_cm3": 2.7,
+      "cost_eur_kg": 6.0,
+      "laser": {
+        "cut_speed_mm_min": 2500.0,
+        "pierce_time_sec": 0.8
+      }
+    }
+  },
+  "confidence": "low",
+  "warnings": [
+    "Preventivo preliminare: parametri economici caricati da config e da validare con dati aziendali reali.",
+    "Il motore non applica margine e non decide il prezzo finale commerciale."
+  ]
+}

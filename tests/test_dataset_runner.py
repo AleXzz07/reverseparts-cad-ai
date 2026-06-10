@@ -8,6 +8,7 @@ from app.dataset_runner import evaluate_dataset, iter_dataset_cases, quote_datas
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DATASET_CASE = PROJECT_ROOT / "tests" / "dataset" / "staffa_test_1"
 LAMIERA_DATASET_CASE = PROJECT_ROOT / "tests" / "dataset" / "lamiera_piana_test_1"
+STAFFA_1_PIEGA_DATASET_CASE = PROJECT_ROOT / "tests" / "dataset" / "staffa_1_piega_test_1"
 
 
 def test_staffa_test_1_dataset_case_exists():
@@ -60,3 +61,26 @@ def test_dataset_lamiera_piana():
     assert quote["features_summary"]["bends"] == 0
     assert quote["estimated_times_min"]["bending"] == 0.0
     assert quote["estimated_internal_cost_eur"]["bending"] == 0.0
+
+
+def test_dataset_staffa_1_piega():
+    assert (STAFFA_1_PIEGA_DATASET_CASE / "input.stp").exists()
+    assert (STAFFA_1_PIEGA_DATASET_CASE / "expected.json").exists()
+    assert (STAFFA_1_PIEGA_DATASET_CASE / "actual.json").exists()
+    assert (STAFFA_1_PIEGA_DATASET_CASE / "evaluation.json").exists()
+    assert (STAFFA_1_PIEGA_DATASET_CASE / "quote.json").exists()
+
+    actual = json.loads((STAFFA_1_PIEGA_DATASET_CASE / "actual.json").read_text(encoding="utf-8"))
+    quote = json.loads((STAFFA_1_PIEGA_DATASET_CASE / "quote.json").read_text(encoding="utf-8"))
+
+    assert actual["bends"]["count"] == 1
+    assert len(actual["bends"]["items"]) == 1
+    assert len(actual["holes"]["circular"]) == 2
+    assert actual["holes"]["elongated"] == []
+    assert actual["holes"]["polygonal"] == []
+    assert quote["process_plan"] == ["laser 2D", "piegatura"]
+    assert quote["features_summary"]["bends"] == 1
+    assert quote["features_summary"]["circular_holes"] == 2
+    assert quote["features_summary"]["elongated_holes"] == 0
+    assert quote["features_summary"]["polygonal_holes"] == 0
+    assert quote["bending_details"]["bends_count"] == 1

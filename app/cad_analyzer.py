@@ -439,14 +439,23 @@ def _is_duplicate_bend(candidate: BendFeature, existing: BendFeature) -> bool:
     if candidate.axis is None or existing.axis is None:
         return False
 
+    candidate_axis = tuple(candidate.axis)
+    existing_axis = tuple(existing.axis)
+    if not _axis_aligned(candidate_axis, existing_axis, tolerance=0.98):
+        return False
+
+    center_delta = tuple(left - right for left, right in zip(candidate.center, existing.center))
+    projected_delta = _dot(center_delta, existing_axis)
+    perpendicular_delta = tuple(
+        component - projected_delta * axis_component
+        for component, axis_component in zip(center_delta, existing_axis)
+    )
+
     return (
         abs(candidate.length_mm - existing.length_mm) <= 1.0
         and abs(candidate.radius_mm - existing.radius_mm) <= 2.5
-        and _axis_aligned(tuple(candidate.axis), tuple(existing.axis), tolerance=0.98)
-        and _vector_norm(
-            tuple(left - right for left, right in zip(candidate.center, existing.center))
-        )
-        <= 3.0
+        and _vector_norm(perpendicular_delta) <= 3.0
+        and abs(projected_delta) <= max(candidate.length_mm, existing.length_mm) + 3.0
     )
 
 

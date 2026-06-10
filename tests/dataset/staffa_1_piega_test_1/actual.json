@@ -1,0 +1,106 @@
+{
+  "part_name": "STAFFA 1 PIEGA TEST 1",
+  "source_file": "input.stp",
+  "raw_bounding_box_mm": {
+    "x": 80.0,
+    "y": 50.0,
+    "z": 40.0
+  },
+  "effective_dimensions_mm": {
+    "x": 80.0,
+    "y": 50.0,
+    "z": 40.0
+  },
+  "volume_cm3": 11.489,
+  "surface_area_cm2": 122.353,
+  "estimated_weight_kg": 0.031,
+  "declared_material": "alluminio",
+  "density_g_cm3": 2.7,
+  "declared_thickness_mm": null,
+  "detected_thickness_mm": 2.0,
+  "thickness_confidence": "high",
+  "holes": {
+    "circular": [
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 5.0,
+        "radius_mm": 2.5,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.0,
+        "center": [
+          12.939,
+          39.093,
+          1.0
+        ],
+        "axis": [
+          0.0,
+          0.0,
+          1.0
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      },
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 8.0,
+        "radius_mm": 4.0,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.0,
+        "center": [
+          23.35,
+          15.744,
+          1.0
+        ],
+        "axis": [
+          0.0,
+          0.0,
+          1.0
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      }
+    ],
+    "elongated": [],
+    "polygonal": [],
+    "confidence": "low"
+  },
+  "bends": {
+    "count": 1,
+    "confidence": "medium",
+    "items": [
+      {
+        "type": "simple flange",
+        "radius_mm": 3.0,
+        "length_mm": 50.0,
+        "axis": [
+          0.0,
+          -1.0,
+          0.0
+        ],
+        "center": [
+          5.0,
+          25.0,
+          5.0
+        ],
+        "confidence": "high"
+      }
+    ]
+  },
+  "cutting": {
+    "outer_cut_length_mm": 250.0,
+    "inner_cut_length_mm": 40.84,
+    "total_cut_length_mm": 290.84,
+    "confidence": "medium",
+    "warnings": [
+      "Cut length is preliminary: outer loop is selected from the longest planar external wire and inner loop length is derived from deduplicated detected features."
+    ]
+  },
+  "complexity_score": "unknown",
+  "warnings": []
+}

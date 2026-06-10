@@ -1,0 +1,42 @@
+{
+  "part_name": "STAFFA 1 PIEGA TEST 1",
+  "part_type": "staffa semplice in lamiera con una piega",
+  "material_key": "alluminio",
+  "material": "alluminio",
+  "declared_thickness_mm": null,
+  "detected_thickness_mm": 2.0,
+  "dimensions_mm": {
+    "x": 80.0,
+    "y": 50.0,
+    "z": 40.0
+  },
+  "volume_cm3": 11.489,
+  "surface_area_cm2": 122.353,
+  "estimated_weight_kg": 0.031,
+  "holes": {
+    "circular": [
+      {
+        "diameter_mm": 5.0,
+        "count": 1
+      },
+      {
+        "diameter_mm": 8.0,
+        "count": 1
+      }
+    ],
+    "elongated": [],
+    "polygonal": []
+  },
+  "bends": {
+    "count": 1,
+    "type": "simple flange",
+    "length_mm": 50.0
+  },
+  "cutting": {
+    "total_cut_length_mm": 290.84
+  },
+  "process_steps": [
+    "laser 2D",
+    "piegatura"
+  ]
+}
