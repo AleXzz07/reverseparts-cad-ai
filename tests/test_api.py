@@ -166,6 +166,7 @@ def test_analyze_cad_staffa_test_1_real_step_file():
     assert payload["volume_cm3"] is not None
     assert payload["surface_area_cm2"] is not None
     assert payload["estimated_weight_kg"] is not None
+    assert abs(payload["estimated_weight_kg"] - 0.05) <= 0.005
     assert payload["declared_material"] == "alluminio"
     assert payload["declared_thickness_mm"] == expected["declared_thickness_mm"]
     assert payload["density_g_cm3"] == 2.70
@@ -188,9 +189,9 @@ def test_analyze_and_quote_staffa_test_1_real_step_file():
         response = client.post(
             "/analyze-and-quote",
             data={
-                "material": "inox",
+                "material": "alluminio",
                 "declared_thickness_mm": str(expected["declared_thickness_mm"]),
-                "quantity": "3",
+                "quantity": "37",
             },
             files={"file": ("STAFFA TEST 1.stp", step_file, "application/step")},
         )
@@ -198,11 +199,13 @@ def test_analyze_and_quote_staffa_test_1_real_step_file():
     assert response.status_code == 200
     payload = response.json()
     assert payload["analysis"]["source_file"] == "STAFFA TEST 1.stp"
-    assert payload["analysis"]["declared_material"] == "inox"
-    assert payload["analysis"]["density_g_cm3"] == 8.0
-    assert payload["quote"]["quantity"] == 3
-    assert payload["quote"]["material"]["name"] == "inox"
-    assert payload["quote"]["laser_details"]["cut_speed_mm_min"] == 1800.0
+    assert payload["analysis"]["declared_material"] == "alluminio"
+    assert payload["analysis"]["density_g_cm3"] == 2.7
+    assert abs(payload["analysis"]["estimated_weight_kg"] - 0.05) <= 0.005
+    assert payload["quote"]["quantity"] == 37
+    assert payload["quote"]["material"]["name"] == "alluminio"
+    assert abs(payload["quote"]["material"]["estimated_weight_kg"] - 0.05) <= 0.005
+    assert payload["quote"]["laser_details"]["cut_speed_mm_min"] == 2500.0
     assert payload["quote"]["features_summary"]["bends"] == 2
 
 

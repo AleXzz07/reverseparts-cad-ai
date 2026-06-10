@@ -689,7 +689,7 @@ def analyze_step_file(
 
         if response.volume_cm3 is not None and density_g_cm3 is not None:
             response.estimated_weight_kg = _round_or_none(
-                response.volume_cm3 * density_g_cm3 * max(quantity, 1) / 1000.0
+                response.volume_cm3 * density_g_cm3 / 1000.0
             )
 
         detected_thickness, thickness_confidence = _detect_sheet_thickness(
