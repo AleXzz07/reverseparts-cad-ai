@@ -134,14 +134,16 @@ def _complexity(
     bends: int,
 ) -> str:
     feature_score = circular_holes + elongated_holes * 2 + polygonal_holes * 2 + bends * 2
-    if feature_score >= 12:
+    if feature_score >= 25:
+        return "high"
+    if feature_score >= 8:
         return "medium"
-    if feature_score >= 4:
-        return "low"
     return "low"
 
 
 def _confidence(cad_data: dict[str, Any]) -> str:
+    if cad_data.get("complexity_score") == "high":
+        return "low"
     holes_confidence = cad_data.get("holes", {}).get("confidence", "low")
     bends_confidence = cad_data.get("bends", {}).get("confidence", "low")
     thickness_confidence = cad_data.get("thickness_confidence", "low")
@@ -345,6 +347,10 @@ def quote_from_cad(
         warnings.append("Spessore non disponibile: complessita processo meno affidabile.")
     if not bends_count_available:
         warnings.append("Conteggio pieghe non disponibile: tempo piegatura calcolato con fallback euristico.")
+    if cad_data.get("complexity_score") == "high":
+        warnings.append(
+            "Parte CAD complessa: tempi e feature rilevate richiedono verifica tecnica."
+        )
 
     complexity = _complexity(circular_holes, elongated_holes, polygonal_holes, bends)
     amounts = _estimate_amounts(
@@ -408,16 +414,24 @@ def quote_from_cad(
             "bends": bends,
         },
         "cost_drivers": {
-            "complexity": complexity,
+            "complexity": (
+                "high"
+                if cad_data.get("complexity_score") == "high"
+                else complexity
+            ),
             "laser_cutting_complexity": (
                 "medium: profilo lamiera con fori circolari, asole e fori poligonali"
                 if circular_holes + elongated_holes + polygonal_holes >= 6
                 else "low: geometria semplice"
             ),
             "bending_complexity": (
-                "medium: 2 flange semplici da piegare"
-                if bends == 2
-                else "low: nessuna o poche pieghe rilevate"
+                "high: molte pieghe rilevate, verifica tecnica richiesta"
+                if bends >= 8
+                else (
+                    f"medium: {bends} flange semplici da piegare"
+                    if bends > 0
+                    else "low: nessuna piega rilevata"
+                )
             ),
             "setup_required": True,
             "laser_time_source": amounts["estimated_times_min"]["laser_time_source"],

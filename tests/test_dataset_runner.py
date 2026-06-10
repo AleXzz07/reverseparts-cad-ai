@@ -10,6 +10,7 @@ DATASET_CASE = PROJECT_ROOT / "tests" / "dataset" / "staffa_test_1"
 LAMIERA_DATASET_CASE = PROJECT_ROOT / "tests" / "dataset" / "lamiera_piana_test_1"
 STAFFA_1_PIEGA_DATASET_CASE = PROJECT_ROOT / "tests" / "dataset" / "staffa_1_piega_test_1"
 STAFFA_U_DATASET_CASE = PROJECT_ROOT / "tests" / "dataset" / "staffa_u_test_1"
+STAFFA_16_PIEGHE_STRESS_CASE = PROJECT_ROOT / "tests" / "dataset" / "staffa_16_pieghe_stress_test"
 
 
 def test_staffa_test_1_dataset_case_exists():
@@ -108,3 +109,26 @@ def test_dataset_staffa_u():
     assert quote["features_summary"]["elongated_holes"] == 0
     assert quote["features_summary"]["polygonal_holes"] == 0
     assert quote["bending_details"]["bends_count"] == 2
+
+
+def test_dataset_staffa_16_pieghe_stress():
+    assert (STAFFA_16_PIEGHE_STRESS_CASE / "input.stp").exists()
+    assert (STAFFA_16_PIEGHE_STRESS_CASE / "actual.json").exists()
+    assert (STAFFA_16_PIEGHE_STRESS_CASE / "quote.json").exists()
+
+    actual = json.loads(
+        (STAFFA_16_PIEGHE_STRESS_CASE / "actual.json").read_text(encoding="utf-8")
+    )
+    quote = json.loads(
+        (STAFFA_16_PIEGHE_STRESS_CASE / "quote.json").read_text(encoding="utf-8")
+    )
+
+    assert actual["raw_bounding_box_mm"]["x"] is not None
+    assert actual["detected_thickness_mm"] == 2.0
+    assert actual["complexity_score"] == "high"
+    assert actual["bends"]["count"] > 4
+    assert actual["warnings"]
+    assert quote["process_plan"] == ["laser 2D", "piegatura"]
+    assert quote["bending_details"]["bends_count"] == actual["bends"]["count"]
+    assert quote["confidence"] == "low"
+    assert quote["warnings"]

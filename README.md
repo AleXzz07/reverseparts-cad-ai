@@ -192,6 +192,9 @@ Current dataset cases:
 - `tests/dataset/lamiera_piana_test_1/`: flat sheet-metal laser-only part with circular holes and no bending operation.
 - `tests/dataset/staffa_1_piega_test_1/`: simple sheet-metal bracket with two circular holes and one bending operation.
 - `tests/dataset/staffa_u_test_1/`: U-shaped sheet-metal bracket with four circular holes and two bending operations.
+- `tests/dataset/staffa_16_pieghe_stress_test/`: complex sheet-metal stress test without rigid geometric evaluation; it validates robust analysis, complexity warnings, and quote generation.
+
+CAD feature tolerances are configurable in `config/analysis_default.json`. The current settings control circular-hole center, diameter, and axis matching plus bend surface pairing. Stress-test folders may omit `expected.json` and `evaluation.json`; the dataset evaluator skips those cases while analysis and quote generation still process them.
 
 Process every dataset folder inside Docker:
 

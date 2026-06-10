@@ -1,0 +1,1332 @@
+{
+  "part_name": "STAFFA 16 PIEGHE STRESS TEST",
+  "source_file": "input.stp",
+  "raw_bounding_box_mm": {
+    "x": 177.82,
+    "y": 134.319,
+    "z": 170.043
+  },
+  "effective_dimensions_mm": {
+    "x": 177.82,
+    "y": 134.319,
+    "z": 170.043
+  },
+  "volume_cm3": 47.843,
+  "surface_area_cm2": 519.8,
+  "estimated_weight_kg": null,
+  "declared_material": null,
+  "density_g_cm3": null,
+  "declared_thickness_mm": null,
+  "detected_thickness_mm": 2.0,
+  "thickness_confidence": "high",
+  "holes": {
+    "circular": [
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 4.0,
+        "radius_mm": 2.0,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.0,
+        "center": [
+          3325.22,
+          -704.263,
+          583.482
+        ],
+        "axis": [
+          -0.643,
+          0.766,
+          -0.0
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      },
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 4.0,
+        "radius_mm": 2.0,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.0,
+        "center": [
+          3348.357,
+          -684.849,
+          582.023
+        ],
+        "axis": [
+          -0.643,
+          0.766,
+          -0.0
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      },
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 4.0,
+        "radius_mm": 2.0,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.592,
+        "center": [
+          3362.144,
+          -703.978,
+          659.332
+        ],
+        "axis": [
+          -0.048,
+          -0.024,
+          -0.999
+        ],
+        "position_mm": null,
+        "confidence": "medium"
+      },
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 6.0,
+        "radius_mm": 3.0,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.0,
+        "center": [
+          3302.694,
+          -755.901,
+          582.936
+        ],
+        "axis": [
+          -0.524,
+          0.84,
+          0.14
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      },
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 6.0,
+        "radius_mm": 3.0,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.0,
+        "center": [
+          3328.783,
+          -701.274,
+          600.879
+        ],
+        "axis": [
+          -0.643,
+          0.766,
+          0.0
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      },
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 6.0,
+        "radius_mm": 3.0,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.0,
+        "center": [
+          3384.125,
+          -677.685,
+          572.485
+        ],
+        "axis": [
+          -0.304,
+          0.487,
+          -0.819
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      },
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 6.0,
+        "radius_mm": 3.0,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.0,
+        "center": [
+          3427.095,
+          -634.593,
+          567.955
+        ],
+        "axis": [
+          0.0,
+          1.0,
+          0.0
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      },
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 6.0,
+        "radius_mm": 3.0,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.0,
+        "center": [
+          3456.095,
+          -694.0,
+          539.449
+        ],
+        "axis": [
+          1.0,
+          0.0,
+          -0.0
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      },
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 6.5,
+        "radius_mm": 3.25,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.0,
+        "center": [
+          3287.65,
+          -754.221,
+          586.654
+        ],
+        "axis": [
+          0.129,
+          -0.084,
+          0.988
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      },
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 6.5,
+        "radius_mm": 3.25,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.0,
+        "center": [
+          3343.518,
+          -703.901,
+          617.926
+        ],
+        "axis": [
+          -0.125,
+          0.073,
+          0.99
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      },
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 6.5,
+        "radius_mm": 3.25,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.0,
+        "center": [
+          3406.578,
+          -658.506,
+          575.548
+        ],
+        "axis": [
+          -0.304,
+          0.487,
+          -0.819
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      },
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 7.0,
+        "radius_mm": 3.5,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.0,
+        "center": [
+          3440.0,
+          -688.0,
+          536.0
+        ],
+        "axis": [
+          0.0,
+          0.0,
+          -1.0
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      },
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 8.0,
+        "radius_mm": 4.0,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 5.874,
+        "center": [
+          3359.837,
+          -681.743,
+          627.761
+        ],
+        "axis": [
+          -0.043,
+          -0.036,
+          -0.998
+        ],
+        "position_mm": null,
+        "confidence": "medium"
+      },
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 8.0,
+        "radius_mm": 4.0,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.787,
+        "center": [
+          3362.144,
+          -703.978,
+          659.332
+        ],
+        "axis": [
+          -0.048,
+          -0.024,
+          -0.999
+        ],
+        "position_mm": null,
+        "confidence": "medium"
+      },
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 10.0,
+        "radius_mm": 5.0,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.0,
+        "center": [
+          3286.831,
+          -762.675,
+          557.815
+        ],
+        "axis": [
+          -0.203,
+          -0.187,
+          -0.961
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      },
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 10.0,
+        "radius_mm": 5.0,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.0,
+        "center": [
+          3312.27,
+          -715.13,
+          650.38
+        ],
+        "axis": [
+          -0.643,
+          0.766,
+          0.0
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      },
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 10.0,
+        "radius_mm": 5.0,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.0,
+        "center": [
+          3312.307,
+          -715.099,
+          621.987
+        ],
+        "axis": [
+          -0.643,
+          0.766,
+          -0.0
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      },
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 10.0,
+        "radius_mm": 5.0,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.0,
+        "center": [
+          3318.871,
+          -720.022,
+          549.439
+        ],
+        "axis": [
+          -0.983,
+          0.15,
+          0.107
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      },
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 10.0,
+        "radius_mm": 5.0,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.0,
+        "center": [
+          3319.658,
+          -711.343,
+          544.523
+        ],
+        "axis": [
+          -0.983,
+          0.15,
+          0.107
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      },
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 10.0,
+        "radius_mm": 5.0,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.0,
+        "center": [
+          3323.647,
+          -709.092,
+          578.135
+        ],
+        "axis": [
+          -0.983,
+          0.15,
+          0.107
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      },
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 10.0,
+        "radius_mm": 5.0,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.0,
+        "center": [
+          3327.695,
+          -702.187,
+          589.691
+        ],
+        "axis": [
+          -0.643,
+          0.766,
+          -0.0
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      },
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 10.0,
+        "radius_mm": 5.0,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.0,
+        "center": [
+          3345.096,
+          -687.585,
+          587.58
+        ],
+        "axis": [
+          -0.643,
+          0.766,
+          0.0
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      },
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 10.0,
+        "radius_mm": 5.0,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.0,
+        "center": [
+          3357.519,
+          -679.335,
+          541.102
+        ],
+        "axis": [
+          -0.03,
+          0.992,
+          0.122
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      },
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 10.0,
+        "radius_mm": 5.0,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.0,
+        "center": [
+          3367.084,
+          -679.406,
+          544.053
+        ],
+        "axis": [
+          -0.03,
+          0.992,
+          0.122
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      },
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 10.0,
+        "radius_mm": 5.0,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.785,
+        "center": [
+          3418.321,
+          -647.193,
+          533.887
+        ],
+        "axis": [
+          0.043,
+          0.052,
+          0.998
+        ],
+        "position_mm": null,
+        "confidence": "medium"
+      },
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 10.0,
+        "radius_mm": 5.0,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.735,
+        "center": [
+          3420.745,
+          -659.686,
+          534.439
+        ],
+        "axis": [
+          -0.043,
+          -0.052,
+          -0.998
+        ],
+        "position_mm": null,
+        "confidence": "medium"
+      },
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 10.0,
+        "radius_mm": 5.0,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.0,
+        "center": [
+          3423.713,
+          -635.593,
+          536.0
+        ],
+        "axis": [
+          -0.0,
+          0.0,
+          -1.0
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      },
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 10.0,
+        "radius_mm": 5.0,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.0,
+        "center": [
+          3423.713,
+          -634.593,
+          537.0
+        ],
+        "axis": [
+          -0.0,
+          1.0,
+          -0.0
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      },
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 10.0,
+        "radius_mm": 5.0,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.0,
+        "center": [
+          3436.5,
+          -692.0,
+          536.0
+        ],
+        "axis": [
+          0.0,
+          0.0,
+          -1.0
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      },
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 10.0,
+        "radius_mm": 5.0,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.0,
+        "center": [
+          3455.095,
+          -635.593,
+          536.0
+        ],
+        "axis": [
+          -0.0,
+          0.0,
+          -1.0
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      },
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 10.0,
+        "radius_mm": 5.0,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.0,
+        "center": [
+          3455.095,
+          -634.593,
+          537.0
+        ],
+        "axis": [
+          -0.0,
+          1.0,
+          0.0
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      },
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 10.0,
+        "radius_mm": 5.0,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.0,
+        "center": [
+          3456.095,
+          -635.593,
+          537.0
+        ],
+        "axis": [
+          1.0,
+          -0.0,
+          0.0
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      },
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 12.0,
+        "radius_mm": 6.0,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.0,
+        "center": [
+          3336.443,
+          -694.846,
+          570.879
+        ],
+        "axis": [
+          -0.643,
+          0.766,
+          -0.0
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      },
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 12.0,
+        "radius_mm": 6.0,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.0,
+        "center": [
+          3367.369,
+          -668.896,
+          626.882
+        ],
+        "axis": [
+          -0.643,
+          0.766,
+          -0.0
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      },
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 12.0,
+        "radius_mm": 6.0,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.0,
+        "center": [
+          3442.595,
+          -634.593,
+          573.098
+        ],
+        "axis": [
+          0.0,
+          1.0,
+          0.0
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      },
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 16.0,
+        "radius_mm": 8.0,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.0,
+        "center": [
+          3287.348,
+          -755.588,
+          586.577
+        ],
+        "axis": [
+          -0.129,
+          0.084,
+          -0.988
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      },
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 16.0,
+        "radius_mm": 8.0,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.0,
+        "center": [
+          3289.016,
+          -754.524,
+          586.449
+        ],
+        "axis": [
+          -0.129,
+          0.084,
+          -0.988
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      },
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 16.0,
+        "radius_mm": 8.0,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.0,
+        "center": [
+          3370.775,
+          -666.038,
+          624.09
+        ],
+        "axis": [
+          -0.643,
+          0.766,
+          0.0
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      },
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 20.0,
+        "radius_mm": 10.0,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.0,
+        "center": [
+          3304.177,
+          -739.233,
+          549.597
+        ],
+        "axis": [
+          -0.203,
+          -0.187,
+          -0.961
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      },
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 20.0,
+        "radius_mm": 10.0,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.0,
+        "center": [
+          3318.756,
+          -729.37,
+          544.6
+        ],
+        "axis": [
+          -0.203,
+          -0.187,
+          -0.961
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      },
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 20.0,
+        "radius_mm": 10.0,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 4.192,
+        "center": [
+          3325.181,
+          -727.727,
+          542.911
+        ],
+        "axis": [
+          -0.203,
+          -0.187,
+          -0.961
+        ],
+        "position_mm": null,
+        "confidence": "medium"
+      },
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 20.0,
+        "radius_mm": 10.0,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.0,
+        "center": [
+          3369.317,
+          -667.262,
+          630.327
+        ],
+        "axis": [
+          -0.643,
+          0.766,
+          0.0
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      },
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 20.0,
+        "radius_mm": 10.0,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.0,
+        "center": [
+          3415.344,
+          -655.29,
+          574.207
+        ],
+        "axis": [
+          -0.304,
+          0.487,
+          -0.819
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      },
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 20.0,
+        "radius_mm": 10.0,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.0,
+        "center": [
+          3440.095,
+          -634.593,
+          576.598
+        ],
+        "axis": [
+          0.0,
+          1.0,
+          0.0
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      },
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 20.0,
+        "radius_mm": 10.0,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.0,
+        "center": [
+          3445.095,
+          -634.593,
+          576.598
+        ],
+        "axis": [
+          0.0,
+          1.0,
+          0.0
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      }
+    ],
+    "elongated": [],
+    "polygonal": [
+      {
+        "num_sides": 6,
+        "max_dimension_mm": 30.83,
+        "bounding_box_mm": {
+          "x": 8.002,
+          "y": 5.291,
+          "z": 10.173
+        },
+        "diameter_mm": null,
+        "radius_mm": null,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": null,
+        "center": [
+          3291.2,
+          -760.534,
+          567.682
+        ],
+        "axis": [
+          -0.524,
+          0.84,
+          0.14
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      },
+      {
+        "num_sides": 6,
+        "max_dimension_mm": 30.83,
+        "bounding_box_mm": {
+          "x": 8.717,
+          "y": 5.443,
+          "z": 8.812
+        },
+        "diameter_mm": null,
+        "radius_mm": null,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": null,
+        "center": [
+          3418.316,
+          -671.062,
+          550.025
+        ],
+        "axis": [
+          -0.524,
+          0.84,
+          0.14
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      }
+    ],
+    "confidence": "medium"
+  },
+  "bends": {
+    "count": 15,
+    "confidence": "high",
+    "items": [
+      {
+        "type": "simple flange",
+        "radius_mm": 2.0,
+        "length_mm": 21.64,
+        "axis": [
+          -0.842,
+          -0.536,
+          0.064
+        ],
+        "center": [
+          3298.938,
+          -754.537,
+          582.113
+        ],
+        "confidence": "high"
+      },
+      {
+        "type": "simple flange",
+        "radius_mm": 4.0,
+        "length_mm": 31.95,
+        "axis": [
+          -0.091,
+          0.108,
+          -0.99
+        ],
+        "center": [
+          3313.49,
+          -742.397,
+          578.088
+        ],
+        "confidence": "high"
+      },
+      {
+        "type": "simple flange",
+        "radius_mm": 4.0,
+        "length_mm": 49.61,
+        "axis": [
+          0.037,
+          0.031,
+          0.999
+        ],
+        "center": [
+          3317.39,
+          -717.361,
+          654.653
+        ],
+        "confidence": "high"
+      },
+      {
+        "type": "simple flange",
+        "radius_mm": 2.0,
+        "length_mm": 33.68,
+        "axis": [
+          -0.123,
+          -0.103,
+          -0.987
+        ],
+        "center": [
+          3326.846,
+          -706.816,
+          576.291
+        ],
+        "confidence": "high"
+      },
+      {
+        "type": "simple flange",
+        "radius_mm": 2.0,
+        "length_mm": 81.66,
+        "axis": [
+          -0.045,
+          -0.022,
+          -0.999
+        ],
+        "center": [
+          3333.051,
+          -723.222,
+          658.722
+        ],
+        "confidence": "high"
+      },
+      {
+        "type": "simple flange",
+        "radius_mm": 3.0,
+        "length_mm": 48.99,
+        "axis": [
+          -0.765,
+          -0.642,
+          -0.049
+        ],
+        "center": [
+          3337.985,
+          -698.774,
+          612.809
+        ],
+        "confidence": "high"
+      },
+      {
+        "type": "simple flange",
+        "radius_mm": 2.0,
+        "length_mm": 36.65,
+        "axis": [
+          0.832,
+          0.55,
+          0.064
+        ],
+        "center": [
+          3348.137,
+          -712.958,
+          622.207
+        ],
+        "confidence": "high"
+      },
+      {
+        "type": "simple flange",
+        "radius_mm": 2.0,
+        "length_mm": 35.51,
+        "axis": [
+          0.149,
+          0.125,
+          -0.981
+        ],
+        "center": [
+          3350.519,
+          -686.952,
+          576.853
+        ],
+        "confidence": "high"
+      },
+      {
+        "type": "simple flange",
+        "radius_mm": 2.0,
+        "length_mm": 15.47,
+        "axis": [
+          -0.042,
+          -0.02,
+          -0.999
+        ],
+        "center": [
+          3356.89,
+          -707.473,
+          661.782
+        ],
+        "confidence": "high"
+      },
+      {
+        "type": "simple flange",
+        "radius_mm": 4.0,
+        "length_mm": 26.2,
+        "axis": [
+          -0.043,
+          -0.036,
+          -0.998
+        ],
+        "center": [
+          3361.109,
+          -680.676,
+          657.28
+        ],
+        "confidence": "high"
+      },
+      {
+        "type": "simple flange",
+        "radius_mm": 2.0,
+        "length_mm": 76.14,
+        "axis": [
+          -0.048,
+          -0.024,
+          -0.999
+        ],
+        "center": [
+          3362.144,
+          -703.978,
+          659.332
+        ],
+        "confidence": "high"
+      },
+      {
+        "type": "simple flange",
+        "radius_mm": 8.0,
+        "length_mm": 22.66,
+        "axis": [
+          -0.074,
+          0.119,
+          -0.99
+        ],
+        "center": [
+          3403.248,
+          -670.567,
+          554.896
+        ],
+        "confidence": "high"
+      },
+      {
+        "type": "simple flange",
+        "radius_mm": 4.0,
+        "length_mm": 21.2,
+        "axis": [
+          -0.848,
+          -0.53,
+          0.0
+        ],
+        "center": [
+          3410.197,
+          -671.87,
+          560.165
+        ],
+        "confidence": "high"
+      },
+      {
+        "type": "simple flange",
+        "radius_mm": 2.0,
+        "length_mm": 22.22,
+        "axis": [
+          -1.0,
+          0.0,
+          0.0
+        ],
+        "center": [
+          3439.891,
+          -637.593,
+          539.0
+        ],
+        "confidence": "high"
+      },
+      {
+        "type": "simple flange",
+        "radius_mm": 2.0,
+        "length_mm": 56.82,
+        "axis": [
+          0.0,
+          1.0,
+          0.0
+        ],
+        "center": [
+          3453.095,
+          -666.546,
+          539.0
+        ],
+        "confidence": "high"
+      }
+    ]
+  },
+  "cutting": {
+    "outer_cut_length_mm": 229.95,
+    "inner_cut_length_mm": 1596.33,
+    "total_cut_length_mm": 1826.28,
+    "confidence": "medium",
+    "warnings": [
+      "Cut length is preliminary: outer loop is selected from the longest planar external wire and inner loop length is derived from deduplicated detected features."
+    ]
+  },
+  "complexity_score": "high",
+  "warnings": [
+    "Complex sheet-metal part: bend detection may be incomplete",
+    "High number of circular features detected: hole deduplication applied"
+  ]
+}

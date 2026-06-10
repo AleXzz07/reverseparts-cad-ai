@@ -1,0 +1,13 @@
+{
+  "circular_hole_deduplication": {
+    "center_tolerance_mm": 1.0,
+    "diameter_tolerance_mm": 0.2,
+    "axis_angle_tolerance_deg": 5.0
+  },
+  "bend_detection": {
+    "center_tolerance_mm": 3.0,
+    "radius_pair_tolerance_mm": 0.5,
+    "axis_angle_tolerance_deg": 5.0,
+    "min_length_mm": 10.0
+  }
+}

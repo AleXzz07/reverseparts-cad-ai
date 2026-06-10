@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 import math
 import os
 import tempfile
@@ -13,6 +14,8 @@ from .schemas import BendFeature, CadAnalysisResponse, Dimensions, HoleFeature
 VALID_STEP_SUFFIXES = {".stp", ".step"}
 CIRCULAR_HOLE_MIN_DIAMETER_MM = 4.0
 CIRCULAR_HOLE_MAX_DIAMETER_MM = 20.0
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_ANALYSIS_CONFIG_PATH = PROJECT_ROOT / "config" / "analysis_default.json"
 FREECAD_PATH_CANDIDATES = (
     "/usr/lib/freecad-python3/lib",
     "/usr/lib/freecad/lib",
@@ -24,6 +27,32 @@ FREECAD_PATH_CANDIDATES = (
 class FreeCadStatus:
     available: bool
     error: str | None = None
+
+
+@dataclass(frozen=True)
+class AnalysisParameters:
+    hole_center_tolerance_mm: float
+    hole_diameter_tolerance_mm: float
+    hole_axis_angle_tolerance_deg: float
+    bend_center_tolerance_mm: float
+    bend_radius_pair_tolerance_mm: float
+    bend_axis_angle_tolerance_deg: float
+    bend_min_length_mm: float
+
+
+def load_analysis_config(path: Path = DEFAULT_ANALYSIS_CONFIG_PATH) -> AnalysisParameters:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    hole = data["circular_hole_deduplication"]
+    bend = data["bend_detection"]
+    return AnalysisParameters(
+        hole_center_tolerance_mm=float(hole["center_tolerance_mm"]),
+        hole_diameter_tolerance_mm=float(hole["diameter_tolerance_mm"]),
+        hole_axis_angle_tolerance_deg=float(hole["axis_angle_tolerance_deg"]),
+        bend_center_tolerance_mm=float(bend["center_tolerance_mm"]),
+        bend_radius_pair_tolerance_mm=float(bend["radius_pair_tolerance_mm"]),
+        bend_axis_angle_tolerance_deg=float(bend["axis_angle_tolerance_deg"]),
+        bend_min_length_mm=float(bend["min_length_mm"]),
+    )
 
 
 def _configure_freecad_path() -> None:
@@ -95,7 +124,15 @@ def _plane_offset(normal: tuple[float, float, float], point: tuple[float, float,
     return _dot(normal, point)
 
 
-def _is_duplicate_hole(candidate: HoleFeature, existing: HoleFeature) -> bool:
+def _axis_tolerance(angle_degrees: float) -> float:
+    return math.cos(math.radians(angle_degrees))
+
+
+def _is_duplicate_hole(
+    candidate: HoleFeature,
+    existing: HoleFeature,
+    parameters: AnalysisParameters,
+) -> bool:
     if candidate.diameter_mm is None or existing.diameter_mm is None:
         return False
     if candidate.center is None or existing.center is None:
@@ -103,12 +140,16 @@ def _is_duplicate_hole(candidate: HoleFeature, existing: HoleFeature) -> bool:
     if candidate.axis is None or existing.axis is None:
         return False
 
-    if abs(candidate.diameter_mm - existing.diameter_mm) > 0.2:
+    if abs(candidate.diameter_mm - existing.diameter_mm) > parameters.hole_diameter_tolerance_mm:
         return False
 
     candidate_axis = tuple(candidate.axis)
     existing_axis = tuple(existing.axis)
-    if not _axis_aligned(candidate_axis, existing_axis):
+    if not _axis_aligned(
+        candidate_axis,
+        existing_axis,
+        tolerance=_axis_tolerance(parameters.hole_axis_angle_tolerance_deg),
+    ):
         return False
 
     center_delta = tuple(
@@ -120,14 +161,19 @@ def _is_duplicate_hole(candidate: HoleFeature, existing: HoleFeature) -> bool:
         tuple(component - signed_projected_offset * axis for component, axis in zip(center_delta, existing_axis))
     )
     max_depth = max(candidate.depth_mm or 0.0, existing.depth_mm or 0.0, 1.0)
+    return (
+        radial_offset <= parameters.hole_center_tolerance_mm
+        and projected_offset <= max_depth + parameters.hole_center_tolerance_mm
+    )
 
-    max_radius = max(candidate.radius_mm or 0.0, existing.radius_mm or 0.0)
-    return radial_offset <= 0.75 and projected_offset <= max_depth + max_radius
 
-
-def _append_unique_hole(holes: list[HoleFeature], candidate: HoleFeature) -> None:
+def _append_unique_hole(
+    holes: list[HoleFeature],
+    candidate: HoleFeature,
+    parameters: AnalysisParameters,
+) -> None:
     for existing in holes:
-        if _is_duplicate_hole(candidate, existing):
+        if _is_duplicate_hole(candidate, existing, parameters):
             if existing.confidence != "high" and candidate.confidence == "high":
                 existing.confidence = "high"
             return
@@ -138,7 +184,7 @@ def _curve_type(edge) -> str:
     return getattr(edge.Curve, "TypeId", "")
 
 
-def _detect_circular_holes(shape) -> list[HoleFeature]:
+def _detect_circular_holes(shape, parameters: AnalysisParameters) -> list[HoleFeature]:
     face_candidates: list[HoleFeature] = []
     for face in shape.Faces:
         surface = face.Surface
@@ -198,9 +244,13 @@ def _detect_circular_holes(shape) -> list[HoleFeature]:
                 continue
 
             right = circular_edges[right_index]
-            if abs(left["diameter"] - right["diameter"]) > 0.2:
+            if abs(left["diameter"] - right["diameter"]) > parameters.hole_diameter_tolerance_mm:
                 continue
-            if not _axis_aligned(left["axis"], right["axis"]):
+            if not _axis_aligned(
+                left["axis"],
+                right["axis"],
+                tolerance=_axis_tolerance(parameters.hole_axis_angle_tolerance_deg),
+            ):
                 continue
 
             depth = _projected_distance(left["center"], right["center"], left["axis"])
@@ -214,7 +264,7 @@ def _detect_circular_holes(shape) -> list[HoleFeature]:
                     for component, axis in zip(center_offset, left["axis"])
                 )
             )
-            if radial_offset > 0.75:
+            if radial_offset > parameters.hole_center_tolerance_mm:
                 continue
 
             center = tuple((l + r) / 2.0 for l, r in zip(left["center"], right["center"]))
@@ -233,7 +283,7 @@ def _detect_circular_holes(shape) -> list[HoleFeature]:
 
     holes: list[HoleFeature] = []
     for candidate in edge_candidates + face_candidates:
-        _append_unique_hole(holes, candidate)
+        _append_unique_hole(holes, candidate, parameters)
 
     holes.sort(key=lambda hole: (hole.diameter_mm or 0.0, hole.center or []))
     return holes
@@ -480,11 +530,53 @@ def _append_unique_bend(bends: list[BendFeature], candidate: BendFeature) -> Non
     bends.append(candidate)
 
 
-def _detect_bends(shape, detected_thickness_mm: float | None = None) -> list[BendFeature]:
+def _bend_pair_matches(
+    left: BendFeature,
+    right: BendFeature,
+    thickness: float,
+    parameters: AnalysisParameters,
+) -> bool:
+    if left.radius_mm is None or right.radius_mm is None:
+        return False
+    if left.length_mm is None or right.length_mm is None:
+        return False
+    if left.center is None or right.center is None:
+        return False
+    if left.axis is None or right.axis is None:
+        return False
+
+    left_axis = tuple(left.axis)
+    right_axis = tuple(right.axis)
+    if not _axis_aligned(
+        left_axis,
+        right_axis,
+        tolerance=_axis_tolerance(parameters.bend_axis_angle_tolerance_deg),
+    ):
+        return False
+    if abs(abs(left.radius_mm - right.radius_mm) - thickness) > parameters.bend_radius_pair_tolerance_mm:
+        return False
+
+    center_delta = tuple(a - b for a, b in zip(left.center, right.center))
+    projected_delta = _dot(center_delta, left_axis)
+    perpendicular_delta = tuple(
+        component - projected_delta * axis_component
+        for component, axis_component in zip(center_delta, left_axis)
+    )
+    return (
+        _vector_norm(perpendicular_delta) <= parameters.bend_center_tolerance_mm
+        and abs(projected_delta) <= max(left.length_mm, right.length_mm) + parameters.bend_center_tolerance_mm
+    )
+
+
+def _detect_bends(
+    shape,
+    detected_thickness_mm: float | None,
+    parameters: AnalysisParameters,
+) -> list[BendFeature]:
     thickness_reference = detected_thickness_mm or 2.0
     min_radius = max(1.0, thickness_reference * 0.75)
-    max_radius = max(6.0, thickness_reference * 4.0)
-    bends: list[BendFeature] = []
+    max_radius = max(12.0, thickness_reference * 6.0)
+    candidates: list[BendFeature] = []
 
     for face in shape.Faces:
         surface = face.Surface
@@ -497,11 +589,10 @@ def _detect_bends(shape, detected_thickness_mm: float | None = None) -> list[Ben
 
         axis = _normalize_vector(surface.Axis)
         length = _candidate_depth_from_bbox(face.BoundBox, axis)
-        if not 45.0 <= length <= 60.0:
+        if length < parameters.bend_min_length_mm:
             continue
 
-        _append_unique_bend(
-            bends,
+        candidates.append(
             BendFeature(
                 type="simple flange",
                 radius_mm=round(radius, 2),
@@ -512,8 +603,57 @@ def _detect_bends(shape, detected_thickness_mm: float | None = None) -> list[Ben
             ),
         )
 
+    bends: list[BendFeature] = []
+    for left_index, left in enumerate(candidates):
+        for right in candidates[left_index + 1 :]:
+            if not _bend_pair_matches(left, right, thickness_reference, parameters):
+                continue
+
+            inner, outer = sorted(
+                (left, right),
+                key=lambda candidate: candidate.radius_mm or 0.0,
+            )
+            center = tuple(
+                (a + b) / 2.0
+                for a, b in zip(inner.center or [], outer.center or [])
+            )
+            _append_unique_bend(
+                bends,
+                BendFeature(
+                    type="simple flange",
+                    radius_mm=inner.radius_mm,
+                    length_mm=round(max(inner.length_mm or 0.0, outer.length_mm or 0.0), 2),
+                    axis=inner.axis,
+                    center=_rounded_vector(center),
+                    confidence="high",
+                ),
+            )
+
+    if not bends:
+        for candidate in candidates:
+            _append_unique_bend(bends, candidate)
+
     bends.sort(key=lambda bend: bend.center or [])
     return bends
+
+
+def _complexity_score(shape, circular_count: int, bend_count: int) -> str:
+    face_count = len(shape.Faces)
+    cylindrical_face_count = sum(
+        1
+        for face in shape.Faces
+        if getattr(face.Surface, "TypeId", "") == "Part::GeomCylinder"
+    )
+    if (
+        face_count >= 150
+        or cylindrical_face_count >= 40
+        or circular_count >= 20
+        or bend_count >= 8
+    ):
+        return "high"
+    if face_count >= 40 or cylindrical_face_count >= 10 or circular_count >= 6 or bend_count >= 1:
+        return "medium"
+    return "low"
 
 
 def _detect_cutting_lengths(shape, circular: list[HoleFeature], elongated: list[HoleFeature], polygonal: list[HoleFeature]):
@@ -678,6 +818,7 @@ def analyze_step_file(
 
     _configure_freecad_path()
     Part = importlib.import_module("Part")
+    analysis_parameters = load_analysis_config()
 
     temp_path: str | None = None
     try:
@@ -710,7 +851,7 @@ def analyze_step_file(
         response.detected_thickness_mm = detected_thickness
         response.thickness_confidence = thickness_confidence
 
-        response.holes.circular = _detect_circular_holes(shape)
+        response.holes.circular = _detect_circular_holes(shape, analysis_parameters)
         response.holes.elongated = _detect_elongated_holes(shape)
         response.holes.polygonal = _detect_polygonal_holes(shape)
         if len(response.holes.circular) >= 4:
@@ -725,7 +866,11 @@ def analyze_step_file(
                 "Circular hole detection found no high-confidence candidates in the configured diameter range."
             )
 
-        response.bends.items = _detect_bends(shape, detected_thickness)
+        response.bends.items = _detect_bends(
+            shape,
+            detected_thickness,
+            analysis_parameters,
+        )
         if response.bends.items:
             response.bends.count = len(response.bends.items)
             response.bends.confidence = (
@@ -737,6 +882,20 @@ def analyze_step_file(
         else:
             response.bends.count = 0
             response.bends.confidence = "medium"
+
+        response.complexity_score = _complexity_score(
+            shape,
+            len(response.holes.circular),
+            response.bends.count,
+        )
+        if response.complexity_score == "high":
+            response.warnings.append(
+                "Complex sheet-metal part: bend detection may be incomplete"
+            )
+        if len(response.holes.circular) >= 20:
+            response.warnings.append(
+                "High number of circular features detected: hole deduplication applied"
+            )
 
         (
             response.cutting.outer_cut_length_mm,

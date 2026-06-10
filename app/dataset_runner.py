@@ -93,6 +93,8 @@ def analyze_dataset(dataset_dir: Path = DEFAULT_DATASET_DIR, quantity: int = 1) 
 def evaluate_dataset(dataset_dir: Path = DEFAULT_DATASET_DIR) -> list[dict[str, Any]]:
     reports = []
     for case_dir in iter_dataset_cases(dataset_dir):
+        if not (case_dir / "expected.json").exists():
+            continue
         report = evaluate_files(
             case_dir / "actual.json",
             case_dir / "expected.json",
