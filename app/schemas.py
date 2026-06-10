@@ -95,6 +95,8 @@ class QuoteRequest(BaseModel):
     analysis: dict[str, Any]
     quantity: int = Field(gt=0)
     material: str
+    pricing_overrides: dict[str, float] | None = None
+    material_overrides: dict[str, float] | None = None
 
 
 class AnalyzeAndQuoteResponse(BaseModel):

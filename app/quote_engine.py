@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +11,21 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_PRICING_CONFIG_PATH = PROJECT_ROOT / "config" / "pricing_default.json"
 DEFAULT_MATERIALS_CONFIG_PATH = PROJECT_ROOT / "config" / "materials.json"
 STANDARD_QUANTITY_BREAKS = (1, 5, 10, 25, 50, 100)
+PRICING_OVERRIDE_FIELDS = {
+    "laser_rate_eur_min",
+    "bending_rate_eur_min",
+    "cad_check_rate_eur_min",
+    "handling_rate_eur_min",
+    "laser_cut_speed_mm_min",
+    "laser_pierce_time_sec",
+    "laser_extra_handling_sec_per_piece",
+    "bending_setup_time_min",
+    "bending_time_sec_per_bend",
+    "bending_extra_handling_sec_per_piece",
+    "setup_cost_eur",
+    "minimum_order_value_eur",
+}
+MATERIAL_OVERRIDE_FIELDS = {"density_g_cm3", "cost_eur_kg"}
 
 
 @dataclass(frozen=True)
@@ -66,20 +81,24 @@ def load_materials_config(path: Path = DEFAULT_MATERIALS_CONFIG_PATH) -> dict[st
 
 
 def _parameters_to_dict(parameters: QuoteParameters) -> dict[str, float]:
-    return {
-        "laser_rate_eur_min": parameters.laser_rate_eur_min,
-        "bending_rate_eur_min": parameters.bending_rate_eur_min,
-        "cad_check_rate_eur_min": parameters.cad_check_rate_eur_min,
-        "handling_rate_eur_min": parameters.handling_rate_eur_min,
-        "laser_cut_speed_mm_min": parameters.laser_cut_speed_mm_min,
-        "laser_pierce_time_sec": parameters.laser_pierce_time_sec,
-        "laser_extra_handling_sec_per_piece": parameters.laser_extra_handling_sec_per_piece,
-        "bending_setup_time_min": parameters.bending_setup_time_min,
-        "bending_time_sec_per_bend": parameters.bending_time_sec_per_bend,
-        "bending_extra_handling_sec_per_piece": parameters.bending_extra_handling_sec_per_piece,
-        "setup_cost_eur": parameters.setup_cost_eur,
-        "minimum_order_value_eur": parameters.minimum_order_value_eur,
-    }
+    return asdict(parameters)
+
+
+def _validated_overrides(
+    overrides: dict[str, float] | None,
+    allowed_fields: set[str],
+    label: str,
+) -> dict[str, float]:
+    if not overrides:
+        return {}
+    unknown = sorted(set(overrides) - allowed_fields)
+    if unknown:
+        raise ValueError(f"Override {label} non riconosciuti: {', '.join(unknown)}.")
+    values = {key: float(value) for key, value in overrides.items()}
+    invalid = sorted(key for key, value in values.items() if value < 0)
+    if invalid:
+        raise ValueError(f"Override {label} non validi: {', '.join(invalid)} devono essere >= 0.")
+    return values
 
 
 def _round_money(value: float) -> float:
@@ -316,11 +335,25 @@ def quote_from_cad(
     material: str | None = None,
     parameters: QuoteParameters | None = None,
     materials: dict[str, dict[str, Any]] | None = None,
+    pricing_overrides: dict[str, float] | None = None,
+    material_overrides: dict[str, float] | None = None,
     pricing_config_path: Path = DEFAULT_PRICING_CONFIG_PATH,
     materials_config_path: Path = DEFAULT_MATERIALS_CONFIG_PATH,
 ) -> dict[str, Any]:
     parameters = parameters or load_pricing_config(pricing_config_path)
     materials = materials or load_materials_config(materials_config_path)
+    effective_pricing_overrides = _validated_overrides(
+        pricing_overrides,
+        PRICING_OVERRIDE_FIELDS,
+        "pricing",
+    )
+    effective_material_overrides = _validated_overrides(
+        material_overrides,
+        MATERIAL_OVERRIDE_FIELDS,
+        "materiale",
+    )
+    if effective_pricing_overrides:
+        parameters = replace(parameters, **effective_pricing_overrides)
     quantity = max(int(quantity), 1)
     circular_holes = _feature_count(cad_data, "circular")
     elongated_holes = _feature_count(cad_data, "elongated")
@@ -338,9 +371,23 @@ def quote_from_cad(
 
     material_name = material or cad_data.get("declared_material")
     material_key = str(material_name).lower() if material_name else None
-    material_config = materials.get(material_key or "") if material_key else None
+    base_material_config = materials.get(material_key or "") if material_key else None
+    material_config = (
+        {
+            **base_material_config,
+            "laser": dict(base_material_config.get("laser", {})),
+        }
+        if base_material_config
+        else None
+    )
     if material is not None and material_config is None:
         raise _material_error(str(material), materials)
+    if material_config is not None:
+        material_config.update(effective_material_overrides)
+        if "laser_cut_speed_mm_min" in effective_pricing_overrides:
+            material_config["laser"]["cut_speed_mm_min"] = parameters.laser_cut_speed_mm_min
+        if "laser_pierce_time_sec" in effective_pricing_overrides:
+            material_config["laser"]["pierce_time_sec"] = parameters.laser_pierce_time_sec
 
     volume_cm3 = cad_data.get("volume_cm3")
     if material_config is not None and volume_cm3 is not None:
@@ -473,6 +520,9 @@ def quote_from_cad(
             "pricing": _parameters_to_dict(parameters),
             "material": material_config,
         },
+        "overrides_used": bool(
+            effective_pricing_overrides or effective_material_overrides
+        ),
         "confidence": _confidence(cad_data),
         "warnings": warnings,
     }

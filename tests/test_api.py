@@ -57,6 +57,15 @@ def test_health_returns_freecad_status():
     assert "freecad_error" in payload
 
 
+def test_frontend_returns_html():
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/html")
+    assert "REVERSEPARTS" in response.text
+    assert "Analizza e genera preventivo" in response.text
+
+
 def test_analyze_cad_requires_file():
     response = client.post("/analyze-cad")
 
@@ -127,6 +136,48 @@ def test_quote_endpoint_generates_quote_from_analysis():
     assert payload["material"]["weight_source"] == "recalculated_from_volume"
     assert payload["laser_details"]["material_laser_profile_used"] is True
     assert payload["laser_details"]["cut_speed_mm_min"] == 3500.0
+    assert payload["overrides_used"] is False
+
+
+def test_quote_endpoint_pricing_overrides_change_cost():
+    analysis = json.loads(STAFFA_ACTUAL_FILE.read_text(encoding="utf-8"))
+    base_response = client.post(
+        "/quote",
+        json={
+            "analysis": analysis,
+            "quantity": 10,
+            "material": "alluminio",
+        },
+    )
+    override_response = client.post(
+        "/quote",
+        json={
+            "analysis": analysis,
+            "quantity": 10,
+            "material": "alluminio",
+            "pricing_overrides": {
+                "laser_rate_eur_min": 9.0,
+                "setup_cost_eur": 50.0,
+            },
+            "material_overrides": {
+                "cost_eur_kg": 12.0,
+            },
+        },
+    )
+
+    assert base_response.status_code == 200
+    assert override_response.status_code == 200
+    base = base_response.json()
+    overridden = override_response.json()
+    assert base["overrides_used"] is False
+    assert overridden["overrides_used"] is True
+    assert overridden["config_used"]["pricing"]["laser_rate_eur_min"] == 9.0
+    assert overridden["config_used"]["pricing"]["setup_cost_eur"] == 50.0
+    assert overridden["config_used"]["material"]["cost_eur_kg"] == 12.0
+    assert (
+        overridden["estimated_internal_cost_eur"]["total"]
+        > base["estimated_internal_cost_eur"]["total"]
+    )
 
 
 def test_quote_endpoint_rejects_unknown_material():

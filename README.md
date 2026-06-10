@@ -171,6 +171,18 @@ Use `-Material` to choose a material key from `config/materials.json`. If the se
 
 The quote separates `estimated_internal_cost_eur` from `commercial_guidance`. The engine shows the configured minimum order value and minimum billable guidance, but it does not apply margin or decide the final commercial price. When CAD analysis provides `cutting.total_cut_length_mm`, laser time uses the configured cut speed, pierce time, pierce count, and extra handling time per piece; otherwise the quote falls back to the feature-based heuristic. The resulting quote includes `laser_details` with `cut_length_mm`, `cut_speed_mm_min`, `pierce_count`, `pierce_time_sec`, and `laser_time_min_per_piece`.
 
+## Web App
+
+Start the API and open `http://localhost:8000/`:
+
+```powershell
+docker run --rm -p 8000:8000 reverseparts-cad-ai
+```
+
+The page runs the complete STEP analysis, quote, and PDF flow. Material and pricing defaults are loaded from `config/materials.json` and `config/pricing_default.json`. Values edited in the page are sent as `material_overrides` and `pricing_overrides`, apply only to that request, and never modify the config files. The quote reports `overrides_used` and exposes the effective values under `config_used`.
+
+`POST /quote` accepts optional JSON objects named `pricing_overrides` and `material_overrides`. `POST /analyze-and-quote` accepts the same fields as JSON-encoded multipart form values.
+
 Bending time uses `bending_setup_time_min` once per order plus a per-piece time based on `bending_time_sec_per_bend` and `bending_extra_handling_sec_per_piece`. If the CAD analysis does not provide `bends.count`, the engine uses the previous heuristic and adds a warning. The quote includes `bending_details` with the configured inputs and calculated per-piece and total bending time.
 
 ## Dataset Multi Pezzo

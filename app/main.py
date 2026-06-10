@@ -2,11 +2,15 @@ from __future__ import annotations
 
 from typing import Any
 
+import json
+from pathlib import Path
+
 from fastapi import FastAPI, File, Form, HTTPException, Response, UploadFile
+from fastapi.responses import FileResponse
 
 from .cad_analyzer import VALID_STEP_SUFFIXES, analyze_step_file, get_freecad_status
 from .pdf_report import generate_quote_pdf
-from .quote_engine import load_materials_config, quote_from_cad
+from .quote_engine import load_materials_config, load_pricing_config, quote_from_cad
 from .schemas import AnalyzeAndQuoteResponse, CadAnalysisResponse, HealthResponse, QuotePdfRequest, QuoteRequest
 
 
@@ -15,6 +19,7 @@ app = FastAPI(
     description="Backend for verifiable STEP/STP CAD analysis.",
     version="0.1.0",
 )
+STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 
 def _model_to_dict(model: Any) -> dict[str, Any]:
@@ -41,6 +46,35 @@ def _material_config_or_400(material: str) -> dict[str, Any]:
             detail=f"Unknown material '{material}'. Available materials: {available}.",
         )
     return material_config
+
+
+def _json_overrides_or_400(value: str | None, label: str) -> dict[str, float] | None:
+    if not value:
+        return None
+    try:
+        payload = json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail=f"{label} must be valid JSON.") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail=f"{label} must be a JSON object.")
+    return payload
+
+
+@app.get("/", include_in_schema=False)
+def frontend() -> FileResponse:
+    return FileResponse(STATIC_DIR / "index.html", media_type="text/html")
+
+
+@app.get("/config/defaults")
+def config_defaults() -> dict[str, Any]:
+    pricing = load_pricing_config()
+    return {
+        "pricing": {
+            field: getattr(pricing, field)
+            for field in pricing.__dataclass_fields__
+        },
+        "materials": load_materials_config(),
+    }
 
 
 async def _analyze_uploaded_cad(
@@ -120,6 +154,8 @@ def quote(request: QuoteRequest) -> dict[str, Any]:
             request.analysis,
             quantity=quantity,
             material=request.material,
+            pricing_overrides=request.pricing_overrides,
+            material_overrides=request.material_overrides,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -141,22 +177,43 @@ async def analyze_and_quote(
     material: str = Form(...),
     quantity: int = Form(...),
     declared_thickness_mm: float | None = Form(default=None),
+    pricing_overrides: str | None = Form(default=None),
+    material_overrides: str | None = Form(default=None),
 ) -> AnalyzeAndQuoteResponse:
     quantity = _validate_quantity(quantity)
     material_config = _material_config_or_400(material)
+    parsed_pricing_overrides = _json_overrides_or_400(
+        pricing_overrides,
+        "pricing_overrides",
+    )
+    parsed_material_overrides = _json_overrides_or_400(
+        material_overrides,
+        "material_overrides",
+    )
+    density = (
+        parsed_material_overrides.get("density_g_cm3")
+        if parsed_material_overrides
+        and "density_g_cm3" in parsed_material_overrides
+        else material_config["density_g_cm3"]
+    )
     analysis = await _analyze_uploaded_cad(
         file=file,
         material=material,
-        density_g_cm3=material_config["density_g_cm3"],
+        density_g_cm3=density,
         declared_thickness_mm=declared_thickness_mm,
         quantity=quantity,
     )
     analysis_payload = _model_to_dict(analysis)
-    quote_payload = quote_from_cad(
-        analysis_payload,
-        quantity=quantity,
-        material=material,
-    )
+    try:
+        quote_payload = quote_from_cad(
+            analysis_payload,
+            quantity=quantity,
+            material=material,
+            pricing_overrides=parsed_pricing_overrides,
+            material_overrides=parsed_material_overrides,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return AnalyzeAndQuoteResponse(
         analysis=analysis_payload,
         quote=quote_payload,

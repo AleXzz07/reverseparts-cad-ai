@@ -1,0 +1,468 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>REVERSEPARTS CAD Quote</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #16202a;
+      --muted: #63707c;
+      --line: #d8dee5;
+      --panel: #ffffff;
+      --soft: #f3f6f8;
+      --accent: #087e8b;
+      --accent-dark: #05616a;
+      --warm: #d97706;
+      --danger: #b42318;
+      --ok: #237a57;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-width: 320px;
+      background: #eef2f4;
+      color: var(--ink);
+      font-family: Inter, "Segoe UI", Arial, sans-serif;
+      font-size: 14px;
+      letter-spacing: 0;
+    }
+    header {
+      height: 64px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 28px;
+      background: #17242b;
+      color: white;
+      border-bottom: 4px solid var(--accent);
+    }
+    .brand { font-size: 20px; font-weight: 750; }
+    .brand small { margin-left: 10px; color: #a9bbc3; font-size: 12px; font-weight: 500; }
+    .health { font-size: 12px; color: #b8c8ce; }
+    main {
+      width: min(1440px, 100%);
+      margin: 0 auto;
+      padding: 20px 24px 32px;
+      display: grid;
+      grid-template-columns: minmax(360px, 440px) minmax(0, 1fr);
+      gap: 18px;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+    }
+    .panel-title {
+      margin: 0;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+      font-size: 15px;
+      font-weight: 700;
+    }
+    .panel-body { padding: 16px; }
+    .stack { display: grid; gap: 14px; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    label { display: grid; gap: 6px; color: #34424d; font-size: 12px; font-weight: 650; }
+    input, select {
+      width: 100%;
+      min-height: 38px;
+      border: 1px solid #bdc7cf;
+      border-radius: 4px;
+      background: white;
+      color: var(--ink);
+      padding: 8px 10px;
+      font: inherit;
+    }
+    input:focus, select:focus { outline: 2px solid #8bcbd1; border-color: var(--accent); }
+    input[type="file"] { padding: 6px; background: var(--soft); }
+    details { border-top: 1px solid var(--line); }
+    summary {
+      cursor: pointer;
+      padding: 14px 16px;
+      font-weight: 700;
+      list-style: none;
+    }
+    summary::after { content: "+"; float: right; color: var(--accent); font-size: 18px; }
+    details[open] summary::after { content: "-"; }
+    .parameter-group { padding: 0 16px 16px; }
+    .parameter-group h3 {
+      margin: 12px 0 8px;
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+    .parameter-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+    .parameter-grid label { font-size: 11px; font-weight: 600; }
+    .parameter-grid input { min-height: 34px; padding: 6px 8px; }
+    .actions { display: flex; gap: 10px; padding: 16px; border-top: 1px solid var(--line); }
+    button {
+      min-height: 40px;
+      border: 1px solid transparent;
+      border-radius: 4px;
+      padding: 9px 14px;
+      cursor: pointer;
+      font: inherit;
+      font-weight: 700;
+    }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    .primary { flex: 1; background: var(--accent); color: white; }
+    .primary:hover { background: var(--accent-dark); }
+    .secondary { background: white; color: var(--ink); border-color: #aeb9c2; }
+    .results { display: grid; gap: 18px; align-content: start; }
+    .empty {
+      min-height: 280px;
+      display: grid;
+      place-items: center;
+      color: var(--muted);
+      text-align: center;
+      padding: 36px;
+    }
+    .status {
+      display: none;
+      padding: 12px 14px;
+      border-radius: 4px;
+      border: 1px solid var(--line);
+      background: white;
+    }
+    .status.show { display: block; }
+    .status.error { color: var(--danger); border-color: #efb5b0; background: #fff5f4; }
+    .status.loading { color: var(--accent-dark); border-color: #a7d4d8; background: #f1fbfc; }
+    .summary-strip {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      border-bottom: 1px solid var(--line);
+    }
+    .metric { padding: 14px 16px; border-right: 1px solid var(--line); }
+    .metric:last-child { border-right: 0; }
+    .metric span { display: block; color: var(--muted); font-size: 11px; margin-bottom: 5px; }
+    .metric strong { font-size: 18px; font-weight: 750; }
+    .data-grid { display: grid; grid-template-columns: 1fr 1fr; }
+    .data-section { padding: 16px; border-right: 1px solid var(--line); }
+    .data-section:last-child { border-right: 0; }
+    .data-section h3 { margin: 0 0 10px; font-size: 13px; }
+    dl { margin: 0; display: grid; grid-template-columns: minmax(150px, 1fr) auto; gap: 0; }
+    dt, dd { margin: 0; padding: 7px 0; border-bottom: 1px solid #edf0f2; }
+    dt { color: var(--muted); }
+    dd { font-weight: 700; text-align: right; }
+    .warnings { margin: 0; padding: 0; list-style: none; }
+    .warnings li { padding: 9px 0; border-bottom: 1px solid #edf0f2; color: #6c4a13; }
+    .badge {
+      display: inline-block;
+      padding: 3px 7px;
+      border-radius: 3px;
+      background: #e8f4f5;
+      color: var(--accent-dark);
+      font-size: 12px;
+      font-weight: 700;
+    }
+    @media (max-width: 920px) {
+      main { grid-template-columns: 1fr; padding: 14px; }
+      header { padding: 0 16px; }
+      .brand small { display: none; }
+    }
+    @media (max-width: 620px) {
+      .grid-2, .parameter-grid, .data-grid { grid-template-columns: 1fr; }
+      .summary-strip { grid-template-columns: 1fr 1fr; }
+      .metric:nth-child(2) { border-right: 0; }
+      .metric:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
+      .data-section { border-right: 0; border-bottom: 1px solid var(--line); }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">REVERSEPARTS <small>CAD analysis &amp; internal quote</small></div>
+    <div class="health" id="health">Verifica FreeCAD...</div>
+  </header>
+  <main>
+    <section class="panel">
+      <h1 class="panel-title">Nuova analisi</h1>
+      <form id="quote-form">
+        <div class="panel-body stack">
+          <label>File STEP
+            <input id="cad-file" name="file" type="file" accept=".stp,.step" required>
+          </label>
+          <div class="grid-2">
+            <label>Materiale
+              <select id="material" name="material">
+                <option value="alluminio">Alluminio</option>
+                <option value="acciaio">Acciaio</option>
+                <option value="inox">Inox</option>
+              </select>
+            </label>
+            <label>Quantit&agrave;
+              <input id="quantity" name="quantity" type="number" min="1" step="1" value="1" required>
+            </label>
+          </div>
+          <label>Spessore dichiarato mm
+            <input id="thickness" name="declared_thickness_mm" type="number" min="0" step="0.1" placeholder="Opzionale">
+          </label>
+        </div>
+        <details>
+          <summary>Parametri preventivo</summary>
+          <div class="parameter-group">
+            <h3>Materiale</h3>
+            <div class="parameter-grid" id="material-params"></div>
+            <h3>Laser</h3>
+            <div class="parameter-grid" id="laser-params"></div>
+            <h3>Piegatura</h3>
+            <div class="parameter-grid" id="bending-params"></div>
+            <h3>Generali</h3>
+            <div class="parameter-grid" id="general-params"></div>
+          </div>
+        </details>
+        <div class="actions">
+          <button class="primary" id="submit-button" type="submit">Analizza e genera preventivo</button>
+          <button class="secondary" id="pdf-button" type="button" disabled>Scarica PDF</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="results">
+      <div id="status" class="status"></div>
+      <div id="empty" class="panel empty">
+        <div><strong>Carica un file STEP per iniziare</strong><br>Analisi geometrica, tempi e costi saranno mostrati qui.</div>
+      </div>
+      <div id="result-panel" class="panel" hidden>
+        <div class="summary-strip">
+          <div class="metric"><span>Pezzo</span><strong id="part-name">-</strong></div>
+          <div class="metric"><span>Complessit&agrave;</span><strong id="complexity">-</strong></div>
+          <div class="metric"><span>Confidence quote</span><strong id="confidence">-</strong></div>
+          <div class="metric"><span>Costo interno</span><strong id="total-cost">-</strong></div>
+        </div>
+        <div class="data-grid">
+          <div class="data-section">
+            <h3>Analisi CAD</h3>
+            <dl id="analysis-data"></dl>
+          </div>
+          <div class="data-section">
+            <h3>Tempi e costi</h3>
+            <dl id="quote-data"></dl>
+          </div>
+        </div>
+      </div>
+      <div id="warnings-panel" class="panel" hidden>
+        <h2 class="panel-title">Avvisi di verifica</h2>
+        <div class="panel-body"><ul class="warnings" id="warnings"></ul></div>
+      </div>
+    </section>
+  </main>
+  <script>
+    const parameterGroups = {
+      material: [
+        ["density_g_cm3", "Densita g/cm3"],
+        ["cost_eur_kg", "Costo EUR/kg"]
+      ],
+      laser: [
+        ["laser_rate_eur_min", "Tariffa EUR/min"],
+        ["laser_cut_speed_mm_min", "Velocita mm/min"],
+        ["laser_pierce_time_sec", "Pierce sec"],
+        ["laser_extra_handling_sec_per_piece", "Handling sec/pezzo"]
+      ],
+      bending: [
+        ["bending_rate_eur_min", "Tariffa EUR/min"],
+        ["bending_setup_time_min", "Setup min"],
+        ["bending_time_sec_per_bend", "Tempo sec/piega"],
+        ["bending_extra_handling_sec_per_piece", "Handling sec/pezzo"]
+      ],
+      general: [
+        ["cad_check_rate_eur_min", "CAD check EUR/min"],
+        ["handling_rate_eur_min", "Handling EUR/min"],
+        ["setup_cost_eur", "Costo setup EUR"],
+        ["minimum_order_value_eur", "Minimo ordine EUR"]
+      ]
+    };
+    let defaults = null;
+    let lastResult = null;
+
+    const money = value => value == null ? "-" : `${Number(value).toFixed(2)} EUR`;
+    const number = (value, unit = "") => value == null ? "-" : `${Number(value).toFixed(2).replace(/\.00$/, "")}${unit ? " " + unit : ""}`;
+    const escapeHtml = value => String(value ?? "-").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+
+    function buildInputs(group, targetId) {
+      const target = document.getElementById(targetId);
+      target.innerHTML = group.map(([key, label]) => `
+        <label>${label}
+          <input type="number" min="0" step="any" data-parameter="${key}">
+        </label>`).join("");
+    }
+
+    function effectiveDefaults() {
+      const material = document.getElementById("material").value;
+      const selected = defaults.materials[material];
+      return {
+        ...defaults.pricing,
+        density_g_cm3: selected.density_g_cm3,
+        cost_eur_kg: selected.cost_eur_kg,
+        laser_cut_speed_mm_min: selected.laser?.cut_speed_mm_min ?? defaults.pricing.laser_cut_speed_mm_min,
+        laser_pierce_time_sec: selected.laser?.pierce_time_sec ?? defaults.pricing.laser_pierce_time_sec
+      };
+    }
+
+    function loadDefaults() {
+      const values = effectiveDefaults();
+      document.querySelectorAll("[data-parameter]").forEach(input => {
+        input.value = values[input.dataset.parameter];
+        input.dataset.defaultValue = input.value;
+      });
+    }
+
+    function collectOverrides(keys) {
+      const overrides = {};
+      keys.forEach(key => {
+        const input = document.querySelector(`[data-parameter="${key}"]`);
+        if (input && input.value !== input.dataset.defaultValue) overrides[key] = Number(input.value);
+      });
+      return overrides;
+    }
+
+    function setStatus(message, type = "") {
+      const status = document.getElementById("status");
+      status.textContent = message;
+      status.className = `status show ${type}`;
+    }
+
+    function clearStatus() {
+      document.getElementById("status").className = "status";
+    }
+
+    function rows(items) {
+      return items.map(([label, value]) => `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd>`).join("");
+    }
+
+    function renderResult(payload) {
+      const analysis = payload.analysis;
+      const quote = payload.quote;
+      const holes = analysis.holes || {};
+      const features = quote.features_summary || {};
+      const dimensions = analysis.effective_dimensions_mm || analysis.raw_bounding_box_mm || {};
+      const costs = quote.estimated_internal_cost_eur || {};
+      const times = quote.estimated_times_min || {};
+      const bending = quote.bending_details || {};
+      const guidance = quote.commercial_guidance || {};
+
+      document.getElementById("part-name").textContent = quote.part_name || analysis.part_name || "-";
+      document.getElementById("complexity").innerHTML = `<span class="badge">${escapeHtml(analysis.complexity_score)}</span>`;
+      document.getElementById("confidence").innerHTML = `<span class="badge">${escapeHtml(quote.confidence)}</span>`;
+      document.getElementById("total-cost").textContent = money(costs.total);
+      document.getElementById("analysis-data").innerHTML = rows([
+        ["Dimensioni", `${number(dimensions.x)} x ${number(dimensions.y)} x ${number(dimensions.z)} mm`],
+        ["Peso stimato", number(quote.material?.estimated_weight_kg, "kg")],
+        ["Fori circolari", features.circular_holes ?? holes.circular_holes ?? 0],
+        ["Fori poligonali", features.polygonal_holes ?? holes.polygonal_holes ?? 0],
+        ["Fori sagomati/imbutiti", features.formed_holes ?? holes.formed_holes ?? 0],
+        ["Fori totali", features.total_holes ?? holes.total_holes ?? 0],
+        ["Pieghe", features.bends ?? analysis.bends?.count ?? 0],
+        ["Lunghezza taglio", number(analysis.cutting?.total_cut_length_mm, "mm")]
+      ]);
+      document.getElementById("quote-data").innerHTML = rows([
+        ["Tempo laser", number(times.laser_cutting, "min")],
+        ["Tempo piegatura", number(bending.bending_time_total_min, "min")],
+        ["Costo materiale", money(costs.material)],
+        ["Costo laser", money(costs.laser)],
+        ["Costo piegatura", money(costs.bending)],
+        ["Costo setup", money(costs.setup)],
+        ["Costo interno totale", money(costs.total)],
+        ["Costo unitario interno", money(costs.unit_cost)],
+        ["Minimo consigliato", money(guidance.minimum_billable_price_eur)]
+      ]);
+
+      const warnings = [...(analysis.warnings || []), ...(analysis.cutting?.warnings || []), ...(quote.warnings || [])];
+      document.getElementById("warnings").innerHTML = warnings.map(item => `<li>${escapeHtml(item)}</li>`).join("");
+      document.getElementById("warnings-panel").hidden = warnings.length === 0;
+      document.getElementById("empty").hidden = true;
+      document.getElementById("result-panel").hidden = false;
+      document.getElementById("pdf-button").disabled = false;
+    }
+
+    async function parseError(response) {
+      try {
+        const payload = await response.json();
+        const detail = payload.detail;
+        if (Array.isArray(detail)) return detail.map(item => item.msg || item).join("; ");
+        if (typeof detail === "object") return detail.message || JSON.stringify(detail);
+        return detail || `Errore HTTP ${response.status}`;
+      } catch {
+        return `Errore HTTP ${response.status}`;
+      }
+    }
+
+    async function initialize() {
+      buildInputs(parameterGroups.material, "material-params");
+      buildInputs(parameterGroups.laser, "laser-params");
+      buildInputs(parameterGroups.bending, "bending-params");
+      buildInputs(parameterGroups.general, "general-params");
+      try {
+        const [configResponse, healthResponse] = await Promise.all([fetch("/config/defaults"), fetch("/health")]);
+        defaults = await configResponse.json();
+        const health = await healthResponse.json();
+        document.getElementById("health").textContent = health.freecad_available ? "FreeCAD disponibile" : "FreeCAD non disponibile";
+        loadDefaults();
+      } catch {
+        setStatus("Impossibile caricare la configurazione iniziale.", "error");
+      }
+    }
+
+    document.getElementById("material").addEventListener("change", () => defaults && loadDefaults());
+    document.getElementById("quote-form").addEventListener("submit", async event => {
+      event.preventDefault();
+      const file = document.getElementById("cad-file").files[0];
+      if (!file) return setStatus("Seleziona un file .stp o .step.", "error");
+
+      const pricingKeys = [...parameterGroups.laser, ...parameterGroups.bending, ...parameterGroups.general].map(item => item[0]);
+      const materialKeys = parameterGroups.material.map(item => item[0]);
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("material", document.getElementById("material").value);
+      formData.append("quantity", document.getElementById("quantity").value);
+      const thickness = document.getElementById("thickness").value;
+      if (thickness) formData.append("declared_thickness_mm", thickness);
+      formData.append("pricing_overrides", JSON.stringify(collectOverrides(pricingKeys)));
+      formData.append("material_overrides", JSON.stringify(collectOverrides(materialKeys)));
+
+      const submit = document.getElementById("submit-button");
+      submit.disabled = true;
+      document.getElementById("pdf-button").disabled = true;
+      setStatus("Analisi CAD e calcolo preventivo in corso...", "loading");
+      try {
+        const response = await fetch("/analyze-and-quote", { method: "POST", body: formData });
+        if (!response.ok) throw new Error(await parseError(response));
+        lastResult = await response.json();
+        renderResult(lastResult);
+        clearStatus();
+      } catch (error) {
+        setStatus(error.message || "Analisi non riuscita.", "error");
+      } finally {
+        submit.disabled = false;
+      }
+    });
+
+    document.getElementById("pdf-button").addEventListener("click", async () => {
+      if (!lastResult) return;
+      setStatus("Generazione PDF in corso...", "loading");
+      try {
+        const response = await fetch("/quote-pdf", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(lastResult)
+        });
+        if (!response.ok) throw new Error(await parseError(response));
+        const blob = await response.blob();
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = "reverseparts_preventivo.pdf";
+        link.click();
+        URL.revokeObjectURL(link.href);
+        clearStatus();
+      } catch (error) {
+        setStatus(error.message || "Generazione PDF non riuscita.", "error");
+      }
+    });
+
+    initialize();
+  </script>
+</body>
+</html>

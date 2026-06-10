@@ -104,6 +104,8 @@ def generate_quote_pdf(analysis: dict[str, Any], quote: dict[str, Any]) -> bytes
     cutting = analysis.get("cutting", {})
     bends = analysis.get("bends", {})
     features = quote.get("features_summary", {})
+    config_used = quote.get("config_used", {})
+    pricing = config_used.get("pricing", {})
 
     elements: list[Any] = [
         Paragraph("REVERSEPARTS - Preventivo tecnico interno", title_style),
@@ -153,6 +155,23 @@ def generate_quote_pdf(analysis: dict[str, Any], quote: dict[str, Any]) -> bytes
                 ("Velocità taglio", _value(laser.get("cut_speed_mm_min"), "mm/min")),
                 ("Pierce count", laser.get("pierce_count")),
                 ("Tempo per piega", _value(bending.get("bending_time_sec_per_bend"), "sec")),
+            ],
+        )
+    )
+    elements.extend(
+        _section(
+            "Parametri effettivi",
+            [
+                ("Override temporanei", "Si" if quote.get("overrides_used") else "No"),
+                ("Densita materiale", _value(material.get("density_g_cm3"), "g/cm3")),
+                ("Costo materiale", _value(material.get("cost_eur_kg"), "EUR/kg")),
+                ("Tariffa laser", _value(pricing.get("laser_rate_eur_min"), "EUR/min")),
+                ("Velocita taglio", _value(laser.get("cut_speed_mm_min"), "mm/min")),
+                ("Tempo pierce", _value(laser.get("pierce_time_sec"), "sec")),
+                ("Tariffa piegatura", _value(pricing.get("bending_rate_eur_min"), "EUR/min")),
+                ("Tempo per piega", _value(bending.get("bending_time_sec_per_bend"), "sec")),
+                ("Costo setup", _value(pricing.get("setup_cost_eur"), "EUR")),
+                ("Minimo ordine", _value(pricing.get("minimum_order_value_eur"), "EUR")),
             ],
         )
     )
