@@ -175,6 +175,7 @@ def test_quote_pdf_endpoint_returns_pdf():
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/pdf"
     assert len(response.content) > 1000
+    assert len(response.content) < 20000
     assert response.content.startswith(b"%PDF")
 
 

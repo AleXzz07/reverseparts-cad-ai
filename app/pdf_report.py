@@ -5,7 +5,7 @@ from typing import Any
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
@@ -30,7 +30,23 @@ def _dimensions(analysis: dict[str, Any]) -> str:
 
 def _section(title: str, rows: list[tuple[str, Any]]) -> list[Any]:
     styles = getSampleStyleSheet()
-    table_data = [[Paragraph("<b>Voce</b>", styles["Normal"]), Paragraph("<b>Valore</b>", styles["Normal"])]]
+    body_style = ParagraphStyle(
+        "CompactTableBody",
+        parent=styles["Normal"],
+        fontName="Helvetica",
+        fontSize=8.5,
+        leading=10,
+    )
+    heading_style = ParagraphStyle(
+        "CompactHeading",
+        parent=styles["Heading2"],
+        fontName="Helvetica-Bold",
+        fontSize=11,
+        leading=13,
+        spaceBefore=0,
+        spaceAfter=4,
+    )
+    table_data = [[Paragraph("<b>Voce</b>", body_style), Paragraph("<b>Valore</b>", body_style)]]
     table_data.extend([[label, _value(value)] for label, value in rows])
     table = Table(table_data, colWidths=[70 * mm, 100 * mm])
     table.setStyle(
@@ -39,15 +55,18 @@ def _section(title: str, rows: list[tuple[str, Any]]) -> list[Any]:
                 ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#EAEFF5")),
                 ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#B8C2CC")),
                 ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
+                ("FONTSIZE", (0, 0), (-1, -1), 8.5),
+                ("LEADING", (0, 0), (-1, -1), 10),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 6),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-                ("TOPPADDING", (0, 0), (-1, -1), 5),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                ("LEFTPADDING", (0, 0), (-1, -1), 5),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+                ("TOPPADDING", (0, 0), (-1, -1), 3),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
             ]
         )
     )
-    return [Paragraph(title, styles["Heading2"]), table, Spacer(1, 8 * mm)]
+    return [Paragraph(title, heading_style), table, Spacer(1, 4 * mm)]
 
 
 def generate_quote_pdf(analysis: dict[str, Any], quote: dict[str, Any]) -> bytes:
@@ -57,10 +76,25 @@ def generate_quote_pdf(analysis: dict[str, Any], quote: dict[str, Any]) -> bytes
         pagesize=A4,
         rightMargin=18 * mm,
         leftMargin=18 * mm,
-        topMargin=18 * mm,
-        bottomMargin=18 * mm,
+        topMargin=12 * mm,
+        bottomMargin=12 * mm,
     )
     styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        "CompactTitle",
+        parent=styles["Title"],
+        fontName="Helvetica-Bold",
+        fontSize=16,
+        leading=19,
+        spaceAfter=0,
+    )
+    note_style = ParagraphStyle(
+        "CompactNote",
+        parent=styles["Italic"],
+        fontName="Helvetica-Oblique",
+        fontSize=8.5,
+        leading=10,
+    )
 
     material = quote.get("material", {})
     costs = quote.get("estimated_internal_cost_eur", {})
@@ -71,8 +105,8 @@ def generate_quote_pdf(analysis: dict[str, Any], quote: dict[str, Any]) -> bytes
     bends = analysis.get("bends", {})
 
     elements: list[Any] = [
-        Paragraph("REVERSEPARTS - Preventivo tecnico interno", styles["Title"]),
-        Spacer(1, 8 * mm),
+        Paragraph("REVERSEPARTS - Preventivo tecnico interno", title_style),
+        Spacer(1, 4 * mm),
     ]
 
     elements.extend(
@@ -81,7 +115,7 @@ def generate_quote_pdf(analysis: dict[str, Any], quote: dict[str, Any]) -> bytes
             [
                 ("Nome pezzo", quote.get("part_name") or analysis.get("part_name")),
                 ("Materiale", material.get("name")),
-                ("Quantita", quote.get("quantity")),
+                ("Quantità", quote.get("quantity")),
                 ("Dimensioni mm", _dimensions(analysis)),
                 ("Spessore", material.get("thickness_mm") or analysis.get("detected_thickness_mm")),
                 ("Peso unitario stimato", _value(material.get("estimated_weight_kg"), "kg")),
@@ -111,7 +145,7 @@ def generate_quote_pdf(analysis: dict[str, Any], quote: dict[str, Any]) -> bytes
             [
                 ("Tempo laser totale", _value(times.get("laser_cutting"), "min")),
                 ("Tempo piegatura totale", _value(bending.get("bending_time_total_min"), "min")),
-                ("Velocita taglio", _value(laser.get("cut_speed_mm_min"), "mm/min")),
+                ("Velocità taglio", _value(laser.get("cut_speed_mm_min"), "mm/min")),
                 ("Pierce count", laser.get("pierce_count")),
                 ("Tempo per piega", _value(bending.get("bending_time_sec_per_bend"), "sec")),
             ],
@@ -120,7 +154,7 @@ def generate_quote_pdf(analysis: dict[str, Any], quote: dict[str, Any]) -> bytes
     elements.append(
         Paragraph(
             "Preventivo tecnico preliminare. Il margine commerciale e il prezzo finale devono essere decisi dall'azienda.",
-            styles["Italic"],
+            note_style,
         )
     )
 
