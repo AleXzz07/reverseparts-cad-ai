@@ -163,7 +163,10 @@ def _is_duplicate_hole(
     max_depth = max(candidate.depth_mm or 0.0, existing.depth_mm or 0.0, 1.0)
     return (
         radial_offset <= parameters.hole_center_tolerance_mm
-        and projected_offset <= max_depth + parameters.hole_center_tolerance_mm
+        and projected_offset
+        <= max_depth
+        + parameters.hole_center_tolerance_mm
+        + parameters.hole_diameter_tolerance_mm
     )
 
 
@@ -184,7 +187,7 @@ def _curve_type(edge) -> str:
     return getattr(edge.Curve, "TypeId", "")
 
 
-def _detect_circular_holes(shape, parameters: AnalysisParameters) -> list[HoleFeature]:
+def _detect_circular_holes(shape, parameters: AnalysisParameters) -> tuple[list[HoleFeature], int]:
     face_candidates: list[HoleFeature] = []
     for face in shape.Faces:
         surface = face.Surface
@@ -281,12 +284,42 @@ def _detect_circular_holes(shape, parameters: AnalysisParameters) -> list[HoleFe
             used_edge_indexes.update({left_index, right_index})
             break
 
+    planar_wire_candidates: list[HoleFeature] = []
+    for face in shape.Faces:
+        surface = face.Surface
+        if getattr(surface, "TypeId", "") != "Part::GeomPlane":
+            continue
+        for wire_index, wire in enumerate(face.Wires):
+            if wire_index == 0 or not wire.isClosed():
+                continue
+            edges = list(wire.Edges)
+            if not edges or any(_curve_type(edge) != "Part::GeomCircle" for edge in edges):
+                continue
+
+            radii = [float(edge.Curve.Radius) for edge in edges]
+            if max(radii) - min(radii) > parameters.hole_diameter_tolerance_mm / 2.0:
+                continue
+            diameter = sum(radii) / len(radii) * 2.0
+            if not CIRCULAR_HOLE_MIN_DIAMETER_MM <= diameter <= CIRCULAR_HOLE_MAX_DIAMETER_MM:
+                continue
+
+            planar_wire_candidates.append(
+                HoleFeature(
+                    diameter_mm=round(diameter, 2),
+                    radius_mm=round(diameter / 2.0, 2),
+                    center=_rounded_vector(_wire_center(wire)),
+                    axis=_rounded_vector(_normalize_vector(surface.Axis)),
+                    confidence="high",
+                )
+            )
+
     holes: list[HoleFeature] = []
-    for candidate in edge_candidates + face_candidates:
+    reliable_candidates = planar_wire_candidates or edge_candidates + face_candidates
+    for candidate in reliable_candidates:
         _append_unique_hole(holes, candidate, parameters)
 
     holes.sort(key=lambda hole: (hole.diameter_mm or 0.0, hole.center or []))
-    return holes
+    return holes, len(face_candidates)
 
 
 def _wire_center(wire) -> tuple[float, float, float]:
@@ -477,8 +510,87 @@ def _detect_polygonal_holes(shape) -> list[HoleFeature]:
                 ),
             )
 
+        outer_wire = face.Wires[0] if face.Wires else None
+        if outer_wire is None or not outer_wire.isClosed():
+            continue
+        outer_edges = list(outer_wire.Edges)
+        if len(outer_edges) != 6:
+            continue
+        if any(_curve_type(edge) != "Part::GeomLine" for edge in outer_edges):
+            continue
+        if not 20.0 <= float(outer_wire.Length) <= 40.0 or float(face.Area) > 100.0:
+            continue
+
+        bbox = outer_wire.BoundBox
+        bbox_dimensions = Dimensions(
+            x=round(float(bbox.XLength), 3),
+            y=round(float(bbox.YLength), 3),
+            z=round(float(bbox.ZLength), 3),
+        )
+        _append_unique_polygon(
+            polygons,
+            HoleFeature(
+                num_sides=6,
+                max_dimension_mm=round(float(outer_wire.Length), 2),
+                bounding_box_mm=bbox_dimensions,
+                center=_rounded_vector(_wire_center(outer_wire)),
+                axis=_rounded_vector(_normalize_vector(surface.Axis)),
+                confidence="medium",
+            ),
+        )
+
     polygons.sort(key=lambda polygon: polygon.center or [])
     return polygons
+
+
+def _detect_formed_holes(
+    shape,
+    parameters: AnalysisParameters,
+) -> list[HoleFeature]:
+    formed: list[HoleFeature] = []
+    for face in shape.Faces:
+        surface = face.Surface
+        if getattr(surface, "TypeId", "") != "Part::GeomPlane":
+            continue
+        for wire_index, wire in enumerate(face.Wires):
+            if wire_index == 0 or not wire.isClosed():
+                continue
+            edge_types = {_curve_type(edge) for edge in wire.Edges}
+            if "Part::GeomBSplineCurve" not in edge_types:
+                continue
+
+            candidate = HoleFeature(
+                type="raised collar opening",
+                length_mm=round(float(wire.Length), 2),
+                center=_rounded_vector(_wire_center(wire)),
+                axis=_rounded_vector(_normalize_vector(surface.Axis)),
+                confidence="medium",
+            )
+            duplicate = False
+            for existing in formed:
+                if (
+                    existing.center is not None
+                    and existing.axis is not None
+                    and candidate.center is not None
+                    and candidate.axis is not None
+                    and _axis_aligned(
+                        tuple(existing.axis),
+                        tuple(candidate.axis),
+                        tolerance=_axis_tolerance(parameters.hole_axis_angle_tolerance_deg),
+                    )
+                    and _vector_norm(
+                        tuple(a - b for a, b in zip(existing.center, candidate.center))
+                    )
+                    <= 3.0
+                ):
+                    existing.confidence = "high"
+                    duplicate = True
+                    break
+            if not duplicate:
+                formed.append(candidate)
+
+    formed.sort(key=lambda hole: hole.center or [])
+    return formed
 
 
 def _is_duplicate_bend(candidate: BendFeature, existing: BendFeature) -> bool:
@@ -656,7 +768,13 @@ def _complexity_score(shape, circular_count: int, bend_count: int) -> str:
     return "low"
 
 
-def _detect_cutting_lengths(shape, circular: list[HoleFeature], elongated: list[HoleFeature], polygonal: list[HoleFeature]):
+def _detect_cutting_lengths(
+    shape,
+    circular: list[HoleFeature],
+    elongated: list[HoleFeature],
+    polygonal: list[HoleFeature],
+    formed: list[HoleFeature],
+):
     warnings = [
         "Cut length is preliminary: outer loop is selected from the longest planar external wire and inner loop length is derived from deduplicated detected features."
     ]
@@ -689,6 +807,9 @@ def _detect_cutting_lengths(shape, circular: list[HoleFeature], elongated: list[
     for polygon in polygonal:
         if polygon.max_dimension_mm is not None:
             inner_cut_length += float(polygon.max_dimension_mm)
+    for formed_hole in formed:
+        if formed_hole.length_mm is not None:
+            inner_cut_length += float(formed_hole.length_mm)
 
     inner_cut_length = round(inner_cut_length, 2) if inner_cut_length > 0 else None
     total_cut_length = (
@@ -851,9 +972,23 @@ def analyze_step_file(
         response.detected_thickness_mm = detected_thickness
         response.thickness_confidence = thickness_confidence
 
-        response.holes.circular = _detect_circular_holes(shape, analysis_parameters)
+        response.holes.circular, raw_circular_candidate_count = _detect_circular_holes(
+            shape,
+            analysis_parameters,
+        )
         response.holes.elongated = _detect_elongated_holes(shape)
         response.holes.polygonal = _detect_polygonal_holes(shape)
+        response.holes.formed = _detect_formed_holes(shape, analysis_parameters)
+        response.holes.circular_holes = len(response.holes.circular)
+        response.holes.elongated_holes = len(response.holes.elongated)
+        response.holes.polygonal_holes = len(response.holes.polygonal)
+        response.holes.formed_holes = len(response.holes.formed)
+        response.holes.total_holes = (
+            response.holes.circular_holes
+            + response.holes.elongated_holes
+            + response.holes.polygonal_holes
+            + response.holes.formed_holes
+        )
         if len(response.holes.circular) >= 4:
             response.holes.confidence = "medium"
         if len(response.holes.elongated) >= 2:
@@ -892,7 +1027,7 @@ def analyze_step_file(
             response.warnings.append(
                 "Complex sheet-metal part: bend detection may be incomplete"
             )
-        if len(response.holes.circular) >= 20:
+        if raw_circular_candidate_count >= 20:
             response.warnings.append(
                 "High number of circular features detected: hole deduplication applied"
             )
@@ -908,6 +1043,7 @@ def analyze_step_file(
             response.holes.circular,
             response.holes.elongated,
             response.holes.polygonal,
+            response.holes.formed,
         )
 
         if response.detected_thickness_mm is None:

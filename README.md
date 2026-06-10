@@ -196,6 +196,8 @@ Current dataset cases:
 
 CAD feature tolerances are configurable in `config/analysis_default.json`. The current settings control circular-hole center, diameter, and axis matching plus bend surface pairing. Stress-test folders may omit `expected.json` and `evaluation.json`; the dataset evaluator skips those cases while analysis and quote generation still process them.
 
+Hole analysis separates circular, elongated, polygonal, and formed openings. Formed openings include raised collars, embossed holes, and shaped apertures represented by non-circular inner loops. The analysis JSON reports per-category counts and `total_holes`; the quote uses `total_holes + 1` as the laser pierce count when cut-length data is available.
+
 Process every dataset folder inside Docker:
 
 ```powershell

@@ -33,6 +33,8 @@ def test_quote_from_cad_staffa_test_1():
         "circular_holes": 4,
         "elongated_holes": 2,
         "polygonal_holes": 2,
+        "formed_holes": 0,
+        "total_holes": 8,
         "bends": 2,
     }
     assert quote["cost_drivers"]["complexity"] == "medium"

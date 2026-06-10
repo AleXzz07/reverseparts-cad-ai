@@ -126,9 +126,18 @@ def test_dataset_staffa_16_pieghe_stress():
     assert actual["raw_bounding_box_mm"]["x"] is not None
     assert actual["detected_thickness_mm"] == 2.0
     assert actual["complexity_score"] == "high"
-    assert actual["bends"]["count"] > 4
+    assert actual["holes"]["circular_holes"] == 8
+    assert actual["holes"]["polygonal_holes"] == 3
+    assert actual["holes"]["formed_holes"] == 1
+    assert actual["holes"]["total_holes"] == 12
+    assert actual["bends"]["count"] == 17
     assert actual["warnings"]
     assert quote["process_plan"] == ["laser 2D", "piegatura"]
     assert quote["bending_details"]["bends_count"] == actual["bends"]["count"]
+    assert quote["features_summary"]["circular_holes"] == 8
+    assert quote["features_summary"]["polygonal_holes"] == 3
+    assert quote["features_summary"]["formed_holes"] == 1
+    assert quote["features_summary"]["total_holes"] == 12
+    assert quote["laser_details"]["pierce_count"] == 13
     assert quote["confidence"] == "low"
     assert quote["warnings"]

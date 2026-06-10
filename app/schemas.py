@@ -14,6 +14,7 @@ class Dimensions(BaseModel):
 
 
 class HoleFeature(BaseModel):
+    type: str | None = None
     num_sides: int | None = None
     max_dimension_mm: float | None = None
     bounding_box_mm: Dimensions | None = None
@@ -32,6 +33,12 @@ class Holes(BaseModel):
     circular: list[HoleFeature] = Field(default_factory=list)
     elongated: list[HoleFeature] = Field(default_factory=list)
     polygonal: list[HoleFeature] = Field(default_factory=list)
+    formed: list[HoleFeature] = Field(default_factory=list)
+    circular_holes: int = 0
+    elongated_holes: int = 0
+    polygonal_holes: int = 0
+    formed_holes: int = 0
+    total_holes: int = 0
     confidence: Confidence = "low"
 
 

@@ -103,6 +103,7 @@ def generate_quote_pdf(analysis: dict[str, Any], quote: dict[str, Any]) -> bytes
     bending = quote.get("bending_details", {})
     cutting = analysis.get("cutting", {})
     bends = analysis.get("bends", {})
+    features = quote.get("features_summary", {})
 
     elements: list[Any] = [
         Paragraph("REVERSEPARTS - Preventivo tecnico interno", title_style),
@@ -120,7 +121,11 @@ def generate_quote_pdf(analysis: dict[str, Any], quote: dict[str, Any]) -> bytes
                 ("Spessore", material.get("thickness_mm") or analysis.get("detected_thickness_mm")),
                 ("Peso unitario stimato", _value(material.get("estimated_weight_kg"), "kg")),
                 ("Lunghezza taglio totale", _value(cutting.get("total_cut_length_mm"), "mm")),
-                ("Numero pieghe", bends.get("count") or quote.get("features_summary", {}).get("bends")),
+                ("Fori circolari", features.get("circular_holes")),
+                ("Fori poligonali", features.get("polygonal_holes")),
+                ("Fori sagomati/imbutiti", features.get("formed_holes")),
+                ("Fori totali", features.get("total_holes")),
+                ("Numero pieghe", bends.get("count") or features.get("bends")),
             ],
         )
     )

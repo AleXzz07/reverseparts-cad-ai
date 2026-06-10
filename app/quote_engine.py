@@ -106,8 +106,8 @@ def _bend_count_is_declared(cad_data: dict[str, Any]) -> bool:
     return cad_data.get("bends", {}).get("count") is not None
 
 
-def _pierce_count(circular_holes: int, elongated_holes: int, polygonal_holes: int) -> int:
-    return 1 + circular_holes + elongated_holes + polygonal_holes
+def _pierce_count(total_holes: int) -> int:
+    return 1 + total_holes
 
 
 def _laser_profile(
@@ -131,9 +131,16 @@ def _complexity(
     circular_holes: int,
     elongated_holes: int,
     polygonal_holes: int,
+    formed_holes: int,
     bends: int,
 ) -> str:
-    feature_score = circular_holes + elongated_holes * 2 + polygonal_holes * 2 + bends * 2
+    feature_score = (
+        circular_holes
+        + elongated_holes * 2
+        + polygonal_holes * 2
+        + formed_holes * 3
+        + bends * 2
+    )
     if feature_score >= 25:
         return "high"
     if feature_score >= 8:
@@ -158,6 +165,8 @@ def _estimate_amounts(
     circular_holes: int,
     elongated_holes: int,
     polygonal_holes: int,
+    formed_holes: int,
+    total_holes: int,
     bends: int,
     bends_count_available: bool,
     estimated_weight_kg: float | None,
@@ -170,7 +179,7 @@ def _estimate_amounts(
         parameters,
     )
     if total_cut_length_mm is not None and total_cut_length_mm > 0:
-        pierce_count = _pierce_count(circular_holes, elongated_holes, polygonal_holes)
+        pierce_count = _pierce_count(total_holes)
         laser_time_min_per_piece = (
             total_cut_length_mm / laser_cut_speed_mm_min
             + pierce_count * laser_pierce_time_sec / 60
@@ -191,6 +200,7 @@ def _estimate_amounts(
             circular_holes * 0.12
             + elongated_holes * 0.35
             + polygonal_holes * 0.3
+            + formed_holes * 0.4
         )
         laser_cutting = round((2.0 + laser_feature_factor) * quantity, 2)
         laser_time_source = "fallback_feature_based"
@@ -315,6 +325,13 @@ def quote_from_cad(
     circular_holes = _feature_count(cad_data, "circular")
     elongated_holes = _feature_count(cad_data, "elongated")
     polygonal_holes = _feature_count(cad_data, "polygonal")
+    formed_holes = _feature_count(cad_data, "formed")
+    total_holes = int(
+        cad_data.get("holes", {}).get(
+            "total_holes",
+            circular_holes + elongated_holes + polygonal_holes + formed_holes,
+        )
+    )
     bends = _bend_count(cad_data)
     bends_count_available = _bend_count_is_declared(cad_data)
     total_cut_length_mm = cad_data.get("cutting", {}).get("total_cut_length_mm")
@@ -352,12 +369,20 @@ def quote_from_cad(
             "Parte CAD complessa: tempi e feature rilevate richiedono verifica tecnica."
         )
 
-    complexity = _complexity(circular_holes, elongated_holes, polygonal_holes, bends)
+    complexity = _complexity(
+        circular_holes,
+        elongated_holes,
+        polygonal_holes,
+        formed_holes,
+        bends,
+    )
     amounts = _estimate_amounts(
         quantity=quantity,
         circular_holes=circular_holes,
         elongated_holes=elongated_holes,
         polygonal_holes=polygonal_holes,
+        formed_holes=formed_holes,
+        total_holes=total_holes,
         bends=bends,
         bends_count_available=bends_count_available,
         estimated_weight_kg=estimated_weight_kg,
@@ -372,6 +397,8 @@ def quote_from_cad(
             circular_holes=circular_holes,
             elongated_holes=elongated_holes,
             polygonal_holes=polygonal_holes,
+            formed_holes=formed_holes,
+            total_holes=total_holes,
             bends=bends,
             bends_count_available=bends_count_available,
             estimated_weight_kg=estimated_weight_kg,
@@ -411,6 +438,8 @@ def quote_from_cad(
             "circular_holes": circular_holes,
             "elongated_holes": elongated_holes,
             "polygonal_holes": polygonal_holes,
+            "formed_holes": formed_holes,
+            "total_holes": total_holes,
             "bends": bends,
         },
         "cost_drivers": {

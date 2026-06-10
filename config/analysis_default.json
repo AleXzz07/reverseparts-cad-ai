@@ -8,6 +8,6 @@
     "center_tolerance_mm": 3.0,
     "radius_pair_tolerance_mm": 0.5,
     "axis_angle_tolerance_deg": 5.0,
-    "min_length_mm": 10.0
+    "min_length_mm": 2.5
   }
 }
