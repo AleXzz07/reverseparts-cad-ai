@@ -57,6 +57,9 @@ def test_quote_from_cad_staffa_test_1():
     assert quote["config_used"]["material"]["cost_eur_kg"] == 6.0
     assert quote["estimated_times_min"]["laser_time_source"] == "fallback_feature_based"
     assert quote["laser_details"]["cut_length_mm"] is None
+    assert quote["laser_details"]["material_laser_profile_used"] is True
+    assert quote["laser_details"]["cut_speed_mm_min"] == 2500.0
+    assert quote["laser_details"]["pierce_time_sec"] == 0.8
     assert quote["laser_details"]["pierce_count"] is None
     assert quote["bending_details"] == {
         "bends_count": 2,
@@ -99,7 +102,14 @@ def test_quote_from_cad_uses_selected_material():
     assert quote["config_used"]["material"] == {
         "density_g_cm3": 7.85,
         "cost_eur_kg": 2.0,
+        "laser": {
+            "cut_speed_mm_min": 3500.0,
+            "pierce_time_sec": 0.6,
+        },
     }
+    assert quote["laser_details"]["material_laser_profile_used"] is True
+    assert quote["laser_details"]["cut_speed_mm_min"] == 3500.0
+    assert quote["laser_details"]["pierce_time_sec"] == 0.6
 
 
 def test_quote_from_cad_rejects_unknown_material():
@@ -126,6 +136,7 @@ def test_quote_uses_cut_length_when_available():
     assert quote["estimated_times_min"]["laser_cutting"] == 0.49
     assert quote["laser_details"] == {
         "cut_length_mm": 500.0,
+        "material_laser_profile_used": True,
         "cut_speed_mm_min": 2500.0,
         "pierce_count": 9,
         "pierce_time_sec": 0.8,
@@ -134,6 +145,31 @@ def test_quote_uses_cut_length_when_available():
     assert quote["estimated_internal_cost_eur"]["laser"] == 0.59
     assert quote["estimated_internal_cost_eur"]["bending"] == 5.09
     assert quote["estimated_internal_cost_eur"]["total"] == 24.52
+
+
+def test_quote_uses_material_laser_profile_for_cut_length():
+    cad_data = _cad_data_without_cutting()
+    cad_data["cutting"] = {
+        "outer_cut_length_mm": 300.0,
+        "inner_cut_length_mm": 200.0,
+        "total_cut_length_mm": 500.0,
+        "confidence": "medium",
+        "warnings": [],
+    }
+
+    quote = quote_from_cad(cad_data, material="acciaio")
+
+    assert quote["estimated_times_min"]["laser_time_source"] == "cut_length"
+    assert quote["estimated_times_min"]["laser_cutting"] == 0.4
+    assert quote["laser_details"] == {
+        "cut_length_mm": 500.0,
+        "material_laser_profile_used": True,
+        "cut_speed_mm_min": 3500.0,
+        "pierce_count": 9,
+        "pierce_time_sec": 0.6,
+        "laser_time_min_per_piece": 0.3995,
+    }
+    assert quote["estimated_internal_cost_eur"]["laser"] == 0.48
 
 
 def test_quote_uses_bending_fallback_when_bends_count_is_missing():

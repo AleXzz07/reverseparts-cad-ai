@@ -1,14 +1,26 @@
 {
   "alluminio": {
     "density_g_cm3": 2.7,
-    "cost_eur_kg": 6.0
+    "cost_eur_kg": 6.0,
+    "laser": {
+      "cut_speed_mm_min": 2500,
+      "pierce_time_sec": 0.8
+    }
   },
   "acciaio": {
     "density_g_cm3": 7.85,
-    "cost_eur_kg": 2.0
+    "cost_eur_kg": 2.0,
+    "laser": {
+      "cut_speed_mm_min": 3500,
+      "pierce_time_sec": 0.6
+    }
   },
   "inox": {
     "density_g_cm3": 8.0,
-    "cost_eur_kg": 5.0
+    "cost_eur_kg": 5.0,
+    "laser": {
+      "cut_speed_mm_min": 1800,
+      "pierce_time_sec": 1.0
+    }
   }
 }

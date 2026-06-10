@@ -54,6 +54,7 @@
   },
   "laser_details": {
     "cut_length_mm": 517.66,
+    "material_laser_profile_used": true,
     "cut_speed_mm_min": 2500.0,
     "pierce_count": 9,
     "pierce_time_sec": 0.8,
@@ -80,6 +81,7 @@
       },
       "laser_details": {
         "cut_length_mm": 517.66,
+        "material_laser_profile_used": true,
         "cut_speed_mm_min": 2500.0,
         "pierce_count": 9,
         "pierce_time_sec": 0.8,
@@ -106,6 +108,7 @@
       },
       "laser_details": {
         "cut_length_mm": 517.66,
+        "material_laser_profile_used": true,
         "cut_speed_mm_min": 2500.0,
         "pierce_count": 9,
         "pierce_time_sec": 0.8,
@@ -132,6 +135,7 @@
       },
       "laser_details": {
         "cut_length_mm": 517.66,
+        "material_laser_profile_used": true,
         "cut_speed_mm_min": 2500.0,
         "pierce_count": 9,
         "pierce_time_sec": 0.8,
@@ -158,6 +162,7 @@
       },
       "laser_details": {
         "cut_length_mm": 517.66,
+        "material_laser_profile_used": true,
         "cut_speed_mm_min": 2500.0,
         "pierce_count": 9,
         "pierce_time_sec": 0.8,
@@ -184,6 +189,7 @@
       },
       "laser_details": {
         "cut_length_mm": 517.66,
+        "material_laser_profile_used": true,
         "cut_speed_mm_min": 2500.0,
         "pierce_count": 9,
         "pierce_time_sec": 0.8,
@@ -210,6 +216,7 @@
       },
       "laser_details": {
         "cut_length_mm": 517.66,
+        "material_laser_profile_used": true,
         "cut_speed_mm_min": 2500.0,
         "pierce_count": 9,
         "pierce_time_sec": 0.8,
@@ -244,7 +251,11 @@
     },
     "material": {
       "density_g_cm3": 2.7,
-      "cost_eur_kg": 6.0
+      "cost_eur_kg": 6.0,
+      "laser": {
+        "cut_speed_mm_min": 2500.0,
+        "pierce_time_sec": 0.8
+      }
     }
   },
   "confidence": "medium",

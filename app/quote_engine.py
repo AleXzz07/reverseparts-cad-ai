@@ -47,15 +47,22 @@ def load_pricing_config(path: Path = DEFAULT_PRICING_CONFIG_PATH) -> QuoteParame
     )
 
 
-def load_materials_config(path: Path = DEFAULT_MATERIALS_CONFIG_PATH) -> dict[str, dict[str, float]]:
+def load_materials_config(path: Path = DEFAULT_MATERIALS_CONFIG_PATH) -> dict[str, dict[str, Any]]:
     data = json.loads(path.read_text(encoding="utf-8"))
-    return {
-        material_name: {
+    materials = {}
+    for material_name, values in data.items():
+        material_config: dict[str, Any] = {
             "density_g_cm3": float(values["density_g_cm3"]),
             "cost_eur_kg": float(values["cost_eur_kg"]),
         }
-        for material_name, values in data.items()
-    }
+        laser = values.get("laser")
+        if isinstance(laser, dict):
+            material_config["laser"] = {
+                "cut_speed_mm_min": float(laser["cut_speed_mm_min"]),
+                "pierce_time_sec": float(laser["pierce_time_sec"]),
+            }
+        materials[material_name] = material_config
+    return materials
 
 
 def _parameters_to_dict(parameters: QuoteParameters) -> dict[str, float]:
@@ -103,6 +110,16 @@ def _pierce_count(circular_holes: int, elongated_holes: int, polygonal_holes: in
     return 1 + circular_holes + elongated_holes + polygonal_holes
 
 
+def _laser_profile(
+    material_config: dict[str, Any] | None,
+    parameters: QuoteParameters,
+) -> tuple[float, float, bool]:
+    laser = material_config.get("laser") if material_config else None
+    if isinstance(laser, dict) and "cut_speed_mm_min" in laser and "pierce_time_sec" in laser:
+        return float(laser["cut_speed_mm_min"]), float(laser["pierce_time_sec"]), True
+    return parameters.laser_cut_speed_mm_min, parameters.laser_pierce_time_sec, False
+
+
 def _process_plan(bends: int) -> list[str]:
     plan = ["laser 2D"]
     if bends > 0:
@@ -142,24 +159,29 @@ def _estimate_amounts(
     bends: int,
     bends_count_available: bool,
     estimated_weight_kg: float | None,
-    material_config: dict[str, float] | None,
+    material_config: dict[str, Any] | None,
     parameters: QuoteParameters,
     total_cut_length_mm: float | None,
 ) -> dict[str, Any]:
+    laser_cut_speed_mm_min, laser_pierce_time_sec, material_laser_profile_used = _laser_profile(
+        material_config,
+        parameters,
+    )
     if total_cut_length_mm is not None and total_cut_length_mm > 0:
         pierce_count = _pierce_count(circular_holes, elongated_holes, polygonal_holes)
         laser_time_min_per_piece = (
-            total_cut_length_mm / parameters.laser_cut_speed_mm_min
-            + pierce_count * parameters.laser_pierce_time_sec / 60
+            total_cut_length_mm / laser_cut_speed_mm_min
+            + pierce_count * laser_pierce_time_sec / 60
             + parameters.laser_extra_handling_sec_per_piece / 60
         )
         laser_cutting = round(laser_time_min_per_piece * quantity, 2)
         laser_time_source = "cut_length"
         laser_details = {
             "cut_length_mm": total_cut_length_mm,
-            "cut_speed_mm_min": parameters.laser_cut_speed_mm_min,
+            "material_laser_profile_used": material_laser_profile_used,
+            "cut_speed_mm_min": laser_cut_speed_mm_min,
             "pierce_count": pierce_count,
-            "pierce_time_sec": parameters.laser_pierce_time_sec,
+            "pierce_time_sec": laser_pierce_time_sec,
             "laser_time_min_per_piece": round(laser_time_min_per_piece, 4),
         }
     else:
@@ -172,9 +194,10 @@ def _estimate_amounts(
         laser_time_source = "fallback_feature_based"
         laser_details = {
             "cut_length_mm": None,
-            "cut_speed_mm_min": parameters.laser_cut_speed_mm_min,
+            "material_laser_profile_used": material_laser_profile_used,
+            "cut_speed_mm_min": laser_cut_speed_mm_min,
             "pierce_count": None,
-            "pierce_time_sec": parameters.laser_pierce_time_sec,
+            "pierce_time_sec": laser_pierce_time_sec,
             "laser_time_min_per_piece": None,
         }
 
@@ -270,7 +293,7 @@ def quote_from_cad(
     quantity: int = 1,
     material: str | None = None,
     parameters: QuoteParameters | None = None,
-    materials: dict[str, dict[str, float]] | None = None,
+    materials: dict[str, dict[str, Any]] | None = None,
     pricing_config_path: Path = DEFAULT_PRICING_CONFIG_PATH,
     materials_config_path: Path = DEFAULT_MATERIALS_CONFIG_PATH,
 ) -> dict[str, Any]:
