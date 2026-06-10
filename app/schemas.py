@@ -1,4 +1,5 @@
 from typing import Literal
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -81,3 +82,14 @@ class HealthResponse(BaseModel):
     status: Literal["ok"] = "ok"
     freecad_available: bool
     freecad_error: str | None = None
+
+
+class QuoteRequest(BaseModel):
+    analysis: dict[str, Any]
+    quantity: int = Field(gt=0)
+    material: str
+
+
+class AnalyzeAndQuoteResponse(BaseModel):
+    analysis: dict[str, Any]
+    quote: dict[str, Any]

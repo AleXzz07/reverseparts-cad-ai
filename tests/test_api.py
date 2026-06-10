@@ -14,6 +14,7 @@ client = TestClient(app)
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 STAFFA_TEST_FILE = PROJECT_ROOT / "tests" / "test_files" / "STAFFA TEST 1.stp"
 STAFFA_EXPECTED_FILE = PROJECT_ROOT / "tests" / "ground_truth" / "staffa_test_1_expected.json"
+STAFFA_ACTUAL_FILE = PROJECT_ROOT / "tests" / "output" / "staffa_test_1_actual.json"
 
 
 def _skip_without_freecad_for_real_fixture() -> None:
@@ -105,6 +106,59 @@ def test_analyze_cad_rejects_unparseable_step_file(monkeypatch):
     assert response.json()["detail"] == ["FreeCAD failed to parse the STEP file: invalid STEP data"]
 
 
+def test_quote_endpoint_generates_quote_from_analysis():
+    analysis = json.loads(STAFFA_ACTUAL_FILE.read_text(encoding="utf-8"))
+
+    response = client.post(
+        "/quote",
+        json={
+            "analysis": analysis,
+            "quantity": 37,
+            "material": "acciaio",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["quantity"] == 37
+    assert payload["material"]["name"] == "acciaio"
+    assert payload["material"]["density_g_cm3"] == 7.85
+    assert payload["material"]["weight_source"] == "recalculated_from_volume"
+    assert payload["laser_details"]["material_laser_profile_used"] is True
+    assert payload["laser_details"]["cut_speed_mm_min"] == 3500.0
+
+
+def test_quote_endpoint_rejects_unknown_material():
+    analysis = json.loads(STAFFA_ACTUAL_FILE.read_text(encoding="utf-8"))
+
+    response = client.post(
+        "/quote",
+        json={
+            "analysis": analysis,
+            "quantity": 1,
+            "material": "titanio",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "Unknown material 'titanio'" in response.json()["detail"]
+
+
+def test_quote_endpoint_validates_quantity():
+    analysis = json.loads(STAFFA_ACTUAL_FILE.read_text(encoding="utf-8"))
+
+    response = client.post(
+        "/quote",
+        json={
+            "analysis": analysis,
+            "quantity": 0,
+            "material": "alluminio",
+        },
+    )
+
+    assert response.status_code == 422
+
+
 def test_analyze_cad_staffa_test_1_real_step_file():
     expected = json.loads(STAFFA_EXPECTED_FILE.read_text(encoding="utf-8"))
     payload = _analyze_staffa_test_1()
@@ -124,6 +178,46 @@ def test_analyze_cad_staffa_test_1_real_step_file():
     assert payload["holes"]["confidence"] in {"medium", "high"}
     assert payload["bends"]["confidence"] in {"medium", "high"}
     assert isinstance(payload["warnings"], list)
+
+
+def test_analyze_and_quote_staffa_test_1_real_step_file():
+    expected = json.loads(STAFFA_EXPECTED_FILE.read_text(encoding="utf-8"))
+    _skip_without_freecad_for_real_fixture()
+
+    with STAFFA_TEST_FILE.open("rb") as step_file:
+        response = client.post(
+            "/analyze-and-quote",
+            data={
+                "material": "inox",
+                "declared_thickness_mm": str(expected["declared_thickness_mm"]),
+                "quantity": "3",
+            },
+            files={"file": ("STAFFA TEST 1.stp", step_file, "application/step")},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["analysis"]["source_file"] == "STAFFA TEST 1.stp"
+    assert payload["analysis"]["declared_material"] == "inox"
+    assert payload["analysis"]["density_g_cm3"] == 8.0
+    assert payload["quote"]["quantity"] == 3
+    assert payload["quote"]["material"]["name"] == "inox"
+    assert payload["quote"]["laser_details"]["cut_speed_mm_min"] == 1800.0
+    assert payload["quote"]["features_summary"]["bends"] == 2
+
+
+def test_analyze_and_quote_rejects_unknown_material_before_analysis():
+    response = client.post(
+        "/analyze-and-quote",
+        data={
+            "material": "titanio",
+            "quantity": "1",
+        },
+        files={"file": ("part.step", b"", "application/step")},
+    )
+
+    assert response.status_code == 400
+    assert "Unknown material 'titanio'" in response.json()["detail"]
 
 
 def test_detect_circular_holes_staffa_test_1():

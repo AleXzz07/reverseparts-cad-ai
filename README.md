@@ -38,6 +38,38 @@ The response separates declared values, measured CAD values, and estimated value
 
 The CAD response also includes a preliminary `cutting` section with outer, inner, and total laser cut length estimates when planar wire geometry and detected features are reliable enough.
 
+### `POST /quote`
+
+Input JSON:
+
+```json
+{
+  "analysis": {},
+  "quantity": 37,
+  "material": "alluminio"
+}
+```
+
+Generates the quote JSON from an existing CAD analysis. `quantity` must be greater than `0`, and `material` must exist in `config/materials.json`.
+
+### `POST /analyze-and-quote`
+
+Input `multipart/form-data`:
+
+- `file`: `.stp` or `.step`
+- `material`: required material key from `config/materials.json`
+- `quantity`: required integer greater than `0`
+- `declared_thickness_mm`: optional number
+
+The endpoint analyzes the STEP file, then returns:
+
+```json
+{
+  "analysis": {},
+  "quote": {}
+}
+```
+
 ## Local Development
 
 ```powershell
