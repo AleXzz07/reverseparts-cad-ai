@@ -7,6 +7,7 @@ from app.dataset_runner import evaluate_dataset, iter_dataset_cases, quote_datas
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DATASET_CASE = PROJECT_ROOT / "tests" / "dataset" / "staffa_test_1"
+LAMIERA_DATASET_CASE = PROJECT_ROOT / "tests" / "dataset" / "lamiera_piana_test_1"
 
 
 def test_staffa_test_1_dataset_case_exists():
@@ -40,3 +41,22 @@ def test_staffa_test_1_dataset_evaluate_and_quote(tmp_path):
     assert quote["features_summary"]["bends"] == 2
     assert quote["estimated_internal_cost_eur"]["total"] > 0
     assert quote["commercial_guidance"]["margin_applied"] is False
+
+
+def test_dataset_lamiera_piana():
+    assert (LAMIERA_DATASET_CASE / "input.stp").exists()
+    assert (LAMIERA_DATASET_CASE / "expected.json").exists()
+    assert (LAMIERA_DATASET_CASE / "actual.json").exists()
+    assert (LAMIERA_DATASET_CASE / "evaluation.json").exists()
+    assert (LAMIERA_DATASET_CASE / "quote.json").exists()
+
+    actual = json.loads((LAMIERA_DATASET_CASE / "actual.json").read_text(encoding="utf-8"))
+    quote = json.loads((LAMIERA_DATASET_CASE / "quote.json").read_text(encoding="utf-8"))
+
+    assert actual["bends"]["count"] == 0
+    assert len(actual["holes"]["circular"]) >= 4
+    assert quote["process_plan"] == ["laser 2D"]
+    assert "piegatura" not in quote["process_plan"]
+    assert quote["features_summary"]["bends"] == 0
+    assert quote["estimated_times_min"]["bending"] == 0.0
+    assert quote["estimated_internal_cost_eur"]["bending"] == 0.0

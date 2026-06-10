@@ -128,6 +128,13 @@ def _circular_holes_check(actual: dict[str, Any], expected: dict[str, Any]) -> d
 def _elongated_holes_check(actual: dict[str, Any], expected: dict[str, Any]) -> dict[str, Any]:
     actual_items = actual.get("elongated", [])
     expected_items = expected.get("elongated", [])
+    if not expected_items:
+        return _check(
+            "pass" if not actual_items else "fail",
+            "No elongated holes expected.",
+            expected_count=0,
+            actual_count=len(actual_items),
+        )
     groups = []
     for expected_group in expected_items:
         length = float(expected_group["length_mm"])
@@ -149,6 +156,13 @@ def _elongated_holes_check(actual: dict[str, Any], expected: dict[str, Any]) -> 
 def _polygonal_holes_check(actual: dict[str, Any], expected: dict[str, Any]) -> dict[str, Any]:
     actual_items = actual.get("polygonal", [])
     expected_items = expected.get("polygonal", [])
+    if not expected_items:
+        return _check(
+            "pass" if not actual_items else "fail",
+            "No polygonal holes expected.",
+            expected_count=0,
+            actual_count=len(actual_items),
+        )
     groups = []
     for expected_group in expected_items:
         max_dimension = float(expected_group["max_dimension_mm"])
@@ -243,7 +257,7 @@ def evaluate_staffa(actual: dict[str, Any], expected: dict[str, Any]) -> dict[st
         ),
         "detected_thickness": _numeric_check(
             actual.get("detected_thickness_mm"),
-            expected.get("declared_thickness_mm"),
+            expected.get("detected_thickness_mm", expected.get("declared_thickness_mm")),
             THICKNESS_TOLERANCE_MM,
             "mm",
         ),
@@ -251,6 +265,12 @@ def evaluate_staffa(actual: dict[str, Any], expected: dict[str, Any]) -> dict[st
         "elongated_holes": _elongated_holes_check(actual_holes, expected_holes),
         "polygonal_holes": _polygonal_holes_check(actual_holes, expected_holes),
         "bends": _bends_check(actual.get("bends", {}), expected.get("bends", {})),
+        "cutting_total": _numeric_check(
+            actual.get("cutting", {}).get("total_cut_length_mm"),
+            expected.get("cutting", {}).get("total_cut_length_mm"),
+            DIMENSION_TOLERANCE_MM,
+            "mm",
+        ),
     }
 
     score_total = _score(checks)

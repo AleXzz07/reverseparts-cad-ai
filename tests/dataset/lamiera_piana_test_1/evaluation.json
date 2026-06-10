@@ -1,5 +1,5 @@
 {
-  "part_name": "STAFFA TEST 1",
+  "part_name": "LAMIERA PIANA TEST 1",
   "score_total": 100,
   "status": "pass",
   "checks": {
@@ -10,8 +10,8 @@
         "x": {
           "status": "pass",
           "message": "Error 0.000 mm; tolerance 1.000 mm.",
-          "actual": 102.0,
-          "expected": 102.0,
+          "actual": 100.0,
+          "expected": 100.0,
           "error": 0.0,
           "tolerance": 1.0,
           "unit": "mm"
@@ -19,8 +19,8 @@
         "y": {
           "status": "pass",
           "message": "Error 0.000 mm; tolerance 1.000 mm.",
-          "actual": 50.0,
-          "expected": 50.0,
+          "actual": 60.0,
+          "expected": 60.0,
           "error": 0.0,
           "tolerance": 1.0,
           "unit": "mm"
@@ -28,8 +28,8 @@
         "z": {
           "status": "pass",
           "message": "Error 0.000 mm; tolerance 1.000 mm.",
-          "actual": 51.0,
-          "expected": 51.0,
+          "actual": 2.0,
+          "expected": 2.0,
           "error": 0.0,
           "tolerance": 1.0,
           "unit": "mm"
@@ -39,8 +39,8 @@
     "volume": {
       "status": "pass",
       "message": "Error 0.000 cm3; tolerance 0.000 cm3.",
-      "actual": 18.488,
-      "expected": 18.488,
+      "actual": 11.774,
+      "expected": 11.774,
       "error": 0.0,
       "tolerance": 0.0,
       "unit": "cm3"
@@ -48,8 +48,8 @@
     "area": {
       "status": "pass",
       "message": "Error 0.000 cm2; tolerance 0.000 cm2.",
-      "actual": 199.419,
-      "expected": 199.419,
+      "actual": 125.646,
+      "expected": 125.646,
       "error": 0.0,
       "tolerance": 0.0,
       "unit": "cm2"
@@ -57,17 +57,16 @@
     "weight": {
       "status": "pass",
       "message": "Weight error 0.00%; tolerance 5.00%.",
-      "actual": 0.05,
-      "expected": 0.05,
+      "actual": 0.032,
+      "expected": 0.032,
       "error_percent": 0.0,
       "tolerance_percent": 5.0
     },
     "declared_thickness": {
-      "status": "pass",
-      "message": "Error 0.000 mm; tolerance 0.100 mm.",
-      "actual": 2.0,
-      "expected": 2.0,
-      "error": 0.0,
+      "status": "warning",
+      "message": "Value not available for comparison.",
+      "actual": null,
+      "expected": null,
       "tolerance": 0.1,
       "unit": "mm"
     },
@@ -85,63 +84,46 @@
       "message": "Circular holes grouped by diameter.",
       "groups": [
         {
-          "diameter_mm": 6.99,
-          "expected_count": 2,
-          "actual_count": 2,
-          "status": "pass"
-        },
-        {
-          "diameter_mm": 4.99,
-          "expected_count": 2,
-          "actual_count": 2,
+          "diameter_mm": 6.0,
+          "expected_count": 4,
+          "actual_count": 4,
           "status": "pass"
         }
       ]
     },
     "elongated_holes": {
       "status": "pass",
-      "message": "Elongated holes grouped by slot length.",
-      "groups": [
-        {
-          "length_mm": 51.37,
-          "expected_count": 2,
-          "actual_count": 2,
-          "status": "pass"
-        }
-      ]
+      "message": "No elongated holes expected.",
+      "expected_count": 0,
+      "actual_count": 0
     },
     "polygonal_holes": {
       "status": "pass",
-      "message": "Polygonal holes grouped by maximum dimension.",
-      "groups": [
-        {
-          "max_dimension_mm": 27.71,
-          "expected_count": 2,
-          "actual_count": 2,
-          "status": "pass"
-        }
-      ]
+      "message": "No polygonal holes expected.",
+      "expected_count": 0,
+      "actual_count": 0
     },
     "bends": {
       "status": "pass",
       "message": "Bends/flanges compared by count, confidence, and length.",
-      "actual_count": 2,
-      "expected_count": 2,
-      "confidence": "high",
-      "length_matches": 2,
-      "expected_length_mm": 50.0
+      "actual_count": 0,
+      "expected_count": 0,
+      "confidence": "medium",
+      "length_matches": 0,
+      "expected_length_mm": null
     },
     "cutting_total": {
-      "status": "warning",
-      "message": "Value not available for comparison.",
-      "actual": 517.66,
-      "expected": null,
+      "status": "pass",
+      "message": "Error 0.000 mm; tolerance 1.000 mm.",
+      "actual": 395.4,
+      "expected": 395.4,
+      "error": 0.0,
       "tolerance": 1.0,
       "unit": "mm"
     }
   },
   "warnings": [
-    "cutting_total: Value not available for comparison."
+    "declared_thickness: Value not available for comparison."
   ],
   "next_improvements": []
 }

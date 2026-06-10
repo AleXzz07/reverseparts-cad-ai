@@ -1,0 +1,133 @@
+{
+  "part_name": "LAMIERA PIANA TEST 1",
+  "source_file": "input.stp",
+  "raw_bounding_box_mm": {
+    "x": 100.0,
+    "y": 60.0,
+    "z": 2.0
+  },
+  "effective_dimensions_mm": {
+    "x": 100.0,
+    "y": 60.0,
+    "z": 2.0
+  },
+  "volume_cm3": 11.774,
+  "surface_area_cm2": 125.646,
+  "estimated_weight_kg": 0.032,
+  "declared_material": "alluminio",
+  "density_g_cm3": 2.7,
+  "declared_thickness_mm": null,
+  "detected_thickness_mm": 2.0,
+  "thickness_confidence": "medium",
+  "holes": {
+    "circular": [
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 6.0,
+        "radius_mm": 3.0,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.0,
+        "center": [
+          16.732,
+          15.592,
+          1.0
+        ],
+        "axis": [
+          0.0,
+          0.0,
+          1.0
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      },
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 6.0,
+        "radius_mm": 3.0,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.0,
+        "center": [
+          27.201,
+          47.951,
+          1.0
+        ],
+        "axis": [
+          0.0,
+          0.0,
+          1.0
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      },
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 6.0,
+        "radius_mm": 3.0,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.0,
+        "center": [
+          61.623,
+          32.089,
+          1.0
+        ],
+        "axis": [
+          0.0,
+          0.0,
+          1.0
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      },
+      {
+        "num_sides": null,
+        "max_dimension_mm": null,
+        "bounding_box_mm": null,
+        "diameter_mm": 6.0,
+        "radius_mm": 3.0,
+        "length_mm": null,
+        "width_mm": null,
+        "depth_mm": 2.0,
+        "center": [
+          77.009,
+          17.337,
+          1.0
+        ],
+        "axis": [
+          0.0,
+          0.0,
+          1.0
+        ],
+        "position_mm": null,
+        "confidence": "high"
+      }
+    ],
+    "elongated": [],
+    "polygonal": [],
+    "confidence": "medium"
+  },
+  "bends": {
+    "count": 0,
+    "confidence": "medium",
+    "items": []
+  },
+  "cutting": {
+    "outer_cut_length_mm": 320.0,
+    "inner_cut_length_mm": 75.4,
+    "total_cut_length_mm": 395.4,
+    "confidence": "medium",
+    "warnings": [
+      "Cut length is preliminary: outer loop is selected from the longest planar external wire and inner loop length is derived from deduplicated detected features."
+    ]
+  },
+  "complexity_score": "unknown",
+  "warnings": []
+}

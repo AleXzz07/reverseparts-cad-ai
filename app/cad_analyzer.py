@@ -724,9 +724,8 @@ def analyze_step_file(
                 else "medium"
             )
         else:
-            response.warnings.append(
-                "Bend detection found no reliable sheet-metal flange candidates."
-            )
+            response.bends.count = 0
+            response.bends.confidence = "medium"
 
         (
             response.cutting.outer_cut_length_mm,

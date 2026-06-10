@@ -186,7 +186,10 @@ tests/dataset/<case_name>/
   quote.json
 ```
 
-`tests/dataset/staffa_test_1/` mirrors the existing STAFFA TEST 1 fixture in this scalable format.
+Current dataset cases:
+
+- `tests/dataset/staffa_test_1/`: bent sheet-metal bracket with laser features and two flanges.
+- `tests/dataset/lamiera_piana_test_1/`: flat sheet-metal laser-only part with circular holes and no bending operation.
 
 Process every dataset folder inside Docker:
 

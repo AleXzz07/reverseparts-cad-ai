@@ -202,7 +202,7 @@ def _estimate_amounts(
         }
 
     cad_check = 3.0
-    if bends_count_available:
+    if bends_count_available and bends > 0:
         bending_time_min_per_piece = (
             bends * parameters.bending_time_sec_per_bend
             + parameters.bending_extra_handling_sec_per_piece
@@ -215,6 +215,16 @@ def _estimate_amounts(
             "bending_extra_handling_sec_per_piece": parameters.bending_extra_handling_sec_per_piece,
             "bending_time_min_per_piece": round(bending_time_min_per_piece, 4),
             "bending_time_total_min": bending,
+        }
+    elif bends_count_available:
+        bending = 0.0
+        bending_details = {
+            "bends_count": 0,
+            "bending_setup_time_min": 0.0,
+            "bending_time_sec_per_bend": parameters.bending_time_sec_per_bend,
+            "bending_extra_handling_sec_per_piece": 0.0,
+            "bending_time_min_per_piece": 0.0,
+            "bending_time_total_min": 0.0,
         }
     else:
         bending = round((0.8 + bends * 0.55) * quantity if bends else 0.0, 2)

@@ -1,0 +1,35 @@
+{
+  "part_name": "LAMIERA PIANA TEST 1",
+  "part_type": "lamiera piana taglio laser",
+  "material_key": "alluminio",
+  "material": "alluminio",
+  "declared_thickness_mm": null,
+  "detected_thickness_mm": 2.0,
+  "dimensions_mm": {
+    "x": 100.0,
+    "y": 60.0,
+    "z": 2.0
+  },
+  "volume_cm3": 11.774,
+  "surface_area_cm2": 125.646,
+  "estimated_weight_kg": 0.032,
+  "holes": {
+    "circular": [
+      {
+        "diameter_mm": 6.0,
+        "count": 4
+      }
+    ],
+    "elongated": [],
+    "polygonal": []
+  },
+  "bends": {
+    "count": 0
+  },
+  "cutting": {
+    "total_cut_length_mm": 395.4
+  },
+  "process_steps": [
+    "laser 2D"
+  ]
+}
