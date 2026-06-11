@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import json
+import os
+from pathlib import Path
 from typing import Any
 
-import json
-from pathlib import Path
-
 from fastapi import FastAPI, File, Form, HTTPException, Response, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 
 from .cad_analyzer import VALID_STEP_SUFFIXES, analyze_step_file, get_freecad_status
 from .pdf_report import generate_quote_pdf
@@ -19,7 +20,19 @@ app = FastAPI(
     description="Backend for verifiable STEP/STP CAD analysis.",
     version="0.1.0",
 )
-STATIC_DIR = Path(__file__).resolve().parent / "static"
+FRONTEND_INDEX = Path(__file__).resolve().parents[1] / "frontend" / "index.html"
+CORS_ALLOW_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv("CORS_ALLOW_ORIGINS", "*").split(",")
+    if origin.strip()
+]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=CORS_ALLOW_ORIGINS,
+    allow_credentials=CORS_ALLOW_ORIGINS != ["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 def _model_to_dict(model: Any) -> dict[str, Any]:
@@ -61,8 +74,13 @@ def _json_overrides_or_400(value: str | None, label: str) -> dict[str, float] | 
 
 
 @app.get("/", include_in_schema=False)
-def frontend() -> FileResponse:
-    return FileResponse(STATIC_DIR / "index.html", media_type="text/html")
+def frontend() -> HTMLResponse:
+    api_base_url = os.getenv("API_BASE_URL", "").rstrip("/")
+    html = FRONTEND_INDEX.read_text(encoding="utf-8").replace(
+        "__API_BASE_URL__",
+        json.dumps(api_base_url),
+    )
+    return HTMLResponse(html)
 
 
 @app.get("/config/defaults")

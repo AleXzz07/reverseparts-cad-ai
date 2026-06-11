@@ -1,0 +1,8 @@
+{
+  "name": "reverseparts-cad-ai-frontend",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build_frontend.mjs"
+  }
+}

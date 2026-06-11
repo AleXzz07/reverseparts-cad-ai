@@ -7,3 +7,5 @@ pytest-cache-files-*/
 venv/
 .env
 .DS_Store
+.vercel/
+public/

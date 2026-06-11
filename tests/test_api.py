@@ -66,6 +66,15 @@ def test_frontend_returns_html():
     assert "Analizza e genera preventivo" in response.text
 
 
+def test_frontend_uses_api_base_url(monkeypatch):
+    monkeypatch.setenv("API_BASE_URL", "https://reverseparts-cad-api.onrender.com/")
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert 'const API_BASE_URL = String("https://reverseparts-cad-api.onrender.com")' in response.text
+
+
 def test_analyze_cad_requires_file():
     response = client.post("/analyze-cad")
 

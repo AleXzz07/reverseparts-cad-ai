@@ -173,17 +173,46 @@ The quote separates `estimated_internal_cost_eur` from `commercial_guidance`. Th
 
 ## Web App
 
-Start the API and open `http://localhost:8000/`:
+The frontend and backend can run together for local development:
 
 ```powershell
 docker run --rm -p 8000:8000 reverseparts-cad-ai
 ```
+
+Open `http://localhost:8000/`. If `API_BASE_URL` is not set, the frontend uses relative requests, so local Docker behavior is unchanged.
 
 The page runs the complete STEP analysis, quote, and PDF flow. Material and pricing defaults are loaded from `config/materials.json` and `config/pricing_default.json`. Values edited in the page are sent as `material_overrides` and `pricing_overrides`, apply only to that request, and never modify the config files. The quote reports `overrides_used` and exposes the effective values under `config_used`.
 
 `POST /quote` accepts optional JSON objects named `pricing_overrides` and `material_overrides`. `POST /analyze-and-quote` accepts the same fields as JSON-encoded multipart form values.
 
 Bending time uses `bending_setup_time_min` once per order plus a per-piece time based on `bending_time_sec_per_bend` and `bending_extra_handling_sec_per_piece`. If the CAD analysis does not provide `bends.count`, the engine uses the previous heuristic and adds a warning. The quote includes `bending_details` with the configured inputs and calculated per-piece and total bending time.
+
+## Production Deployment
+
+Deploy only the static frontend to Vercel. The Vercel build reads `API_BASE_URL` and writes the deployable page to `public/`:
+
+```powershell
+$env:API_BASE_URL="https://reverseparts-cad-api.onrender.com"
+npm run build
+```
+
+In the Vercel project settings, configure:
+
+```text
+API_BASE_URL=https://reverseparts-cad-api.onrender.com
+```
+
+The value is injected at build time, so redeploy the frontend after changing it. `vercel.json` already selects `npm run build` and the `public` output directory.
+
+The FastAPI backend must run from the repository Dockerfile on a service with Docker and enough resources for FreeCAD, such as Render, Railway, Fly.io, or a VPS. Vercel must not run the FreeCAD backend.
+
+For a production backend, configure the allowed frontend origin:
+
+```text
+CORS_ALLOW_ORIGINS=https://your-reverseparts-frontend.vercel.app
+```
+
+Multiple origins can be comma-separated. When `CORS_ALLOW_ORIGINS` is not set, the backend defaults to `*` for local development and initial integration testing.
 
 ## Dataset Multi Pezzo
 

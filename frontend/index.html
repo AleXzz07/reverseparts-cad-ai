@@ -251,6 +251,8 @@
     </section>
   </main>
   <script>
+    const API_BASE_URL = String(__API_BASE_URL__).replace(/\/+$/, "");
+    const apiUrl = path => `${API_BASE_URL}${path}`;
     const parameterGroups = {
       material: [
         ["density_g_cm3", "Densita g/cm3"],
@@ -396,7 +398,10 @@
       buildInputs(parameterGroups.bending, "bending-params");
       buildInputs(parameterGroups.general, "general-params");
       try {
-        const [configResponse, healthResponse] = await Promise.all([fetch("/config/defaults"), fetch("/health")]);
+        const [configResponse, healthResponse] = await Promise.all([
+          fetch(apiUrl("/config/defaults")),
+          fetch(apiUrl("/health"))
+        ]);
         defaults = await configResponse.json();
         const health = await healthResponse.json();
         document.getElementById("health").textContent = health.freecad_available ? "FreeCAD disponibile" : "FreeCAD non disponibile";
@@ -428,7 +433,7 @@
       document.getElementById("pdf-button").disabled = true;
       setStatus("Analisi CAD e calcolo preventivo in corso...", "loading");
       try {
-        const response = await fetch("/analyze-and-quote", { method: "POST", body: formData });
+        const response = await fetch(apiUrl("/analyze-and-quote"), { method: "POST", body: formData });
         if (!response.ok) throw new Error(await parseError(response));
         lastResult = await response.json();
         renderResult(lastResult);
@@ -444,7 +449,7 @@
       if (!lastResult) return;
       setStatus("Generazione PDF in corso...", "loading");
       try {
-        const response = await fetch("/quote-pdf", {
+        const response = await fetch(apiUrl("/quote-pdf"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(lastResult)
