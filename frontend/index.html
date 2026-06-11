@@ -439,20 +439,29 @@
       }
     }
 
+    async function checkHealth() {
+      try {
+        const healthResponse = await fetchApi("/health");
+        const health = await healthResponse.json();
+        document.getElementById("health").textContent = health.freecad_available ? "FreeCAD disponibile" : "FreeCAD non disponibile";
+      } catch (error) {
+        document.getElementById("health").textContent = "Stato FreeCAD non verificato";
+        console.warn("[REVERSEPARTS] health check failed:", error.message);
+      }
+    }
+
     async function initialize() {
       buildInputs(parameterGroups.material, "material-params");
       buildInputs(parameterGroups.laser, "laser-params");
       buildInputs(parameterGroups.bending, "bending-params");
       buildInputs(parameterGroups.general, "general-params");
+      checkHealth();
+
       try {
-        const [configResponse, healthResponse] = await Promise.all([
-          fetchApi("/config/defaults"),
-          fetchApi("/health")
-        ]);
+        const configResponse = await fetchApi("/config/defaults");
         defaults = await configResponse.json();
-        const health = await healthResponse.json();
-        document.getElementById("health").textContent = health.freecad_available ? "FreeCAD disponibile" : "FreeCAD non disponibile";
         loadDefaults();
+        console.log("[REVERSEPARTS] config loaded successfully");
       } catch (error) {
         setStatus(`Impossibile caricare la configurazione iniziale. ${error.message}`, "error");
       }

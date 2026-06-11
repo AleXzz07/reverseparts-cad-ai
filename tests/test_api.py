@@ -75,6 +75,10 @@ def test_frontend_returns_html():
     assert 'fetch(apiUrl("/health"))' not in response.text
     assert 'fetch(apiUrl("/config/defaults"))' not in response.text
     assert 'fetch(apiUrl("/analyze-and-quote")' not in response.text
+    assert "Stato FreeCAD non verificato" in response.text
+    assert "health check failed" in response.text
+    assert "config loaded successfully" in response.text
+    assert "Promise.all" not in response.text
 
 
 def test_app_config_uses_api_base_url(monkeypatch):
