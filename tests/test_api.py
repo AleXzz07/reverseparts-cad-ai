@@ -66,7 +66,15 @@ def test_frontend_returns_html():
     assert "Analizza e genera preventivo" in response.text
     assert '<script src="/app-config.js"></script>' in response.text
     assert "window.REVERSEPARTS_API_BASE_URL" in response.text
-    assert 'apiUrl("/health")' in response.text
+    assert 'id="api-backend"' in response.text
+    assert "API backend:" in response.text
+    assert 'fetchApi("/health")' in response.text
+    assert 'fetchApi("/config/defaults")' in response.text
+    assert 'fetchApi("/analyze-and-quote"' in response.text
+    assert 'fetchApi("/quote-pdf"' in response.text
+    assert 'fetch(apiUrl("/health"))' not in response.text
+    assert 'fetch(apiUrl("/config/defaults"))' not in response.text
+    assert 'fetch(apiUrl("/analyze-and-quote")' not in response.text
 
 
 def test_app_config_uses_api_base_url(monkeypatch):

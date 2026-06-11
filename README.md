@@ -216,6 +216,8 @@ window.REVERSEPARTS_API_BASE_URL = "https://reverseparts-cad-api.onrender.com";
 
 `vercel.json` already selects `npm run build` and the `public` output directory. The HTML loads `/app-config.js` before the application script, and every API request is built through `apiUrl(path)`.
 
+The web app header shows the effective backend as `API backend: ...` (or `relative` locally). Browser console diagnostics also print the configured base URL and the complete URL used for each API request. Network errors shown in the page include the request URL, HTTP method, and browser error message.
+
 The FastAPI backend must run from the repository Dockerfile on a service with Docker and enough resources for FreeCAD, such as Render, Railway, Fly.io, or a VPS. Vercel must not run the FreeCAD backend.
 
 The backend allows `https://reverseparts-cad-ai.vercel.app`, `localhost`, and `127.0.0.1` by default. To replace or extend the explicit production origins on Render, configure:

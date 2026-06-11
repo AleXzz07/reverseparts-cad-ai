@@ -40,7 +40,21 @@
     }
     .brand { font-size: 20px; font-weight: 750; }
     .brand small { margin-left: 10px; color: #a9bbc3; font-size: 12px; font-weight: 500; }
-    .health { font-size: 12px; color: #b8c8ce; }
+    .header-status {
+      display: grid;
+      gap: 3px;
+      justify-items: end;
+      min-width: 0;
+      font-size: 12px;
+      color: #b8c8ce;
+    }
+    .api-backend {
+      max-width: min(560px, 55vw);
+      overflow: hidden;
+      color: #d7e2e6;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
     main {
       width: min(1440px, 100%);
       margin: 0 auto;
@@ -164,6 +178,9 @@
       .brand small { display: none; }
     }
     @media (max-width: 620px) {
+      header { height: auto; min-height: 64px; gap: 12px; padding-top: 10px; padding-bottom: 10px; }
+      .header-status { justify-items: end; text-align: right; }
+      .api-backend { max-width: 48vw; }
       .grid-2, .parameter-grid, .data-grid { grid-template-columns: 1fr; }
       .summary-strip { grid-template-columns: 1fr 1fr; }
       .metric:nth-child(2) { border-right: 0; }
@@ -175,7 +192,10 @@
 <body>
   <header>
     <div class="brand">REVERSEPARTS <small>CAD analysis &amp; internal quote</small></div>
-    <div class="health" id="health">Verifica FreeCAD...</div>
+    <div class="header-status">
+      <div id="health">Verifica FreeCAD...</div>
+      <div class="api-backend">API backend: <span id="api-backend">relative</span></div>
+    </div>
   </header>
   <main>
     <section class="panel">
@@ -256,6 +276,30 @@
       const base = String(window.REVERSEPARTS_API_BASE_URL || "").replace(/\/+$/, "");
       return `${base}${path}`;
     }
+    const configuredApiBaseUrl = String(window.REVERSEPARTS_API_BASE_URL || "").replace(/\/+$/, "");
+    document.getElementById("api-backend").textContent = configuredApiBaseUrl || "relative";
+    console.log("[REVERSEPARTS] window.REVERSEPARTS_API_BASE_URL:", window.REVERSEPARTS_API_BASE_URL || "");
+
+    async function fetchApi(path, options = {}) {
+      const method = String(options.method || "GET").toUpperCase();
+      const url = apiUrl(path);
+      console.log(`[REVERSEPARTS] ${method} ${path}:`, url);
+
+      let response;
+      try {
+        response = await fetch(url, options);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new Error(`URL: ${url} | Metodo: ${method} | Errore: ${message}`);
+      }
+
+      if (!response.ok) {
+        const detail = await parseError(response);
+        throw new Error(`URL: ${url} | Metodo: ${method} | Errore: ${detail}`);
+      }
+      return response;
+    }
+
     const parameterGroups = {
       material: [
         ["density_g_cm3", "Densita g/cm3"],
@@ -402,15 +446,15 @@
       buildInputs(parameterGroups.general, "general-params");
       try {
         const [configResponse, healthResponse] = await Promise.all([
-          fetch(apiUrl("/config/defaults")),
-          fetch(apiUrl("/health"))
+          fetchApi("/config/defaults"),
+          fetchApi("/health")
         ]);
         defaults = await configResponse.json();
         const health = await healthResponse.json();
         document.getElementById("health").textContent = health.freecad_available ? "FreeCAD disponibile" : "FreeCAD non disponibile";
         loadDefaults();
-      } catch {
-        setStatus("Impossibile caricare la configurazione iniziale.", "error");
+      } catch (error) {
+        setStatus(`Impossibile caricare la configurazione iniziale. ${error.message}`, "error");
       }
     }
 
@@ -436,8 +480,7 @@
       document.getElementById("pdf-button").disabled = true;
       setStatus("Analisi CAD e calcolo preventivo in corso...", "loading");
       try {
-        const response = await fetch(apiUrl("/analyze-and-quote"), { method: "POST", body: formData });
-        if (!response.ok) throw new Error(await parseError(response));
+        const response = await fetchApi("/analyze-and-quote", { method: "POST", body: formData });
         lastResult = await response.json();
         renderResult(lastResult);
         clearStatus();
@@ -452,12 +495,11 @@
       if (!lastResult) return;
       setStatus("Generazione PDF in corso...", "loading");
       try {
-        const response = await fetch(apiUrl("/quote-pdf"), {
+        const response = await fetchApi("/quote-pdf", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(lastResult)
         });
-        if (!response.ok) throw new Error(await parseError(response));
         const blob = await response.blob();
         const link = document.createElement("a");
         link.href = URL.createObjectURL(blob);
