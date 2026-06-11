@@ -21,14 +21,21 @@ app = FastAPI(
     version="0.1.0",
 )
 FRONTEND_INDEX = Path(__file__).resolve().parents[1] / "frontend" / "index.html"
+DEFAULT_CORS_ALLOW_ORIGINS = (
+    "https://reverseparts-cad-ai.vercel.app",
+)
 CORS_ALLOW_ORIGINS = [
     origin.strip()
-    for origin in os.getenv("CORS_ALLOW_ORIGINS", "*").split(",")
+    for origin in os.getenv(
+        "CORS_ALLOW_ORIGINS",
+        ",".join(DEFAULT_CORS_ALLOW_ORIGINS),
+    ).split(",")
     if origin.strip()
 ]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ALLOW_ORIGINS,
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
     allow_credentials=CORS_ALLOW_ORIGINS != ["*"],
     allow_methods=["*"],
     allow_headers=["*"],
@@ -75,12 +82,21 @@ def _json_overrides_or_400(value: str | None, label: str) -> dict[str, float] | 
 
 @app.get("/", include_in_schema=False)
 def frontend() -> HTMLResponse:
+    return HTMLResponse(FRONTEND_INDEX.read_text(encoding="utf-8"))
+
+
+@app.get("/app-config.js", include_in_schema=False)
+def app_config() -> Response:
     api_base_url = os.getenv("API_BASE_URL", "").rstrip("/")
-    html = FRONTEND_INDEX.read_text(encoding="utf-8").replace(
-        "__API_BASE_URL__",
-        json.dumps(api_base_url),
+    script = (
+        "window.REVERSEPARTS_API_BASE_URL = "
+        f"{json.dumps(api_base_url)};\n"
     )
-    return HTMLResponse(html)
+    return Response(
+        content=script,
+        media_type="application/javascript",
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @app.get("/config/defaults")

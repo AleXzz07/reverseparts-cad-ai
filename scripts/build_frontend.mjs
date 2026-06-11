@@ -7,13 +7,15 @@ const projectRoot = resolve(scriptDirectory, "..");
 const sourcePath = resolve(projectRoot, "frontend", "index.html");
 const outputDirectory = resolve(projectRoot, "public");
 const outputPath = resolve(outputDirectory, "index.html");
+const configOutputPath = resolve(outputDirectory, "app-config.js");
 const apiBaseUrl = (process.env.API_BASE_URL || "").replace(/\/+$/, "");
 
 const source = await readFile(sourcePath, "utf8");
-const built = source.replace("__API_BASE_URL__", JSON.stringify(apiBaseUrl));
+const appConfig = `window.REVERSEPARTS_API_BASE_URL = ${JSON.stringify(apiBaseUrl)};\n`;
 
 await rm(outputDirectory, { recursive: true, force: true });
 await mkdir(outputDirectory, { recursive: true });
-await writeFile(outputPath, built, "utf8");
+await writeFile(outputPath, source, "utf8");
+await writeFile(configOutputPath, appConfig, "utf8");
 
 console.log(`Frontend built with API_BASE_URL=${apiBaseUrl || "(relative requests)"}`);

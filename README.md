@@ -179,7 +179,7 @@ The frontend and backend can run together for local development:
 docker run --rm -p 8000:8000 reverseparts-cad-ai
 ```
 
-Open `http://localhost:8000/`. If `API_BASE_URL` is not set, the frontend uses relative requests, so local Docker behavior is unchanged.
+Open `http://localhost:8000/`. FastAPI exposes `GET /app-config.js`; if `API_BASE_URL` is not set, it sets `window.REVERSEPARTS_API_BASE_URL` to an empty string and the frontend uses relative requests.
 
 The page runs the complete STEP analysis, quote, and PDF flow. Material and pricing defaults are loaded from `config/materials.json` and `config/pricing_default.json`. Values edited in the page are sent as `material_overrides` and `pricing_overrides`, apply only to that request, and never modify the config files. The quote reports `overrides_used` and exposes the effective values under `config_used`.
 
@@ -189,7 +189,7 @@ Bending time uses `bending_setup_time_min` once per order plus a per-piece time 
 
 ## Production Deployment
 
-Deploy only the static frontend to Vercel. The Vercel build reads `API_BASE_URL` and writes the deployable page to `public/`:
+Deploy only the static frontend to Vercel. The Vercel build reads `API_BASE_URL` and writes both `public/index.html` and `public/app-config.js`:
 
 ```powershell
 $env:API_BASE_URL="https://reverseparts-cad-api.onrender.com"
@@ -202,17 +202,29 @@ In the Vercel project settings, configure:
 API_BASE_URL=https://reverseparts-cad-api.onrender.com
 ```
 
-The value is injected at build time, so redeploy the frontend after changing it. `vercel.json` already selects `npm run build` and the `public` output directory.
+The value is written to `app-config.js` at build time, so redeploy the frontend after changing it. Verify the deployed value at:
+
+```text
+https://reverseparts-cad-ai.vercel.app/app-config.js
+```
+
+It must contain:
+
+```javascript
+window.REVERSEPARTS_API_BASE_URL = "https://reverseparts-cad-api.onrender.com";
+```
+
+`vercel.json` already selects `npm run build` and the `public` output directory. The HTML loads `/app-config.js` before the application script, and every API request is built through `apiUrl(path)`.
 
 The FastAPI backend must run from the repository Dockerfile on a service with Docker and enough resources for FreeCAD, such as Render, Railway, Fly.io, or a VPS. Vercel must not run the FreeCAD backend.
 
-For a production backend, configure the allowed frontend origin:
+The backend allows `https://reverseparts-cad-ai.vercel.app`, `localhost`, and `127.0.0.1` by default. To replace or extend the explicit production origins on Render, configure:
 
 ```text
 CORS_ALLOW_ORIGINS=https://your-reverseparts-frontend.vercel.app
 ```
 
-Multiple origins can be comma-separated. When `CORS_ALLOW_ORIGINS` is not set, the backend defaults to `*` for local development and initial integration testing.
+Multiple origins can be comma-separated. For a temporary unrestricted integration test, set `CORS_ALLOW_ORIGINS=*`; restrict it again before normal production use.
 
 ## Dataset Multi Pezzo
 

@@ -64,15 +64,45 @@ def test_frontend_returns_html():
     assert response.headers["content-type"].startswith("text/html")
     assert "REVERSEPARTS" in response.text
     assert "Analizza e genera preventivo" in response.text
+    assert '<script src="/app-config.js"></script>' in response.text
+    assert "window.REVERSEPARTS_API_BASE_URL" in response.text
+    assert 'apiUrl("/health")' in response.text
 
 
-def test_frontend_uses_api_base_url(monkeypatch):
+def test_app_config_uses_api_base_url(monkeypatch):
     monkeypatch.setenv("API_BASE_URL", "https://reverseparts-cad-api.onrender.com/")
 
-    response = client.get("/")
+    response = client.get("/app-config.js")
 
     assert response.status_code == 200
-    assert 'const API_BASE_URL = String("https://reverseparts-cad-api.onrender.com")' in response.text
+    assert response.headers["content-type"].startswith("application/javascript")
+    assert response.headers["cache-control"] == "no-store"
+    assert (
+        'window.REVERSEPARTS_API_BASE_URL = '
+        '"https://reverseparts-cad-api.onrender.com";'
+    ) in response.text
+
+
+def test_app_config_defaults_to_relative_requests(monkeypatch):
+    monkeypatch.delenv("API_BASE_URL", raising=False)
+
+    response = client.get("/app-config.js")
+
+    assert response.status_code == 200
+    assert 'window.REVERSEPARTS_API_BASE_URL = "";' in response.text
+
+
+def test_cors_allows_vercel_frontend():
+    response = client.get(
+        "/health",
+        headers={"Origin": "https://reverseparts-cad-ai.vercel.app"},
+    )
+
+    assert response.status_code == 200
+    assert (
+        response.headers["access-control-allow-origin"]
+        == "https://reverseparts-cad-ai.vercel.app"
+    )
 
 
 def test_analyze_cad_requires_file():
