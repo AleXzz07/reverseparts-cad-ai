@@ -224,6 +224,8 @@ La web app include tooltip e legenda per spiegare i parametri modificabili del p
 
 Il backend genera preview PNG ad alta risoluzione del pezzo STEP tramite la tessellazione FreeCAD e un renderer software headless. Le viste disponibili includono isometrica, frontale, destra e alto, con asse Z orientato verso l'alto. La web app mostra una gallery con miniature cliccabili e il PDF include una griglia delle viste quando disponibili. Se una vista o il rendering non sono disponibili, vengono restituiti warning senza bloccare analisi CAD, preventivo o PDF.
 
+La modalità preview `clean`, attiva di default e configurabile con `PREVIEW_RENDER_MODE=clean`, usa la hidden-line removal di FreeCAD per mostrare solo i contorni tecnici visibili. Seam, raccordi tangenti, micro-edge e linee proiettate duplicate vengono filtrati, rendendo più leggibili anche aperture formate, collarini e imbutiture nei componenti complessi.
+
 The FastAPI backend must run from the repository Dockerfile on a service with Docker and enough resources for FreeCAD, such as Render, Railway, Fly.io, or a VPS. Vercel must not run the FreeCAD backend.
 
 The backend allows `https://reverseparts-cad-ai.vercel.app`, `localhost`, and `127.0.0.1` by default. To replace or extend the explicit production origins on Render, configure:

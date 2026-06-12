@@ -12,6 +12,10 @@ from typing import Any
 PREVIEW_WIDTH_PX = 1600
 PREVIEW_HEIGHT_PX = 1200
 RENDER_SCALE = 2
+PREVIEW_RENDER_MODE = os.getenv(
+    "PREVIEW_RENDER_MODE",
+    "clean",
+).strip().lower()
 PRIMARY_VIEW_NAME = "isometric"
 VIEW_ORDER = ("isometric", "front", "right", "top")
 VIEW_DIRECTIONS = {
@@ -151,6 +155,223 @@ def _to_screen(
     return (point[0] * scale + offset_x, offset_y - point[1] * scale)
 
 
+def _discretize_edge(
+    edge: Any,
+    curved_edge_step: float,
+) -> list[tuple[float, float, float]]:
+    curve_name = type(edge.Curve).__name__.lower()
+    point_count = 2
+    if "line" not in curve_name:
+        point_count = max(
+            48,
+            min(
+                384,
+                math.ceil(float(edge.Length) / curved_edge_step),
+            ),
+        )
+    return [
+        _vector(point)
+        for point in edge.discretize(Number=point_count)
+    ]
+
+
+def _projection_candidates(
+    x: float,
+    y: float,
+) -> tuple[tuple[float, float], ...]:
+    return (
+        (x, y),
+        (x, -y),
+        (-x, y),
+        (-x, -y),
+        (y, x),
+        (y, -x),
+        (-y, x),
+        (-y, -x),
+    )
+
+
+def _bbox_center_2d(
+    points: list[tuple[float, float]],
+) -> tuple[float, float]:
+    return (
+        (min(point[0] for point in points) + max(point[0] for point in points))
+        / 2.0,
+        (min(point[1] for point in points) + max(point[1] for point in points))
+        / 2.0,
+    )
+
+
+def _align_projected_lines(
+    lines: list[list[tuple[float, float, float]]],
+    target_points: list[tuple[float, float, float]],
+) -> list[list[tuple[float, float, float]]]:
+    source_points = [
+        (point[0], point[1])
+        for line in lines
+        for point in line
+    ]
+    target_2d = [(point[0], point[1]) for point in target_points]
+    if not source_points or not target_2d:
+        return []
+
+    source_center = _bbox_center_2d(source_points)
+    target_center = _bbox_center_2d(target_2d)
+    target_step = max(1, len(target_2d) // 700)
+    sampled_targets = target_2d[::target_step]
+    source_step = max(1, len(source_points) // 120)
+    sampled_sources = source_points[::source_step]
+
+    best_index = 0
+    best_score = math.inf
+    for candidate_index in range(8):
+        score = 0.0
+        for source_x, source_y in sampled_sources:
+            transformed = _projection_candidates(
+                source_x - source_center[0],
+                source_y - source_center[1],
+            )[candidate_index]
+            mapped = (
+                transformed[0] + target_center[0],
+                transformed[1] + target_center[1],
+            )
+            score += min(
+                (mapped[0] - target[0]) ** 2
+                + (mapped[1] - target[1]) ** 2
+                for target in sampled_targets
+            )
+        if score < best_score:
+            best_score = score
+            best_index = candidate_index
+
+    aligned = []
+    for line in lines:
+        aligned_line = []
+        for source_x, source_y, _ in line:
+            transformed = _projection_candidates(
+                source_x - source_center[0],
+                source_y - source_center[1],
+            )[best_index]
+            aligned_line.append(
+                (
+                    transformed[0] + target_center[0],
+                    transformed[1] + target_center[1],
+                    0.0,
+                )
+            )
+        aligned.append(aligned_line)
+    return aligned
+
+
+def _screen_line_length(
+    line: list[tuple[float, float]],
+) -> float:
+    return sum(
+        math.dist(left, right)
+        for left, right in zip(line, line[1:])
+    )
+
+
+def _line_signature(
+    line: list[tuple[float, float]],
+    tolerance_px: float = 1.5,
+) -> tuple[tuple[int, int], ...]:
+    if len(line) <= 5:
+        samples = line
+    else:
+        samples = [
+            line[0],
+            line[len(line) // 4],
+            line[len(line) // 2],
+            line[(len(line) * 3) // 4],
+            line[-1],
+        ]
+    signature = tuple(
+        (
+            round(point[0] / tolerance_px),
+            round(point[1] / tolerance_px),
+        )
+        for point in samples
+    )
+    reverse = tuple(reversed(signature))
+    return min(signature, reverse)
+
+
+def _deduplicate_screen_lines(
+    lines: list[list[tuple[float, float]]],
+) -> list[list[tuple[float, float]]]:
+    unique = []
+    signatures = set()
+    for line in lines:
+        if len(line) < 2 or _screen_line_length(line) < 3.0 * RENDER_SCALE:
+            continue
+        signature = _line_signature(line)
+        if signature in signatures:
+            continue
+        signatures.add(signature)
+        unique.append(line)
+    return unique
+
+
+def _visible_hlr_lines(
+    shape: Any,
+    direction: tuple[float, float, float],
+    target_points: list[tuple[float, float, float]],
+    curved_edge_step: float,
+) -> list[list[tuple[float, float, float]]]:
+    FreeCAD = importlib.import_module("FreeCAD")
+    Drawing = importlib.import_module("Drawing")
+    projection = Drawing.project(shape, FreeCAD.Vector(*direction))
+    visible_shapes = projection[:2]
+    raw_lines = [
+        _discretize_edge(edge, curved_edge_step)
+        for projected_shape in visible_shapes
+        for edge in projected_shape.Edges
+        if not edge.Degenerated
+    ]
+    return _align_projected_lines(raw_lines, target_points)
+
+
+def _edge_is_secondary(shape: Any, edge: Any) -> bool:
+    if edge.Degenerated:
+        return True
+    face_type = type(shape.Faces[0])
+    adjacent_faces = shape.ancestorsOfType(edge, face_type)
+    if any(edge.isSeam(face) for face in adjacent_faces):
+        return True
+    if len(adjacent_faces) != 2:
+        return False
+
+    midpoint = edge.valueAt(
+        (float(edge.FirstParameter) + float(edge.LastParameter)) / 2.0
+    )
+    normals = []
+    for face in adjacent_faces:
+        try:
+            u, v = face.Surface.parameter(midpoint)
+            normal = face.normalAt(u, v)
+            normals.append(_normalize(_vector(normal)))
+        except Exception:
+            return False
+    return abs(_dot(normals[0], normals[1])) >= 0.995
+
+
+def _fallback_topology_lines(
+    shape: Any,
+    basis: tuple[
+        tuple[float, float, float],
+        tuple[float, float, float],
+        tuple[float, float, float],
+    ],
+    curved_edge_step: float,
+) -> list[list[tuple[float, float, float]]]:
+    return [
+        [_project(point, basis) for point in _discretize_edge(edge, curved_edge_step)]
+        for edge in shape.Edges
+        if not _edge_is_secondary(shape, edge)
+    ]
+
+
 def _load_geometry(
     step_path: Path,
 ) -> tuple[
@@ -223,25 +444,35 @@ def render_named_view(
         polygon = [_to_screen(point, transform) for point in projected_triangle]
         draw.polygon(polygon, fill=_shade(_normal(*triangle)))
 
-    curved_edge_step = max(diagonal / 2000.0, 0.025)
-    for edge in shape.Edges:
-        curve_name = type(edge.Curve).__name__.lower()
-        point_count = 2
-        if "line" not in curve_name:
-            point_count = max(
-                32,
-                min(256, math.ceil(float(edge.Length) / curved_edge_step)),
+    curved_edge_step = max(diagonal / 3000.0, 0.015)
+    if PREVIEW_RENDER_MODE == "clean":
+        try:
+            projected_lines = _visible_hlr_lines(
+                shape,
+                VIEW_DIRECTIONS[view_name],
+                projected,
+                curved_edge_step,
             )
-        edge_points = [
-            _vector(point)
-            for point in edge.discretize(Number=point_count)
+        except Exception:
+            projected_lines = _fallback_topology_lines(
+                shape,
+                basis,
+                curved_edge_step,
+            )
+    else:
+        projected_lines = _fallback_topology_lines(
+            shape,
+            basis,
+            curved_edge_step,
+        )
+
+    screen_lines = _deduplicate_screen_lines(
+        [
+            [_to_screen(point, transform) for point in line]
+            for line in projected_lines
         ]
-        if len(edge_points) < 2:
-            continue
-        line = [
-            _to_screen(_project(point, basis), transform)
-            for point in edge_points
-        ]
+    )
+    for line in screen_lines:
         draw.line(
             line,
             fill=(48, 55, 60),
