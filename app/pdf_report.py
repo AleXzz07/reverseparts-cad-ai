@@ -332,6 +332,7 @@ def generate_quote_pdf(
     analysis: dict[str, Any],
     quote: dict[str, Any],
     preview: dict[str, Any] | None = None,
+    viewer_model: dict[str, Any] | None = None,
 ) -> bytes:
     buffer = BytesIO()
     document = SimpleDocTemplate(
@@ -373,6 +374,13 @@ def generate_quote_pdf(
     ]
 
     elements.extend(_preview_section(preview))
+    if (viewer_model or {}).get("available"):
+        viewer_rows = [
+            ("Vista 3D interattiva", "Disponibile nella web app"),
+        ]
+        if viewer_model.get("model_url"):
+            viewer_rows.append(("Link modello 3D", viewer_model["model_url"]))
+        elements.extend(_section("Modello 3D", viewer_rows))
     elements.extend(
         _section(
             "Pezzo",

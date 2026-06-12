@@ -238,6 +238,18 @@ PREVIEW_MAX_RENDER_VIEWS=4
 
 Con la configurazione predefinita i pezzi `high` vengono analizzati e quotati senza preview. Impostando `PREVIEW_MAX_COMPLEXITY_SCORE=high`, i pezzi complessi usano automaticamente una sola vista isometrica leggera. Su Render, se il renderer causa pressione sulle risorse, usare `PREVIEW_ENABLED=false`; in alternativa limitare il carico con `PREVIEW_MAX_RENDER_VIEWS=1`.
 
+La web app include anche una vista 3D interattiva basata su Three.js. Gli asset Three.js sono inclusi nel repository e serviti dalla stessa origine, senza dipendere da CDN esterne. Il backend converte temporaneamente la mesh FreeCAD in GLB, mentre il browser permette rotazione, zoom, pan, adattamento alla vista e viste isometrica, frontale, laterale e dall'alto. Il PDF rimane statico e continua a usare le immagini PNG; quando il modello GLB è disponibile indica che la vista interattiva è consultabile nella web app.
+
+Anche l'export STEP-to-GLB è isolato in un subprocess e può fallire senza interrompere analisi o preventivo. Per pezzi complessi viene applicato un limite triangoli più prudente. Le impostazioni principali sono:
+
+```text
+VIEWER_MODEL_ENABLED=true
+VIEWER_MODEL_TIMEOUT_SEC=20
+VIEWER_MODEL_MAX_FILE_SIZE_MB=20
+```
+
+Su istanze Render con memoria limitata, impostare `VIEWER_MODEL_ENABLED=false` per disattivare solo il modello interattivo. Preview statiche, analisi CAD, quote e PDF continuano a funzionare.
+
 The FastAPI backend must run from the repository Dockerfile on a service with Docker and enough resources for FreeCAD, such as Render, Railway, Fly.io, or a VPS. Vercel must not run the FreeCAD backend.
 
 The backend allows `https://reverseparts-cad-ai.vercel.app`, `localhost`, and `127.0.0.1` by default. To replace or extend the explicit production origins on Render, configure:

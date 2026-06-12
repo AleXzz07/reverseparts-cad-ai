@@ -9,8 +9,10 @@ from typing import Any
 from fastapi import FastAPI, File, Form, HTTPException, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 
 from .cad_analyzer import VALID_STEP_SUFFIXES, analyze_step_file, get_freecad_status
+from .model_service import generate_safe_viewer_model, unavailable_viewer_model
 from .pdf_report import generate_quote_pdf
 from .preview_service import generate_safe_step_preview, unavailable_preview
 from .quote_engine import load_materials_config, load_pricing_config, quote_from_cad
@@ -23,6 +25,7 @@ app = FastAPI(
     version="0.1.0",
 )
 FRONTEND_INDEX = Path(__file__).resolve().parents[1] / "frontend" / "index.html"
+FRONTEND_VENDOR = FRONTEND_INDEX.parent / "vendor"
 DEFAULT_CORS_ALLOW_ORIGINS = (
     "https://reverseparts-cad-ai.vercel.app",
 )
@@ -41,6 +44,11 @@ app.add_middleware(
     allow_credentials=CORS_ALLOW_ORIGINS != ["*"],
     allow_methods=["*"],
     allow_headers=["*"],
+)
+app.mount(
+    "/vendor",
+    StaticFiles(directory=FRONTEND_VENDOR),
+    name="frontend-vendor",
 )
 
 
@@ -200,10 +208,16 @@ def quote(request: QuoteRequest) -> dict[str, Any]:
 @app.post("/quote-pdf")
 def quote_pdf(request: QuotePdfRequest) -> Response:
     preview_payload = _model_to_dict(request.preview) if request.preview else None
+    viewer_model_payload = (
+        _model_to_dict(request.viewer_model)
+        if request.viewer_model
+        else None
+    )
     pdf_bytes = generate_quote_pdf(
         request.analysis,
         request.quote,
         preview=preview_payload,
+        viewer_model=viewer_model_payload,
     )
     return Response(
         content=pdf_bytes,
@@ -258,6 +272,9 @@ async def analyze_and_quote(
     preview_payload: dict[str, Any] = unavailable_preview(
         "preview was not attempted."
     )
+    viewer_model_payload: dict[str, Any] = unavailable_viewer_model(
+        "export was not attempted."
+    )
     step_path: str | None = None
     try:
         await file.seek(0)
@@ -266,15 +283,27 @@ async def analyze_and_quote(
         with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as step_file:
             step_file.write(file_bytes)
             step_path = step_file.name
-        preview_payload = generate_safe_step_preview(
-            step_path,
-            complexity_score=analysis_payload.get(
-                "complexity_score",
-                "unknown",
-            ),
+        complexity_score = analysis_payload.get(
+            "complexity_score",
+            "unknown",
         )
+        try:
+            viewer_model_payload = generate_safe_viewer_model(
+                step_path,
+                complexity_score=complexity_score,
+            )
+        except Exception as exc:
+            viewer_model_payload = unavailable_viewer_model(str(exc))
+        try:
+            preview_payload = generate_safe_step_preview(
+                step_path,
+                complexity_score=complexity_score,
+            )
+        except Exception as exc:
+            preview_payload = unavailable_preview(str(exc))
     except Exception as exc:
         preview_payload = unavailable_preview(str(exc))
+        viewer_model_payload = unavailable_viewer_model(str(exc))
     finally:
         if step_path:
             Path(step_path).unlink(missing_ok=True)
@@ -282,4 +311,5 @@ async def analyze_and_quote(
         analysis=analysis_payload,
         quote=quote_payload,
         preview=preview_payload,
+        viewer_model=viewer_model_payload,
     )

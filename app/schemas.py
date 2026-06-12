@@ -115,13 +115,23 @@ class PreviewResponse(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class ViewerModelResponse(BaseModel):
+    available: bool = False
+    model_base64: str | None = None
+    format: Literal["glb"] | None = None
+    model_url: str | None = None
+    warnings: list[str] = Field(default_factory=list)
+
+
 class AnalyzeAndQuoteResponse(BaseModel):
     analysis: dict[str, Any]
     quote: dict[str, Any]
     preview: PreviewResponse = Field(default_factory=PreviewResponse)
+    viewer_model: ViewerModelResponse = Field(default_factory=ViewerModelResponse)
 
 
 class QuotePdfRequest(BaseModel):
     analysis: dict[str, Any]
     quote: dict[str, Any]
     preview: PreviewResponse | None = None
+    viewer_model: ViewerModelResponse | None = None
