@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +12,7 @@ from fastapi.responses import HTMLResponse
 
 from .cad_analyzer import VALID_STEP_SUFFIXES, analyze_step_file, get_freecad_status
 from .pdf_report import generate_quote_pdf
+from .preview_renderer import generate_step_preview
 from .quote_engine import load_materials_config, load_pricing_config, quote_from_cad
 from .schemas import AnalyzeAndQuoteResponse, CadAnalysisResponse, HealthResponse, QuotePdfRequest, QuoteRequest
 
@@ -197,7 +199,12 @@ def quote(request: QuoteRequest) -> dict[str, Any]:
 
 @app.post("/quote-pdf")
 def quote_pdf(request: QuotePdfRequest) -> Response:
-    pdf_bytes = generate_quote_pdf(request.analysis, request.quote)
+    preview_payload = _model_to_dict(request.preview) if request.preview else None
+    pdf_bytes = generate_quote_pdf(
+        request.analysis,
+        request.quote,
+        preview=preview_payload,
+    )
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
@@ -238,6 +245,25 @@ async def analyze_and_quote(
         quantity=quantity,
     )
     analysis_payload = _model_to_dict(analysis)
+    preview_payload: dict[str, Any]
+    step_path: str | None = None
+    try:
+        await file.seek(0)
+        file_bytes = await file.read()
+        suffix = Path(file.filename or "part.step").suffix.lower() or ".step"
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as step_file:
+            step_file.write(file_bytes)
+            step_path = step_file.name
+        preview_payload = generate_step_preview(step_path)
+    except Exception as exc:
+        preview_payload = {
+            "image_png_base64": None,
+            "available": False,
+            "warnings": [f"Preview generation failed: {exc}"],
+        }
+    finally:
+        if step_path:
+            Path(step_path).unlink(missing_ok=True)
     try:
         quote_payload = quote_from_cad(
             analysis_payload,
@@ -251,4 +277,5 @@ async def analyze_and_quote(
     return AnalyzeAndQuoteResponse(
         analysis=analysis_payload,
         quote=quote_payload,
+        preview=preview_payload,
     )

@@ -99,11 +99,19 @@ class QuoteRequest(BaseModel):
     material_overrides: dict[str, float] | None = None
 
 
+class PreviewResponse(BaseModel):
+    image_png_base64: str | None = None
+    available: bool = False
+    warnings: list[str] = Field(default_factory=list)
+
+
 class AnalyzeAndQuoteResponse(BaseModel):
     analysis: dict[str, Any]
     quote: dict[str, Any]
+    preview: PreviewResponse = Field(default_factory=PreviewResponse)
 
 
 class QuotePdfRequest(BaseModel):
     analysis: dict[str, Any]
     quote: dict[str, Any]
+    preview: PreviewResponse | None = None

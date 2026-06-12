@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import binascii
 from io import BytesIO
 from typing import Any
 
@@ -7,7 +9,16 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import (
+    Image,
+    KeepTogether,
+    Paragraph,
+    SimpleDocTemplate,
+    Spacer,
+    Table,
+    TableStyle,
+)
+from PIL import Image as PillowImage
 
 
 def _value(value: Any, unit: str = "") -> str:
@@ -66,10 +77,72 @@ def _section(title: str, rows: list[tuple[str, Any]]) -> list[Any]:
             ]
         )
     )
-    return [Paragraph(title, heading_style), table, Spacer(1, 4 * mm)]
+    return [
+        KeepTogether(
+            [Paragraph(title, heading_style), table, Spacer(1, 4 * mm)]
+        )
+    ]
 
 
-def generate_quote_pdf(analysis: dict[str, Any], quote: dict[str, Any]) -> bytes:
+def _preview_section(preview: dict[str, Any] | None) -> list[Any]:
+    styles = getSampleStyleSheet()
+    heading_style = ParagraphStyle(
+        "PreviewHeading",
+        parent=styles["Heading2"],
+        fontName="Helvetica-Bold",
+        fontSize=11,
+        leading=13,
+        spaceBefore=0,
+        spaceAfter=4,
+    )
+    fallback_style = ParagraphStyle(
+        "PreviewFallback",
+        parent=styles["Normal"],
+        fontName="Helvetica-Oblique",
+        fontSize=8.5,
+        leading=10,
+        textColor=colors.HexColor("#63707C"),
+    )
+    elements: list[Any] = [Paragraph("Anteprima pezzo", heading_style)]
+    encoded = (preview or {}).get("image_png_base64")
+    if not encoded:
+        return [
+            *elements,
+            Paragraph("Anteprima pezzo non disponibile", fallback_style),
+            Spacer(1, 4 * mm),
+        ]
+
+    try:
+        image_bytes = base64.b64decode(encoded, validate=True)
+        if not image_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
+            raise ValueError("Invalid PNG signature")
+        source = BytesIO(image_bytes)
+        normalized = BytesIO()
+        with PillowImage.open(source) as pillow_image:
+            pillow_image.load()
+            pillow_image.convert("RGB").save(normalized, format="PNG")
+        normalized.seek(0)
+        image = Image(normalized)
+        max_width = 120 * mm
+        max_height = 72 * mm
+        scale = min(max_width / image.imageWidth, max_height / image.imageHeight, 1.0)
+        image.drawWidth = image.imageWidth * scale
+        image.drawHeight = image.imageHeight * scale
+        image.hAlign = "CENTER"
+        return [*elements, image, Spacer(1, 4 * mm)]
+    except (binascii.Error, OSError, TypeError, ValueError):
+        return [
+            *elements,
+            Paragraph("Anteprima pezzo non disponibile", fallback_style),
+            Spacer(1, 4 * mm),
+        ]
+
+
+def generate_quote_pdf(
+    analysis: dict[str, Any],
+    quote: dict[str, Any],
+    preview: dict[str, Any] | None = None,
+) -> bytes:
     buffer = BytesIO()
     document = SimpleDocTemplate(
         buffer,
@@ -112,6 +185,7 @@ def generate_quote_pdf(analysis: dict[str, Any], quote: dict[str, Any]) -> bytes
         Spacer(1, 4 * mm),
     ]
 
+    elements.extend(_preview_section(preview))
     elements.extend(
         _section(
             "Pezzo",

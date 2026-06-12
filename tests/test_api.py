@@ -1,9 +1,12 @@
+import base64
 import json
 import os
+from io import BytesIO
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from PIL import Image
 
 import app.main as api
 from app.main import app
@@ -82,6 +85,9 @@ def test_frontend_returns_html():
     assert "Legenda parametri" in response.text
     assert 'class="info-tip"' in response.text
     assert "Densit&agrave; del materiale." in response.text
+    assert "Anteprima pezzo" in response.text
+    assert 'id="part-preview"' in response.text
+    assert "Anteprima non disponibile, analisi CAD comunque eseguita." in response.text
 
 
 def test_app_config_uses_api_base_url(monkeypatch):
@@ -284,6 +290,32 @@ def test_quote_pdf_endpoint_returns_pdf():
     assert response.content.startswith(b"%PDF")
 
 
+def test_quote_pdf_endpoint_accepts_preview_png():
+    analysis = json.loads(STAFFA_ACTUAL_FILE.read_text(encoding="utf-8"))
+    quote = json.loads(STAFFA_QUOTE_FILE.read_text(encoding="utf-8"))
+    image_buffer = BytesIO()
+    Image.new("RGB", (4, 3), (220, 224, 228)).save(image_buffer, format="PNG")
+    preview_png = base64.b64encode(image_buffer.getvalue()).decode("ascii")
+
+    response = client.post(
+        "/quote-pdf",
+        json={
+            "analysis": analysis,
+            "quote": quote,
+            "preview": {
+                "image_png_base64": preview_png,
+                "available": True,
+                "warnings": [],
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/pdf"
+    assert response.content.startswith(b"%PDF")
+    assert len(response.content) > 1000
+
+
 def test_analyze_cad_staffa_test_1_real_step_file():
     expected = json.loads(STAFFA_EXPECTED_FILE.read_text(encoding="utf-8"))
     payload = _analyze_staffa_test_1()
@@ -332,6 +364,14 @@ def test_analyze_and_quote_staffa_test_1_real_step_file():
     assert abs(payload["quote"]["material"]["estimated_weight_kg"] - 0.05) <= 0.005
     assert payload["quote"]["laser_details"]["cut_speed_mm_min"] == 2500.0
     assert payload["quote"]["features_summary"]["bends"] == 2
+    assert "preview" in payload
+    assert isinstance(payload["preview"]["available"], bool)
+    assert "image_png_base64" in payload["preview"]
+    assert isinstance(payload["preview"]["warnings"], list)
+    if os.getenv("REVERSEPARTS_RUNNING_IN_DOCKER") == "1":
+        assert payload["preview"]["available"] is True
+        preview_bytes = base64.b64decode(payload["preview"]["image_png_base64"])
+        assert preview_bytes.startswith(b"\x89PNG\r\n\x1a\n")
 
 
 def test_analyze_and_quote_rejects_unknown_material_before_analysis():
