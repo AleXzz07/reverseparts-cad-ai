@@ -93,7 +93,10 @@ def test_frontend_returns_html():
     assert "Frontale" in response.text
     assert "Destra" in response.text
     assert "Alto" in response.text
-    assert "Anteprima non disponibile, analisi CAD comunque eseguita." in response.text
+    assert (
+        "Anteprima non disponibile. Analisi e preventivo generati correttamente."
+        in response.text
+    )
     assert '["Asole",' in response.text
     assert '["Fori non riconosciuti",' in response.text
 
@@ -441,6 +444,54 @@ def test_analyze_and_quote_rejects_unknown_material_before_analysis():
 
     assert response.status_code == 400
     assert "Unknown material 'titanio'" in response.json()["detail"]
+
+
+def test_analyze_and_quote_survives_preview_failure(monkeypatch):
+    events = []
+
+    async def fake_analysis(**kwargs):
+        events.append("analysis")
+        return CadAnalysisResponse(
+            part_name="safe-preview-test",
+            source_file="safe-preview-test.step",
+            volume_cm3=10.0,
+            complexity_score="high",
+        )
+
+    def fake_quote(*args, **kwargs):
+        events.append("quote")
+        return {
+            "part_name": "safe-preview-test",
+            "quantity": 1,
+            "process_plan": ["laser 2D"],
+        }
+
+    def failed_preview(*args, **kwargs):
+        events.append("preview")
+        raise RuntimeError("renderer process crashed")
+
+    monkeypatch.setattr(api, "_analyze_uploaded_cad", fake_analysis)
+    monkeypatch.setattr(api, "quote_from_cad", fake_quote)
+    monkeypatch.setattr(api, "generate_safe_step_preview", failed_preview)
+
+    response = client.post(
+        "/analyze-and-quote",
+        data={"material": "alluminio", "quantity": "1"},
+        files={"file": ("safe-preview-test.step", b"STEP", "application/step")},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert events == ["analysis", "quote", "preview"]
+    assert payload["analysis"]["part_name"] == "safe-preview-test"
+    assert payload["quote"]["part_name"] == "safe-preview-test"
+    assert payload["preview"]["available"] is False
+    assert payload["preview"]["views"] == []
+    assert "renderer process crashed" in payload["preview"]["warnings"][0]
+
+    health_response = client.get("/health")
+    assert health_response.status_code == 200
+    assert health_response.json()["status"] == "ok"
 
 
 def test_detect_circular_holes_staffa_test_1():

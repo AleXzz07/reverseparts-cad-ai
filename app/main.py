@@ -12,7 +12,7 @@ from fastapi.responses import HTMLResponse
 
 from .cad_analyzer import VALID_STEP_SUFFIXES, analyze_step_file, get_freecad_status
 from .pdf_report import generate_quote_pdf
-from .preview_renderer import generate_step_previews
+from .preview_service import generate_safe_step_preview, unavailable_preview
 from .quote_engine import load_materials_config, load_pricing_config, quote_from_cad
 from .schemas import AnalyzeAndQuoteResponse, CadAnalysisResponse, HealthResponse, QuotePdfRequest, QuoteRequest
 
@@ -245,26 +245,6 @@ async def analyze_and_quote(
         quantity=quantity,
     )
     analysis_payload = _model_to_dict(analysis)
-    preview_payload: dict[str, Any]
-    step_path: str | None = None
-    try:
-        await file.seek(0)
-        file_bytes = await file.read()
-        suffix = Path(file.filename or "part.step").suffix.lower() or ".step"
-        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as step_file:
-            step_file.write(file_bytes)
-            step_path = step_file.name
-        preview_payload = generate_step_previews(step_path)
-    except Exception as exc:
-        preview_payload = {
-            "image_png_base64": None,
-            "available": False,
-            "views": [],
-            "warnings": [f"Preview generation failed: {exc}"],
-        }
-    finally:
-        if step_path:
-            Path(step_path).unlink(missing_ok=True)
     try:
         quote_payload = quote_from_cad(
             analysis_payload,
@@ -275,6 +255,29 @@ async def analyze_and_quote(
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    preview_payload: dict[str, Any] = unavailable_preview(
+        "preview was not attempted."
+    )
+    step_path: str | None = None
+    try:
+        await file.seek(0)
+        file_bytes = await file.read()
+        suffix = Path(file.filename or "part.step").suffix.lower() or ".step"
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as step_file:
+            step_file.write(file_bytes)
+            step_path = step_file.name
+        preview_payload = generate_safe_step_preview(
+            step_path,
+            complexity_score=analysis_payload.get(
+                "complexity_score",
+                "unknown",
+            ),
+        )
+    except Exception as exc:
+        preview_payload = unavailable_preview(str(exc))
+    finally:
+        if step_path:
+            Path(step_path).unlink(missing_ok=True)
     return AnalyzeAndQuoteResponse(
         analysis=analysis_payload,
         quote=quote_payload,

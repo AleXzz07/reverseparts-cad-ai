@@ -226,6 +226,18 @@ Il backend genera preview PNG ad alta risoluzione del pezzo STEP tramite la tess
 
 La modalità preview `clean`, attiva di default e configurabile con `PREVIEW_RENDER_MODE=clean`, usa la hidden-line removal di FreeCAD per mostrare solo i contorni tecnici visibili. Seam, raccordi tangenti, micro-edge e linee proiettate duplicate vengono filtrati, rendendo più leggibili anche aperture formate, collarini e imbutiture nei componenti complessi.
 
+La generazione preview viene eseguita in un subprocess isolato: un crash del renderer o di FreeCAD non interrompe il processo FastAPI. Analisi CAD, preventivo e PDF restano disponibili anche quando la preview viene saltata o supera il timeout. Le impostazioni disponibili sono:
+
+```text
+PREVIEW_ENABLED=true
+PREVIEW_TIMEOUT_SEC=20
+PREVIEW_MAX_FILE_SIZE_MB=20
+PREVIEW_MAX_COMPLEXITY_SCORE=medium
+PREVIEW_MAX_RENDER_VIEWS=4
+```
+
+Con la configurazione predefinita i pezzi `high` vengono analizzati e quotati senza preview. Impostando `PREVIEW_MAX_COMPLEXITY_SCORE=high`, i pezzi complessi usano automaticamente una sola vista isometrica leggera. Su Render, se il renderer causa pressione sulle risorse, usare `PREVIEW_ENABLED=false`; in alternativa limitare il carico con `PREVIEW_MAX_RENDER_VIEWS=1`.
+
 The FastAPI backend must run from the repository Dockerfile on a service with Docker and enough resources for FreeCAD, such as Render, Railway, Fly.io, or a VPS. Vercel must not run the FreeCAD backend.
 
 The backend allows `https://reverseparts-cad-ai.vercel.app`, `localhost`, and `127.0.0.1` by default. To replace or extend the explicit production origins on Render, configure:

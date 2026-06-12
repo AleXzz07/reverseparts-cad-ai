@@ -9,9 +9,9 @@ from pathlib import Path
 from typing import Any
 
 
-PREVIEW_WIDTH_PX = 1600
-PREVIEW_HEIGHT_PX = 1200
-RENDER_SCALE = 2
+PREVIEW_WIDTH_PX = int(os.getenv("PREVIEW_WIDTH_PX", "1600"))
+PREVIEW_HEIGHT_PX = int(os.getenv("PREVIEW_HEIGHT_PX", "1200"))
+RENDER_SCALE = int(os.getenv("PREVIEW_RENDER_SCALE", "2"))
 PREVIEW_RENDER_MODE = os.getenv(
     "PREVIEW_RENDER_MODE",
     "clean",
@@ -490,7 +490,11 @@ def render_named_view(
     return base64.b64encode(output.getvalue()).decode("ascii")
 
 
-def generate_step_previews(step_path: str) -> dict[str, Any]:
+def generate_step_previews(
+    step_path: str,
+    *,
+    max_views: int | None = None,
+) -> dict[str, Any]:
     source = Path(step_path)
     if not source.is_file():
         return _unavailable("STEP file does not exist.")
@@ -502,7 +506,10 @@ def generate_step_previews(step_path: str) -> dict[str, Any]:
 
     views: list[dict[str, str]] = []
     warnings: list[str] = []
-    for view_name in VIEW_ORDER:
+    selected_views = VIEW_ORDER
+    if max_views is not None:
+        selected_views = VIEW_ORDER[:max(1, min(int(max_views), len(VIEW_ORDER)))]
+    for view_name in selected_views:
         try:
             encoded = render_named_view(
                 shape,
