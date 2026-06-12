@@ -26,7 +26,7 @@ def test_viewer_model_can_be_disabled(tmp_path):
     assert result["available"] is False
     assert result["model_base64"] is None
     assert result["format"] is None
-    assert "VIEWER_MODEL_ENABLED" in result["warnings"][0]
+    assert result["warnings"] == ["3D viewer model generation disabled"]
 
 
 def test_viewer_model_rejects_oversized_input(tmp_path):
@@ -71,4 +71,3 @@ def test_viewer_model_timeout_is_controlled(tmp_path, monkeypatch):
     assert result["available"] is False
     assert result["model_base64"] is None
     assert "timed out" in result["warnings"][0]
-

@@ -295,6 +295,25 @@
       border-bottom: 1px solid var(--line);
     }
     .viewer-section h2 { margin: 0; font-size: 13px; }
+    .viewer-load-actions {
+      margin: 10px 0;
+    }
+    .viewer-load-actions button {
+      min-height: 36px;
+      padding: 7px 12px;
+      border: 1px solid var(--accent);
+      border-radius: 4px;
+      background: white;
+      color: var(--accent-dark);
+      font: inherit;
+      font-size: 11px;
+      font-weight: 750;
+      cursor: pointer;
+    }
+    .viewer-load-actions button:disabled {
+      cursor: wait;
+      opacity: 0.65;
+    }
     .viewer-toolbar {
       display: flex;
       flex-wrap: wrap;
@@ -453,6 +472,9 @@
       <div id="result-panel" class="panel" hidden>
         <section class="viewer-section">
           <h2>Vista 3D interattiva</h2>
+          <div class="viewer-load-actions">
+            <button type="button" id="load-viewer-button">Carica vista 3D interattiva</button>
+          </div>
           <div class="viewer-toolbar" id="viewer-toolbar" hidden>
             <button type="button" data-viewer-action="fit">Adatta alla vista</button>
             <button type="button" data-viewer-view="isometric">Vista isometrica</button>
@@ -573,6 +595,7 @@
     };
     let defaults = null;
     let lastResult = null;
+    let lastCadFile = null;
     let viewerState = null;
 
     const money = value => value == null ? "-" : `${Number(value).toFixed(2)} EUR`;
@@ -765,14 +788,17 @@
       const frame = document.getElementById("viewer-frame");
       const fallback = document.getElementById("viewer-fallback");
       const toolbar = document.getElementById("viewer-toolbar");
+      const loadButton = document.getElementById("load-viewer-button");
       disposeViewer();
 
       if (!viewerModel.available || viewerModel.format !== "glb" || !viewerModel.model_base64) {
         fallback.textContent = "Vista 3D interattiva non disponibile. Anteprima immagini disponibile se generata.";
         fallback.hidden = false;
         toolbar.hidden = true;
+        loadButton.hidden = false;
         return;
       }
+      loadButton.hidden = true;
       if (!window.THREE || !THREE.GLTFLoader || !THREE.OrbitControls) {
         fallback.textContent = "Vista 3D interattiva non disponibile. Libreria grafica non caricata.";
         fallback.hidden = false;
@@ -998,6 +1024,40 @@
       if (button.dataset.viewerAction === "fit") fitViewer();
       if (button.dataset.viewerView) setViewerView(button.dataset.viewerView);
     });
+    document.getElementById("load-viewer-button").addEventListener("click", async event => {
+      if (!lastCadFile || !lastResult) return;
+      const button = event.currentTarget;
+      const fallback = document.getElementById("viewer-fallback");
+      const formData = new FormData();
+      formData.append("file", lastCadFile);
+      formData.append(
+        "complexity_score",
+        lastResult.analysis?.complexity_score || "unknown"
+      );
+      button.disabled = true;
+      button.textContent = "Caricamento vista 3D...";
+      fallback.textContent = "Generazione del modello 3D in corso...";
+      fallback.hidden = false;
+      try {
+        const response = await fetchApi("/viewer-model", {
+          method: "POST",
+          body: formData
+        });
+        const viewerModel = await response.json();
+        lastResult.viewer_model = viewerModel;
+        renderViewerModel(viewerModel);
+        if (!viewerModel.available) {
+          fallback.textContent = "Vista 3D interattiva non disponibile";
+        }
+      } catch (error) {
+        fallback.textContent = "Vista 3D interattiva non disponibile";
+        fallback.hidden = false;
+        console.warn("[REVERSEPARTS] 3D viewer request failed:", error.message);
+      } finally {
+        button.disabled = false;
+        button.textContent = "Carica vista 3D interattiva";
+      }
+    });
     document.getElementById("quote-form").addEventListener("submit", async event => {
       event.preventDefault();
       const file = document.getElementById("cad-file").files[0];
@@ -1021,6 +1081,7 @@
       try {
         const response = await fetchApi("/analyze-and-quote", { method: "POST", body: formData });
         lastResult = await response.json();
+        lastCadFile = file;
         renderResult(lastResult);
         clearStatus();
       } catch (error) {
@@ -1034,10 +1095,16 @@
       if (!lastResult) return;
       setStatus("Generazione PDF in corso...", "loading");
       try {
+        const pdfPayload = {
+          ...lastResult,
+          viewer_model: lastResult.viewer_model
+            ? { ...lastResult.viewer_model, model_base64: null }
+            : null
+        };
         const response = await fetchApi("/quote-pdf", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(lastResult)
+          body: JSON.stringify(pdfPayload)
         });
         const blob = await response.blob();
         const link = document.createElement("a");

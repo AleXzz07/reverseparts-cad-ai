@@ -12,11 +12,21 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from .cad_analyzer import VALID_STEP_SUFFIXES, analyze_step_file, get_freecad_status
-from .model_service import generate_safe_viewer_model, unavailable_viewer_model
+from .model_service import (
+    deferred_viewer_model,
+    generate_safe_viewer_model,
+)
 from .pdf_report import generate_quote_pdf
 from .preview_service import generate_safe_step_preview, unavailable_preview
 from .quote_engine import load_materials_config, load_pricing_config, quote_from_cad
-from .schemas import AnalyzeAndQuoteResponse, CadAnalysisResponse, HealthResponse, QuotePdfRequest, QuoteRequest
+from .schemas import (
+    AnalyzeAndQuoteResponse,
+    CadAnalysisResponse,
+    HealthResponse,
+    QuotePdfRequest,
+    QuoteRequest,
+    ViewerModelResponse,
+)
 
 
 app = FastAPI(
@@ -226,6 +236,45 @@ def quote_pdf(request: QuotePdfRequest) -> Response:
     )
 
 
+@app.post("/viewer-model", response_model=ViewerModelResponse)
+async def viewer_model(
+    file: UploadFile = File(...),
+    complexity_score: str = Form(default="unknown"),
+) -> ViewerModelResponse:
+    filename = file.filename or ""
+    if not filename:
+        raise HTTPException(status_code=400, detail="CAD file is required.")
+    if not any(filename.lower().endswith(suffix) for suffix in VALID_STEP_SUFFIXES):
+        raise HTTPException(
+            status_code=400,
+            detail="Only .stp and .step files are accepted.",
+        )
+    file_bytes = await file.read()
+    if not file_bytes:
+        raise HTTPException(status_code=400, detail="Uploaded CAD file is empty.")
+
+    step_path: str | None = None
+    try:
+        suffix = Path(filename).suffix.lower() or ".step"
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as step_file:
+            step_file.write(file_bytes)
+            step_path = step_file.name
+        return ViewerModelResponse(
+            **generate_safe_viewer_model(
+                step_path,
+                complexity_score=complexity_score,
+            )
+        )
+    except Exception as exc:
+        return ViewerModelResponse(
+            available=False,
+            warnings=[f"3D model export skipped or failed: {exc}"],
+        )
+    finally:
+        if step_path:
+            Path(step_path).unlink(missing_ok=True)
+
+
 @app.post("/analyze-and-quote", response_model=AnalyzeAndQuoteResponse)
 async def analyze_and_quote(
     file: UploadFile = File(...),
@@ -272,8 +321,8 @@ async def analyze_and_quote(
     preview_payload: dict[str, Any] = unavailable_preview(
         "preview was not attempted."
     )
-    viewer_model_payload: dict[str, Any] = unavailable_viewer_model(
-        "export was not attempted."
+    viewer_model_payload = deferred_viewer_model(
+        analysis_payload.get("complexity_score", "unknown")
     )
     step_path: str | None = None
     try:
@@ -283,27 +332,18 @@ async def analyze_and_quote(
         with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as step_file:
             step_file.write(file_bytes)
             step_path = step_file.name
-        complexity_score = analysis_payload.get(
-            "complexity_score",
-            "unknown",
-        )
-        try:
-            viewer_model_payload = generate_safe_viewer_model(
-                step_path,
-                complexity_score=complexity_score,
-            )
-        except Exception as exc:
-            viewer_model_payload = unavailable_viewer_model(str(exc))
         try:
             preview_payload = generate_safe_step_preview(
                 step_path,
-                complexity_score=complexity_score,
+                complexity_score=analysis_payload.get(
+                    "complexity_score",
+                    "unknown",
+                ),
             )
         except Exception as exc:
             preview_payload = unavailable_preview(str(exc))
     except Exception as exc:
         preview_payload = unavailable_preview(str(exc))
-        viewer_model_payload = unavailable_viewer_model(str(exc))
     finally:
         if step_path:
             Path(step_path).unlink(missing_ok=True)

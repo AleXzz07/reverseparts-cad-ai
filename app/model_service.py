@@ -20,6 +20,25 @@ def unavailable_viewer_model(reason: str) -> dict[str, Any]:
     }
 
 
+def deferred_viewer_model(complexity_score: str = "unknown") -> dict[str, Any]:
+    settings = ViewerModelSettings.from_env()
+    warnings = []
+    if not settings.enabled:
+        warnings.append("3D viewer model generation disabled")
+    else:
+        warnings.append("3D viewer model available on request")
+    if str(complexity_score).strip().lower() == "high":
+        warnings.append(
+            "Modello complesso: vista 3D caricabile solo su richiesta"
+        )
+    return {
+        "available": False,
+        "model_base64": None,
+        "format": None,
+        "warnings": warnings,
+    }
+
+
 def _env_bool(name: str, default: bool) -> bool:
     value = os.getenv(name)
     if value is None:
@@ -44,11 +63,11 @@ class ViewerModelSettings:
     @classmethod
     def from_env(cls) -> "ViewerModelSettings":
         return cls(
-            enabled=_env_bool("VIEWER_MODEL_ENABLED", True),
+            enabled=_env_bool("VIEWER_MODEL_ENABLED", False),
             timeout_sec=max(1.0, _env_float("VIEWER_MODEL_TIMEOUT_SEC", 20.0)),
             max_file_size_mb=max(
                 0.1,
-                _env_float("VIEWER_MODEL_MAX_FILE_SIZE_MB", 20.0),
+                _env_float("VIEWER_MODEL_MAX_FILE_SIZE_MB", 10.0),
             ),
             max_output_mb=max(
                 1.0,
@@ -82,9 +101,12 @@ def generate_safe_viewer_model(
     source = Path(step_path)
     active_settings = settings or ViewerModelSettings.from_env()
     if not active_settings.enabled:
-        return unavailable_viewer_model(
-            "export is disabled by VIEWER_MODEL_ENABLED."
-        )
+        return {
+            "available": False,
+            "model_base64": None,
+            "format": None,
+            "warnings": ["3D viewer model generation disabled"],
+        }
     if not source.is_file():
         return unavailable_viewer_model("STEP file does not exist.")
 

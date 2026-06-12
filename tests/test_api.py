@@ -91,6 +91,9 @@ def test_frontend_returns_html():
     assert 'id="viewer-frame"' in response.text
     assert 'data-viewer-action="fit"' in response.text
     assert 'data-viewer-view="isometric"' in response.text
+    assert 'id="load-viewer-button"' in response.text
+    assert "Carica vista 3D interattiva" in response.text
+    assert 'fetchApi("/viewer-model"' in response.text
     assert '<script src="/vendor/three.min.js"></script>' in response.text
     assert "dataset.threeReady" in response.text
     assert "THREE.OrbitControls" in response.text
@@ -444,12 +447,10 @@ def test_analyze_and_quote_staffa_test_1_real_step_file():
     assert isinstance(payload["preview"]["views"], list)
     assert isinstance(payload["preview"]["warnings"], list)
     assert "viewer_model" in payload
-    assert isinstance(payload["viewer_model"]["available"], bool)
+    assert payload["viewer_model"]["available"] is False
+    assert payload["viewer_model"]["format"] is None
+    assert payload["viewer_model"]["model_base64"] is None
     assert isinstance(payload["viewer_model"]["warnings"], list)
-    if payload["viewer_model"]["available"]:
-        assert payload["viewer_model"]["format"] == "glb"
-        model_bytes = base64.b64decode(payload["viewer_model"]["model_base64"])
-        assert model_bytes.startswith(b"glTF")
     if os.getenv("REVERSEPARTS_RUNNING_IN_DOCKER") == "1":
         assert payload["preview"]["available"] is True
         assert len(payload["preview"]["views"]) >= 4
@@ -498,18 +499,8 @@ def test_analyze_and_quote_survives_preview_failure(monkeypatch):
         events.append("preview")
         raise RuntimeError("renderer process crashed")
 
-    def unavailable_model(*args, **kwargs):
-        events.append("viewer")
-        return {
-            "available": False,
-            "model_base64": None,
-            "format": None,
-            "warnings": [],
-        }
-
     monkeypatch.setattr(api, "_analyze_uploaded_cad", fake_analysis)
     monkeypatch.setattr(api, "quote_from_cad", fake_quote)
-    monkeypatch.setattr(api, "generate_safe_viewer_model", unavailable_model)
     monkeypatch.setattr(api, "generate_safe_step_preview", failed_preview)
 
     response = client.post(
@@ -520,7 +511,7 @@ def test_analyze_and_quote_survives_preview_failure(monkeypatch):
 
     assert response.status_code == 200
     payload = response.json()
-    assert events == ["analysis", "quote", "viewer", "preview"]
+    assert events == ["analysis", "quote", "preview"]
     assert payload["analysis"]["part_name"] == "safe-preview-test"
     assert payload["quote"]["part_name"] == "safe-preview-test"
     assert payload["preview"]["available"] is False
@@ -532,25 +523,71 @@ def test_analyze_and_quote_survives_preview_failure(monkeypatch):
     assert health_response.json()["status"] == "ok"
 
 
-def test_analyze_and_quote_survives_viewer_model_failure(monkeypatch):
-    async def fake_analysis(**kwargs):
-        return CadAnalysisResponse(
-            part_name="viewer-fallback-test",
-            source_file="viewer-fallback-test.step",
-            volume_cm3=10.0,
-        )
-
-    monkeypatch.setattr(api, "_analyze_uploaded_cad", fake_analysis)
-    monkeypatch.setattr(
-        api,
-        "quote_from_cad",
-        lambda *args, **kwargs: {"part_name": "viewer-fallback-test"},
-    )
+def test_viewer_model_failure_does_not_break_health(monkeypatch):
+    monkeypatch.setenv("VIEWER_MODEL_ENABLED", "true")
     monkeypatch.setattr(
         api,
         "generate_safe_viewer_model",
         lambda *args, **kwargs: (_ for _ in ()).throw(
             RuntimeError("GLB worker crashed")
+        ),
+    )
+    response = client.post(
+        "/viewer-model",
+        data={"complexity_score": "medium"},
+        files={"file": ("viewer-fallback-test.step", b"STEP", "application/step")},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["available"] is False
+    assert payload["model_base64"] is None
+    assert "GLB worker crashed" in payload["warnings"][0]
+
+    health_response = client.get("/health")
+    assert health_response.status_code == 200
+    assert health_response.json()["status"] == "ok"
+
+
+def test_viewer_model_disabled_returns_controlled_fallback(monkeypatch):
+    monkeypatch.setenv("VIEWER_MODEL_ENABLED", "false")
+
+    response = client.post(
+        "/viewer-model",
+        files={"file": ("part.step", b"STEP", "application/step")},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "available": False,
+        "model_base64": None,
+        "format": None,
+        "model_url": None,
+        "warnings": ["3D viewer model generation disabled"],
+    }
+
+
+def test_analyze_and_quote_does_not_call_viewer_worker(monkeypatch):
+    async def fake_analysis(**kwargs):
+        return CadAnalysisResponse(
+            part_name="no-auto-viewer",
+            source_file="no-auto-viewer.step",
+            volume_cm3=10.0,
+            complexity_score="high",
+        )
+
+    monkeypatch.setenv("VIEWER_MODEL_ENABLED", "false")
+    monkeypatch.setattr(api, "_analyze_uploaded_cad", fake_analysis)
+    monkeypatch.setattr(
+        api,
+        "quote_from_cad",
+        lambda *args, **kwargs: {"part_name": "no-auto-viewer"},
+    )
+    monkeypatch.setattr(
+        api,
+        "generate_safe_viewer_model",
+        lambda *args, **kwargs: pytest.fail(
+            "viewer worker must not run inside /analyze-and-quote"
         ),
     )
     monkeypatch.setattr(
@@ -567,16 +604,20 @@ def test_analyze_and_quote_survives_viewer_model_failure(monkeypatch):
     response = client.post(
         "/analyze-and-quote",
         data={"material": "alluminio", "quantity": "1"},
-        files={"file": ("viewer-fallback-test.step", b"STEP", "application/step")},
+        files={"file": ("no-auto-viewer.step", b"STEP", "application/step")},
     )
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["analysis"]["part_name"] == "viewer-fallback-test"
-    assert payload["quote"]["part_name"] == "viewer-fallback-test"
+    assert payload["analysis"]["part_name"] == "no-auto-viewer"
+    assert payload["quote"]["part_name"] == "no-auto-viewer"
     assert payload["viewer_model"]["available"] is False
     assert payload["viewer_model"]["model_base64"] is None
-    assert "GLB worker crashed" in payload["viewer_model"]["warnings"][0]
+    assert "3D viewer model generation disabled" in payload["viewer_model"]["warnings"]
+    assert (
+        "Modello complesso: vista 3D caricabile solo su richiesta"
+        in payload["viewer_model"]["warnings"]
+    )
 
 
 def test_detect_circular_holes_staffa_test_1():
