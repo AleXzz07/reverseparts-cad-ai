@@ -225,6 +225,12 @@
       border-bottom: 1px solid var(--line);
     }
     .preview-section h2 { margin: 0 0 10px; font-size: 13px; }
+    .preview-status {
+      margin: 0 0 10px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+    }
     .preview-frame {
       width: 100%;
       min-height: 220px;
@@ -488,6 +494,7 @@
         </section>
         <section class="preview-section">
           <h2>Anteprima pezzo</h2>
+          <div class="preview-status" id="preview-status">Anteprima non ancora generata</div>
           <div class="preview-frame">
             <img id="part-preview" alt="Anteprima isometrica del pezzo STEP" hidden>
             <div class="preview-fallback" id="preview-fallback">Anteprima non disponibile. Analisi e preventivo generati correttamente.</div>
@@ -550,7 +557,9 @@
 
       if (!response.ok) {
         const detail = await parseError(response);
-        throw new Error(`URL: ${url} | Metodo: ${method} | Errore: ${detail}`);
+        throw new Error(
+          `URL: ${url} | Metodo: ${method} | HTTP ${response.status} | Errore: ${detail}`
+        );
       }
       return response;
     }
@@ -689,6 +698,7 @@
     function renderPreviewGallery(preview) {
       const previewImage = document.getElementById("part-preview");
       const previewFallback = document.getElementById("preview-fallback");
+      const previewStatus = document.getElementById("preview-status");
       const currentLabel = document.getElementById("preview-current-label");
       const thumbnails = document.getElementById("preview-thumbnails");
       const views = Array.isArray(preview.views) && preview.views.length
@@ -699,14 +709,18 @@
 
       thumbnails.replaceChildren();
       if (!preview.available || !views.length) {
+        const reason = (preview.warnings || []).join(" | ") || "motivo non disponibile";
         previewImage.removeAttribute("src");
         previewImage.hidden = true;
+        previewStatus.textContent = `Anteprima non disponibile: ${reason}`;
+        previewFallback.textContent = `Anteprima non disponibile: ${reason}`;
         previewFallback.hidden = false;
         currentLabel.hidden = true;
         thumbnails.hidden = true;
         return;
       }
 
+      previewStatus.textContent = "Anteprima disponibile";
       previewImage.hidden = false;
       previewFallback.hidden = true;
       currentLabel.hidden = false;
@@ -792,10 +806,20 @@
       disposeViewer();
 
       if (!viewerModel.available || viewerModel.format !== "glb" || !viewerModel.model_base64) {
-        fallback.textContent = "Vista 3D interattiva non disponibile. Anteprima immagini disponibile se generata.";
+        if (defaults?.viewer_model_enabled !== true) {
+          fallback.textContent = "Vista 3D disabilitata sul server";
+          loadButton.hidden = true;
+        } else {
+        const reason = (viewerModel.warnings || [])
+          .filter((warning) => warning !== "3D viewer model available on request")
+          .join(" | ");
+        fallback.textContent = reason
+          ? `Vista 3D interattiva disponibile su richiesta: ${reason}`
+          : "Vista 3D interattiva disponibile su richiesta";
+          loadButton.hidden = false;
+        }
         fallback.hidden = false;
         toolbar.hidden = true;
-        loadButton.hidden = false;
         return;
       }
       loadButton.hidden = true;
@@ -991,6 +1015,11 @@
         const configResponse = await fetchApi("/config/defaults");
         defaults = await configResponse.json();
         loadDefaults();
+        if (!defaults.viewer_model_enabled) {
+          document.getElementById("load-viewer-button").hidden = true;
+          document.getElementById("viewer-fallback").textContent =
+            "Vista 3D disabilitata sul server";
+        }
         console.log("[REVERSEPARTS] config loaded successfully");
       } catch (error) {
         setStatus(`Impossibile caricare la configurazione iniziale. ${error.message}`, "error");
@@ -1029,6 +1058,12 @@
       const button = event.currentTarget;
       const fallback = document.getElementById("viewer-fallback");
       const formData = new FormData();
+      if (!defaults?.viewer_model_enabled) {
+        fallback.textContent = "Vista 3D disabilitata sul server";
+        fallback.hidden = false;
+        button.hidden = true;
+        return;
+      }
       formData.append("file", lastCadFile);
       formData.append(
         "complexity_score",
@@ -1047,10 +1082,13 @@
         lastResult.viewer_model = viewerModel;
         renderViewerModel(viewerModel);
         if (!viewerModel.available) {
-          fallback.textContent = "Vista 3D interattiva non disponibile";
+          const reason = (viewerModel.warnings || []).join(" | ") || "motivo non disponibile";
+          fallback.textContent =
+            `Vista 3D interattiva non disponibile | Endpoint: ${apiUrl("/viewer-model")} | HTTP 200 | ${reason}`;
         }
       } catch (error) {
-        fallback.textContent = "Vista 3D interattiva non disponibile";
+        fallback.textContent =
+          `Vista 3D interattiva non disponibile | ${error.message}`;
         fallback.hidden = false;
         console.warn("[REVERSEPARTS] 3D viewer request failed:", error.message);
       } finally {

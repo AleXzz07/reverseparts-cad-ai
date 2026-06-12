@@ -93,6 +93,8 @@ def test_frontend_returns_html():
     assert 'data-viewer-view="isometric"' in response.text
     assert 'id="load-viewer-button"' in response.text
     assert "Carica vista 3D interattiva" in response.text
+    assert "Vista 3D disabilitata sul server" in response.text
+    assert "Anteprima non disponibile:" in response.text
     assert 'fetchApi("/viewer-model"' in response.text
     assert '<script src="/vendor/three.min.js"></script>' in response.text
     assert "dataset.threeReady" in response.text
@@ -140,6 +142,24 @@ def test_app_config_defaults_to_relative_requests(monkeypatch):
 
     assert response.status_code == 200
     assert 'window.REVERSEPARTS_API_BASE_URL = "";' in response.text
+
+
+def test_config_defaults_exposes_preview_and_viewer_runtime(monkeypatch):
+    monkeypatch.setenv("PREVIEW_ENABLED", "true")
+    monkeypatch.setenv("PREVIEW_MAX_RENDER_VIEWS", "3")
+    monkeypatch.setenv("PREVIEW_MAX_RENDER_VIEWS_HIGH_COMPLEXITY", "1")
+    monkeypatch.setenv("VIEWER_MODEL_ENABLED", "false")
+    monkeypatch.setenv("VIEWER_MODEL_TIMEOUT_SEC", "20")
+
+    response = client.get("/config/defaults")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["preview_enabled"] is True
+    assert payload["viewer_model_enabled"] is False
+    assert payload["preview_max_render_views"] == 3
+    assert payload["preview_max_render_views_high_complexity"] == 1
+    assert payload["viewer_model_timeout_sec"] == 20.0
 
 
 def test_cors_allows_vercel_frontend():

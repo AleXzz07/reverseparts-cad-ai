@@ -15,9 +15,14 @@ from .cad_analyzer import VALID_STEP_SUFFIXES, analyze_step_file, get_freecad_st
 from .model_service import (
     deferred_viewer_model,
     generate_safe_viewer_model,
+    ViewerModelSettings,
 )
 from .pdf_report import generate_quote_pdf
-from .preview_service import generate_safe_step_preview, unavailable_preview
+from .preview_service import (
+    generate_safe_step_preview,
+    PreviewSettings,
+    unavailable_preview,
+)
 from .quote_engine import load_materials_config, load_pricing_config, quote_from_cad
 from .schemas import (
     AnalyzeAndQuoteResponse,
@@ -122,12 +127,21 @@ def app_config() -> Response:
 @app.get("/config/defaults")
 def config_defaults() -> dict[str, Any]:
     pricing = load_pricing_config()
+    preview_settings = PreviewSettings.from_env()
+    viewer_settings = ViewerModelSettings.from_env()
     return {
         "pricing": {
             field: getattr(pricing, field)
             for field in pricing.__dataclass_fields__
         },
         "materials": load_materials_config(),
+        "preview_enabled": preview_settings.enabled,
+        "viewer_model_enabled": viewer_settings.enabled,
+        "preview_max_render_views": preview_settings.max_render_views,
+        "preview_max_render_views_high_complexity": (
+            preview_settings.max_render_views_high_complexity
+        ),
+        "viewer_model_timeout_sec": viewer_settings.timeout_sec,
     }
 
 

@@ -9,10 +9,10 @@ import app.preview_service as preview_service
 def _settings(**overrides) -> preview_service.PreviewSettings:
     values = {
         "enabled": True,
-        "timeout_sec": 20.0,
+        "timeout_sec": 15.0,
         "max_file_size_mb": 20.0,
-        "max_complexity_score": "medium",
         "max_render_views": 4,
+        "max_render_views_high_complexity": 1,
         "max_output_mb": 25.0,
     }
     values.update(overrides)
@@ -33,15 +33,22 @@ def test_safe_preview_can_be_disabled(tmp_path):
     assert "PREVIEW_ENABLED" in result["warnings"][0]
 
 
-def test_safe_preview_skips_complex_parts_by_default(tmp_path, monkeypatch):
+def test_safe_preview_attempts_complex_parts_in_lightweight_mode(
+    tmp_path,
+    monkeypatch,
+):
     step_path = tmp_path / "part.step"
     step_path.write_text("STEP", encoding="ascii")
-    worker_called = False
+    captured = {}
 
-    def fake_worker(*args, **kwargs):
-        nonlocal worker_called
-        worker_called = True
-        return {}
+    def fake_worker(source: Path, **kwargs):
+        captured.update(kwargs)
+        return {
+            "image_png_base64": "image",
+            "available": True,
+            "views": [{"name": "isometric", "image_png_base64": "image"}],
+            "warnings": [],
+        }
 
     monkeypatch.setattr(preview_service, "_run_worker", fake_worker)
     result = preview_service.generate_safe_step_preview(
@@ -50,9 +57,10 @@ def test_safe_preview_skips_complex_parts_by_default(tmp_path, monkeypatch):
         settings=_settings(),
     )
 
-    assert result["available"] is False
-    assert worker_called is False
-    assert "PREVIEW_MAX_COMPLEXITY_SCORE=medium" in result["warnings"][0]
+    assert result["available"] is True
+    assert captured["lightweight"] is True
+    assert captured["max_views"] == 1
+    assert captured["timeout_sec"] == 12.0
 
 
 def test_high_complexity_uses_one_lightweight_view(tmp_path, monkeypatch):
@@ -73,10 +81,7 @@ def test_high_complexity_uses_one_lightweight_view(tmp_path, monkeypatch):
     result = preview_service.generate_safe_step_preview(
         str(step_path),
         complexity_score="high",
-        settings=_settings(
-            max_complexity_score="high",
-            max_render_views=4,
-        ),
+        settings=_settings(max_render_views_high_complexity=1),
     )
 
     assert result["available"] is True

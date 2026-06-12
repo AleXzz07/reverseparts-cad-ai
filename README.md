@@ -230,13 +230,13 @@ La generazione preview viene eseguita in un subprocess isolato: un crash del ren
 
 ```text
 PREVIEW_ENABLED=true
-PREVIEW_TIMEOUT_SEC=20
+PREVIEW_TIMEOUT_SEC=15
 PREVIEW_MAX_FILE_SIZE_MB=20
-PREVIEW_MAX_COMPLEXITY_SCORE=medium
 PREVIEW_MAX_RENDER_VIEWS=4
+PREVIEW_MAX_RENDER_VIEWS_HIGH_COMPLEXITY=1
 ```
 
-Con la configurazione predefinita i pezzi `high` vengono analizzati e quotati senza preview. Impostando `PREVIEW_MAX_COMPLEXITY_SCORE=high`, i pezzi complessi usano automaticamente una sola vista isometrica leggera. Su Render, se il renderer causa pressione sulle risorse, usare `PREVIEW_ENABLED=false`; in alternativa limitare il carico con `PREVIEW_MAX_RENDER_VIEWS=1`.
+La preview immagini è automatica e isolata dal processo FastAPI. I pezzi semplici possono generare fino a quattro viste; i pezzi `high` tentano sempre almeno una vista isometrica leggera a 1000x750, con un solo render e timeout ridotto. Se il worker fallisce, la risposta conserva analysis e quote e riporta il motivo preciso in `preview.warnings`. Su Render è consigliato mantenere `PREVIEW_ENABLED=true`.
 
 La web app include anche una vista 3D interattiva basata su Three.js. Gli asset Three.js sono inclusi nel repository e serviti dalla stessa origine, senza dipendere da CDN esterne. Dopo analisi e preventivo, il pulsante `Carica vista 3D interattiva` invia il file al solo endpoint `POST /viewer-model`; `/analyze-and-quote` non genera e non trasporta più il GLB. Il browser permette rotazione, zoom, pan, adattamento alla vista e viste isometrica, frontale, laterale e dall'alto. Il PDF rimane statico e continua a usare le immagini PNG.
 
@@ -249,6 +249,24 @@ VIEWER_MODEL_MAX_FILE_SIZE_MB=10
 ```
 
 `VIEWER_MODEL_ENABLED` è `false` per default. Su Render abilitarlo esplicitamente solo se l'istanza ha risorse sufficienti. Se disabilitato o se l'export fallisce, preview statiche, analisi CAD, quote, `/health` e PDF continuano a funzionare. I componenti con `complexity_score=high` mostrano un avviso e il GLB non viene mai creato automaticamente.
+
+`GET /config/defaults` espone anche `preview_enabled`, `viewer_model_enabled`, `preview_max_render_views`, `preview_max_render_views_high_complexity` e `viewer_model_timeout_sec`. La web app usa questi valori per mostrare il pulsante 3D solo quando il server consente l'export e per distinguere chiaramente una funzione disabilitata da un errore di generazione.
+
+Configurazione Render consigliata con sole preview statiche:
+
+```text
+PREVIEW_ENABLED=true
+VIEWER_MODEL_ENABLED=false
+```
+
+Per abilitare anche il caricamento GLB su richiesta:
+
+```text
+PREVIEW_ENABLED=true
+VIEWER_MODEL_ENABLED=true
+VIEWER_MODEL_TIMEOUT_SEC=20
+VIEWER_MODEL_MAX_FILE_SIZE_MB=10
+```
 
 The FastAPI backend must run from the repository Dockerfile on a service with Docker and enough resources for FreeCAD, such as Render, Railway, Fly.io, or a VPS. Vercel must not run the FreeCAD backend.
 

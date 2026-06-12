@@ -11,14 +11,6 @@ from pathlib import Path
 from typing import Any
 
 
-COMPLEXITY_LEVELS = {
-    "unknown": 0,
-    "low": 1,
-    "medium": 2,
-    "high": 3,
-}
-
-
 def unavailable_preview(reason: str) -> dict[str, Any]:
     return {
         "image_png_base64": None,
@@ -54,29 +46,32 @@ class PreviewSettings:
     enabled: bool
     timeout_sec: float
     max_file_size_mb: float
-    max_complexity_score: str
     max_render_views: int
+    max_render_views_high_complexity: int
     max_output_mb: float
 
     @classmethod
     def from_env(cls) -> "PreviewSettings":
-        maximum_complexity = os.getenv(
-            "PREVIEW_MAX_COMPLEXITY_SCORE",
-            "medium",
-        ).strip().lower()
-        if maximum_complexity not in COMPLEXITY_LEVELS:
-            maximum_complexity = "medium"
         return cls(
             enabled=_env_bool("PREVIEW_ENABLED", True),
-            timeout_sec=max(1.0, _env_float("PREVIEW_TIMEOUT_SEC", 20.0)),
+            timeout_sec=max(1.0, _env_float("PREVIEW_TIMEOUT_SEC", 15.0)),
             max_file_size_mb=max(
                 0.1,
                 _env_float("PREVIEW_MAX_FILE_SIZE_MB", 20.0),
             ),
-            max_complexity_score=maximum_complexity,
             max_render_views=max(
                 1,
                 min(_env_int("PREVIEW_MAX_RENDER_VIEWS", 4), 4),
+            ),
+            max_render_views_high_complexity=max(
+                1,
+                min(
+                    _env_int(
+                        "PREVIEW_MAX_RENDER_VIEWS_HIGH_COMPLEXITY",
+                        1,
+                    ),
+                    4,
+                ),
             ),
             max_output_mb=max(
                 1.0,
@@ -193,20 +188,21 @@ def generate_safe_step_preview(
         )
 
     normalized_complexity = str(complexity_score).strip().lower()
-    complexity_level = COMPLEXITY_LEVELS.get(normalized_complexity, 0)
-    maximum_level = COMPLEXITY_LEVELS[active_settings.max_complexity_score]
-    if complexity_level > maximum_level:
-        return unavailable_preview(
-            f"complexity '{normalized_complexity}' exceeds "
-            f"PREVIEW_MAX_COMPLEXITY_SCORE={active_settings.max_complexity_score}."
-        )
-
     lightweight = normalized_complexity == "high"
-    max_views = 1 if lightweight else active_settings.max_render_views
+    max_views = (
+        active_settings.max_render_views_high_complexity
+        if lightweight
+        else active_settings.max_render_views
+    )
+    timeout_sec = (
+        min(active_settings.timeout_sec, 12.0)
+        if lightweight
+        else active_settings.timeout_sec
+    )
     return _run_worker(
         source,
         max_views=max_views,
         lightweight=lightweight,
-        timeout_sec=active_settings.timeout_sec,
+        timeout_sec=timeout_sec,
         max_output_mb=active_settings.max_output_mb,
     )
