@@ -79,6 +79,9 @@ def test_frontend_returns_html():
     assert "health check failed" in response.text
     assert "config loaded successfully" in response.text
     assert "Promise.all" not in response.text
+    assert "Legenda parametri" in response.text
+    assert 'class="info-tip"' in response.text
+    assert "Densit&agrave; del materiale." in response.text
 
 
 def test_app_config_uses_api_base_url(monkeypatch):

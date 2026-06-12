@@ -109,8 +109,84 @@
       letter-spacing: .08em;
     }
     .parameter-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+    .parameter-field { display: grid; gap: 6px; }
     .parameter-grid label { font-size: 11px; font-weight: 600; }
     .parameter-grid input { min-height: 34px; padding: 6px 8px; }
+    .parameter-label {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+    }
+    .info-tip {
+      position: relative;
+      width: 18px;
+      height: 18px;
+      min-height: 18px;
+      flex: 0 0 18px;
+      display: inline-grid;
+      place-items: center;
+      border: 1px solid #9eabb5;
+      border-radius: 50%;
+      padding: 0;
+      background: white;
+      color: #52616d;
+      font-size: 11px;
+      font-weight: 750;
+      line-height: 1;
+    }
+    .info-tip:hover, .info-tip:focus-visible, .info-tip.is-open {
+      border-color: var(--accent);
+      color: var(--accent-dark);
+      outline: none;
+    }
+    .info-tip::after {
+      content: attr(data-tooltip);
+      position: absolute;
+      z-index: 20;
+      left: 50%;
+      bottom: calc(100% + 8px);
+      width: min(280px, 76vw);
+      padding: 9px 10px;
+      border: 1px solid #354650;
+      border-radius: 4px;
+      background: #17242b;
+      color: white;
+      font-size: 11px;
+      font-weight: 500;
+      line-height: 1.45;
+      text-align: left;
+      box-shadow: 0 6px 18px rgba(14, 28, 36, .18);
+      opacity: 0;
+      pointer-events: none;
+      transform: translate(-50%, 4px);
+      transition: opacity .14s ease, transform .14s ease;
+    }
+    .info-tip:hover::after, .info-tip:focus-visible::after, .info-tip.is-open::after {
+      opacity: 1;
+      transform: translate(-50%, 0);
+    }
+    .legend-toggle {
+      margin: 4px 16px 16px;
+      border: 1px solid #aeb9c2;
+      background: white;
+      color: var(--ink);
+    }
+    .parameter-legend {
+      margin: 0 16px 16px;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      background: var(--soft);
+    }
+    .parameter-legend[hidden] { display: none; }
+    .legend-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 20px; }
+    .legend-section h3 { margin: 0 0 7px; }
+    .legend-list { margin: 0; display: grid; grid-template-columns: 1fr; gap: 10px; }
+    .legend-list div { display: grid; gap: 2px; }
+    .legend-list dt, .legend-list dd { padding: 0; border: 0; text-align: left; }
+    .legend-list dt { color: var(--ink); font-size: 11px; font-weight: 750; }
+    .legend-list dd { color: var(--muted); font-size: 11px; font-weight: 500; line-height: 1.45; }
     .actions { display: flex; gap: 10px; padding: 16px; border-top: 1px solid var(--line); }
     button {
       min-height: 40px;
@@ -181,7 +257,9 @@
       header { height: auto; min-height: 64px; gap: 12px; padding-top: 10px; padding-bottom: 10px; }
       .header-status { justify-items: end; text-align: right; }
       .api-backend { max-width: 48vw; }
-      .grid-2, .parameter-grid, .data-grid { grid-template-columns: 1fr; }
+      .grid-2, .parameter-grid, .legend-grid, .data-grid { grid-template-columns: 1fr; }
+      .info-tip::after { position: fixed; left: 16px; right: 16px; bottom: 16px; width: auto; transform: translateY(4px); }
+      .info-tip:hover::after, .info-tip:focus-visible::after, .info-tip.is-open::after { transform: translateY(0); }
       .summary-strip { grid-template-columns: 1fr 1fr; }
       .metric:nth-child(2) { border-right: 0; }
       .metric:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
@@ -233,6 +311,8 @@
             <h3>Generali</h3>
             <div class="parameter-grid" id="general-params"></div>
           </div>
+          <button class="legend-toggle" id="legend-toggle" type="button" aria-expanded="false" aria-controls="parameter-legend">Legenda parametri</button>
+          <div class="parameter-legend" id="parameter-legend" hidden></div>
         </details>
         <div class="actions">
           <button class="primary" id="submit-button" type="submit">Analizza e genera preventivo</button>
@@ -302,27 +382,33 @@
 
     const parameterGroups = {
       material: [
-        ["density_g_cm3", "Densita g/cm3"],
-        ["cost_eur_kg", "Costo EUR/kg"]
+        ["density_g_cm3", "Densit&agrave; g/cm3", "Densit&agrave; del materiale. Serve a calcolare il peso del pezzo partendo dal volume CAD. Pi&ugrave; &egrave; alta, pi&ugrave; aumenta il peso."],
+        ["cost_eur_kg", "Costo EUR/kg", "Costo del materiale al chilogrammo. Influisce direttamente sul costo materia prima del pezzo."]
       ],
       laser: [
-        ["laser_rate_eur_min", "Tariffa EUR/min"],
-        ["laser_cut_speed_mm_min", "Velocita mm/min"],
-        ["laser_pierce_time_sec", "Pierce sec"],
-        ["laser_extra_handling_sec_per_piece", "Handling sec/pezzo"]
+        ["laser_rate_eur_min", "Tariffa EUR/min", "Costo interno al minuto della macchina laser. Trasforma il tempo di taglio in costo."],
+        ["laser_cut_speed_mm_min", "Velocit&agrave; mm/min", "Velocit&agrave; di taglio del laser in millimetri al minuto. Pi&ugrave; &egrave; alta, meno tempo serve per tagliare."],
+        ["laser_pierce_time_sec", "Pierce sec", "Tempo di innesco del laser per iniziare un nuovo taglio o foro. Ogni foro o apertura richiede un pierce."],
+        ["laser_extra_handling_sec_per_piece", "Handling sec/pezzo", "Tempo extra per gestione del pezzo nella fase laser: posizionamento, scarico, movimentazione o piccole operazioni accessorie."]
       ],
       bending: [
-        ["bending_rate_eur_min", "Tariffa EUR/min"],
-        ["bending_setup_time_min", "Setup min"],
-        ["bending_time_sec_per_bend", "Tempo sec/piega"],
-        ["bending_extra_handling_sec_per_piece", "Handling sec/pezzo"]
+        ["bending_rate_eur_min", "Tariffa EUR/min", "Costo interno al minuto della piegatrice. Trasforma il tempo di piegatura in costo."],
+        ["bending_setup_time_min", "Setup min", "Tempo iniziale di attrezzaggio della piegatrice: utensili, programma e regolazioni. Si applica una volta per commessa."],
+        ["bending_time_sec_per_bend", "Tempo sec/piega", "Tempo medio necessario per eseguire una singola piega. Pi&ugrave; pieghe ha il pezzo, pi&ugrave; aumenta il tempo."],
+        ["bending_extra_handling_sec_per_piece", "Handling sec/pezzo", "Tempo extra per manipolare il pezzo durante la piegatura: rotazione, presa, riposizionamento e scarico."]
       ],
       general: [
-        ["cad_check_rate_eur_min", "CAD check EUR/min"],
-        ["handling_rate_eur_min", "Handling EUR/min"],
-        ["setup_cost_eur", "Costo setup EUR"],
-        ["minimum_order_value_eur", "Minimo ordine EUR"]
+        ["cad_check_rate_eur_min", "CAD check EUR/min", "Costo al minuto dell'attivit&agrave; tecnica/CAD: controllo file, verifica tecnica e preparazione."],
+        ["handling_rate_eur_min", "Handling EUR/min", "Costo al minuto delle attivit&agrave; generiche di gestione, controllo o supporto operativo."],
+        ["setup_cost_eur", "Costo setup EUR", "Costo fisso iniziale della commessa. Copre preparazione generale e costi fissi."],
+        ["minimum_order_value_eur", "Minimo ordine EUR", "Valore minimo consigliato del preventivo. Serve a evitare che piccoli lavori vadano sotto una soglia economica minima."]
       ]
+    };
+    const parameterSectionNames = {
+      material: "Materiale",
+      laser: "Laser",
+      bending: "Piegatura",
+      general: "Generali"
     };
     let defaults = null;
     let lastResult = null;
@@ -333,10 +419,30 @@
 
     function buildInputs(group, targetId) {
       const target = document.getElementById(targetId);
-      target.innerHTML = group.map(([key, label]) => `
-        <label>${label}
-          <input type="number" min="0" step="any" data-parameter="${key}">
-        </label>`).join("");
+      target.innerHTML = group.map(([key, label, description]) => `
+        <div class="parameter-field">
+          <span class="parameter-label">
+            <label for="parameter-${key}">${label}</label>
+            <button class="info-tip" type="button" aria-label="Informazioni su ${label}" aria-expanded="false" data-tooltip="${description}">i</button>
+          </span>
+          <input id="parameter-${key}" type="number" min="0" step="any" data-parameter="${key}">
+        </div>`).join("");
+    }
+
+    function buildLegend() {
+      document.getElementById("parameter-legend").innerHTML = `
+        <div class="legend-grid">
+          ${Object.entries(parameterGroups).map(([section, parameters]) => `
+            <section class="legend-section">
+              <h3>${parameterSectionNames[section]}</h3>
+              <dl class="legend-list">
+                ${parameters.map(([, label, description]) => `
+                  <div><dt>${label}</dt><dd>${description}</dd></div>
+                `).join("")}
+              </dl>
+            </section>
+          `).join("")}
+        </div>`;
     }
 
     function effectiveDefaults() {
@@ -455,6 +561,7 @@
       buildInputs(parameterGroups.laser, "laser-params");
       buildInputs(parameterGroups.bending, "bending-params");
       buildInputs(parameterGroups.general, "general-params");
+      buildLegend();
       checkHealth();
 
       try {
@@ -467,6 +574,26 @@
       }
     }
 
+    document.addEventListener("click", event => {
+      const infoButton = event.target.closest(".info-tip");
+      document.querySelectorAll(".info-tip.is-open").forEach(button => {
+        if (button !== infoButton) {
+          button.classList.remove("is-open");
+          button.setAttribute("aria-expanded", "false");
+        }
+      });
+      if (infoButton) {
+        const isOpen = infoButton.classList.toggle("is-open");
+        infoButton.setAttribute("aria-expanded", String(isOpen));
+      }
+    });
+    document.getElementById("legend-toggle").addEventListener("click", event => {
+      const legend = document.getElementById("parameter-legend");
+      const isOpen = legend.hidden;
+      legend.hidden = !isOpen;
+      event.currentTarget.setAttribute("aria-expanded", String(isOpen));
+      event.currentTarget.textContent = isOpen ? "Chiudi legenda" : "Legenda parametri";
+    });
     document.getElementById("material").addEventListener("change", () => defaults && loadDefaults());
     document.getElementById("quote-form").addEventListener("submit", async event => {
       event.preventDefault();

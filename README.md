@@ -220,6 +220,8 @@ The web app header shows the effective backend as `API backend: ...` (or `relati
 
 The initial pricing configuration is loaded independently from the FreeCAD health check. If a browser extension blocks `/health`, the page remains usable and shows `Stato FreeCAD non verificato`; only a failure of `/config/defaults` prevents initialization.
 
+La web app include tooltip e legenda per spiegare i parametri modificabili del preventivo.
+
 The FastAPI backend must run from the repository Dockerfile on a service with Docker and enough resources for FreeCAD, such as Render, Railway, Fly.io, or a VPS. Vercel must not run the FreeCAD backend.
 
 The backend allows `https://reverseparts-cad-ai.vercel.app`, `localhost`, and `127.0.0.1` by default. To replace or extend the explicit production origins on Render, configure:
