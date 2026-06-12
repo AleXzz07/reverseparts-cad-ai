@@ -99,9 +99,15 @@ class QuoteRequest(BaseModel):
     material_overrides: dict[str, float] | None = None
 
 
+class PreviewView(BaseModel):
+    name: str
+    image_png_base64: str
+
+
 class PreviewResponse(BaseModel):
     image_png_base64: str | None = None
     available: bool = False
+    views: list[PreviewView] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
 
 

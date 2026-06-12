@@ -87,6 +87,11 @@ def test_frontend_returns_html():
     assert "Densit&agrave; del materiale." in response.text
     assert "Anteprima pezzo" in response.text
     assert 'id="part-preview"' in response.text
+    assert 'id="preview-thumbnails"' in response.text
+    assert "Isometrica" in response.text
+    assert "Frontale" in response.text
+    assert "Destra" in response.text
+    assert "Alto" in response.text
     assert "Anteprima non disponibile, analisi CAD comunque eseguita." in response.text
 
 
@@ -305,6 +310,13 @@ def test_quote_pdf_endpoint_accepts_preview_png():
             "preview": {
                 "image_png_base64": preview_png,
                 "available": True,
+                "views": [
+                    {
+                        "name": name,
+                        "image_png_base64": preview_png,
+                    }
+                    for name in ("isometric", "front", "right", "top")
+                ],
                 "warnings": [],
             },
         },
@@ -367,9 +379,14 @@ def test_analyze_and_quote_staffa_test_1_real_step_file():
     assert "preview" in payload
     assert isinstance(payload["preview"]["available"], bool)
     assert "image_png_base64" in payload["preview"]
+    assert isinstance(payload["preview"]["views"], list)
     assert isinstance(payload["preview"]["warnings"], list)
     if os.getenv("REVERSEPARTS_RUNNING_IN_DOCKER") == "1":
         assert payload["preview"]["available"] is True
+        assert len(payload["preview"]["views"]) >= 4
+        assert {
+            view["name"] for view in payload["preview"]["views"]
+        } >= {"isometric", "front", "right", "top"}
         preview_bytes = base64.b64decode(payload["preview"]["image_png_base64"])
         assert preview_bytes.startswith(b"\x89PNG\r\n\x1a\n")
 

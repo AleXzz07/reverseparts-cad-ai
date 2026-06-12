@@ -242,6 +242,47 @@
       display: block;
       object-fit: contain;
     }
+    .preview-current-label {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+      text-align: center;
+    }
+    .preview-thumbnails {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .preview-thumb {
+      min-width: 0;
+      min-height: 0;
+      display: grid;
+      gap: 5px;
+      padding: 5px;
+      border-color: var(--line);
+      background: white;
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 700;
+    }
+    .preview-thumb:hover, .preview-thumb:focus-visible {
+      border-color: #83bbc1;
+      outline: none;
+    }
+    .preview-thumb.active {
+      border-color: var(--accent);
+      color: var(--accent-dark);
+      box-shadow: 0 0 0 1px var(--accent);
+    }
+    .preview-thumb img {
+      width: 100%;
+      aspect-ratio: 4 / 3;
+      display: block;
+      object-fit: contain;
+      background: white;
+    }
     .preview-fallback {
       max-width: 360px;
       padding: 24px;
@@ -293,6 +334,7 @@
       .metric:nth-child(2) { border-right: 0; }
       .metric:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
       .data-section { border-right: 0; border-bottom: 1px solid var(--line); }
+      .preview-thumbnails { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
   </style>
 </head>
@@ -362,6 +404,8 @@
             <img id="part-preview" alt="Anteprima isometrica del pezzo STEP" hidden>
             <div class="preview-fallback" id="preview-fallback">Anteprima non disponibile, analisi CAD comunque eseguita.</div>
           </div>
+          <div class="preview-current-label" id="preview-current-label" hidden></div>
+          <div class="preview-thumbnails" id="preview-thumbnails" hidden></div>
         </section>
         <div class="summary-strip">
           <div class="metric"><span>Pezzo</span><strong id="part-name">-</strong></div>
@@ -446,6 +490,14 @@
       bending: "Piegatura",
       general: "Generali"
     };
+    const previewViewLabels = {
+      isometric: "Isometrica",
+      front: "Frontale",
+      right: "Destra",
+      top: "Alto",
+      rear: "Posteriore",
+      left: "Sinistra"
+    };
     let defaults = null;
     let lastResult = null;
 
@@ -524,6 +576,63 @@
       return items.map(([label, value]) => `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd>`).join("");
     }
 
+    function showPreviewView(view, button) {
+      const previewImage = document.getElementById("part-preview");
+      const currentLabel = document.getElementById("preview-current-label");
+      const label = previewViewLabels[view.name] || view.name;
+      previewImage.src = `data:image/png;base64,${view.image_png_base64}`;
+      previewImage.alt = `Anteprima ${label.toLowerCase()} del pezzo STEP`;
+      currentLabel.textContent = label;
+      document.querySelectorAll(".preview-thumb").forEach(item => {
+        item.classList.toggle("active", item === button);
+        item.setAttribute("aria-pressed", String(item === button));
+      });
+    }
+
+    function renderPreviewGallery(preview) {
+      const previewImage = document.getElementById("part-preview");
+      const previewFallback = document.getElementById("preview-fallback");
+      const currentLabel = document.getElementById("preview-current-label");
+      const thumbnails = document.getElementById("preview-thumbnails");
+      const views = Array.isArray(preview.views) && preview.views.length
+        ? preview.views
+        : preview.image_png_base64
+          ? [{ name: "isometric", image_png_base64: preview.image_png_base64 }]
+          : [];
+
+      thumbnails.replaceChildren();
+      if (!preview.available || !views.length) {
+        previewImage.removeAttribute("src");
+        previewImage.hidden = true;
+        previewFallback.hidden = false;
+        currentLabel.hidden = true;
+        thumbnails.hidden = true;
+        return;
+      }
+
+      previewImage.hidden = false;
+      previewFallback.hidden = true;
+      currentLabel.hidden = false;
+      thumbnails.hidden = views.length <= 1;
+      views.forEach((view, index) => {
+        const label = previewViewLabels[view.name] || view.name;
+        const button = document.createElement("button");
+        const image = document.createElement("img");
+        const caption = document.createElement("span");
+        button.type = "button";
+        button.className = "preview-thumb";
+        button.setAttribute("aria-label", `Mostra vista ${label}`);
+        button.setAttribute("aria-pressed", "false");
+        image.src = `data:image/png;base64,${view.image_png_base64}`;
+        image.alt = "";
+        caption.textContent = label;
+        button.append(image, caption);
+        button.addEventListener("click", () => showPreviewView(view, button));
+        thumbnails.append(button);
+        if (index === 0) showPreviewView(view, button);
+      });
+    }
+
     function renderResult(payload) {
       const analysis = payload.analysis;
       const quote = payload.quote;
@@ -535,18 +644,7 @@
       const bending = quote.bending_details || {};
       const guidance = quote.commercial_guidance || {};
       const preview = payload.preview || {};
-      const previewImage = document.getElementById("part-preview");
-      const previewFallback = document.getElementById("preview-fallback");
-
-      if (preview.available && preview.image_png_base64) {
-        previewImage.src = `data:image/png;base64,${preview.image_png_base64}`;
-        previewImage.hidden = false;
-        previewFallback.hidden = true;
-      } else {
-        previewImage.removeAttribute("src");
-        previewImage.hidden = true;
-        previewFallback.hidden = false;
-      }
+      renderPreviewGallery(preview);
 
       document.getElementById("part-name").textContent = quote.part_name || analysis.part_name || "-";
       document.getElementById("complexity").innerHTML = `<span class="badge">${escapeHtml(analysis.complexity_score)}</span>`;

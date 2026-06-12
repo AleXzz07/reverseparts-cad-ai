@@ -84,6 +84,46 @@ def _section(title: str, rows: list[tuple[str, Any]]) -> list[Any]:
     ]
 
 
+PREVIEW_LABELS = {
+    "isometric": "Isometrica",
+    "front": "Frontale",
+    "right": "Destra",
+    "top": "Alto",
+    "rear": "Posteriore",
+    "left": "Sinistra",
+}
+
+
+def _preview_image(
+    encoded: str,
+    *,
+    max_width: float,
+    max_height: float,
+) -> Image | None:
+    try:
+        image_bytes = base64.b64decode(encoded, validate=True)
+        if not image_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
+            raise ValueError("Invalid PNG signature")
+        source = BytesIO(image_bytes)
+        normalized = BytesIO()
+        with PillowImage.open(source) as pillow_image:
+            pillow_image.load()
+            pillow_image.convert("RGB").save(normalized, format="PNG")
+        normalized.seek(0)
+        image = Image(normalized)
+        scale = min(
+            max_width / image.imageWidth,
+            max_height / image.imageHeight,
+            1.0,
+        )
+        image.drawWidth = image.imageWidth * scale
+        image.drawHeight = image.imageHeight * scale
+        image.hAlign = "CENTER"
+        return image
+    except (binascii.Error, OSError, TypeError, ValueError):
+        return None
+
+
 def _preview_section(preview: dict[str, Any] | None) -> list[Any]:
     styles = getSampleStyleSheet()
     heading_style = ParagraphStyle(
@@ -104,38 +144,91 @@ def _preview_section(preview: dict[str, Any] | None) -> list[Any]:
         textColor=colors.HexColor("#63707C"),
     )
     elements: list[Any] = [Paragraph("Anteprima pezzo", heading_style)]
-    encoded = (preview or {}).get("image_png_base64")
-    if not encoded:
+    label_style = ParagraphStyle(
+        "PreviewLabel",
+        parent=styles["Normal"],
+        fontName="Helvetica-Bold",
+        fontSize=8,
+        leading=9,
+        alignment=1,
+        spaceAfter=2,
+    )
+    view_payloads = [
+        view
+        for view in (preview or {}).get("views", [])
+        if view.get("image_png_base64")
+    ]
+    if not view_payloads and (preview or {}).get("image_png_base64"):
+        view_payloads = [
+            {
+                "name": "isometric",
+                "image_png_base64": preview["image_png_base64"],
+            }
+        ]
+    if not view_payloads:
         return [
             *elements,
             Paragraph("Anteprima pezzo non disponibile", fallback_style),
             Spacer(1, 4 * mm),
         ]
 
-    try:
-        image_bytes = base64.b64decode(encoded, validate=True)
-        if not image_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
-            raise ValueError("Invalid PNG signature")
-        source = BytesIO(image_bytes)
-        normalized = BytesIO()
-        with PillowImage.open(source) as pillow_image:
-            pillow_image.load()
-            pillow_image.convert("RGB").save(normalized, format="PNG")
-        normalized.seek(0)
-        image = Image(normalized)
-        max_width = 120 * mm
-        max_height = 72 * mm
-        scale = min(max_width / image.imageWidth, max_height / image.imageHeight, 1.0)
-        image.drawWidth = image.imageWidth * scale
-        image.drawHeight = image.imageHeight * scale
-        image.hAlign = "CENTER"
-        return [*elements, image, Spacer(1, 4 * mm)]
-    except (binascii.Error, OSError, TypeError, ValueError):
+    rendered_views = []
+    for view in view_payloads[:4]:
+        image = _preview_image(
+            view["image_png_base64"],
+            max_width=78 * mm,
+            max_height=48 * mm,
+        )
+        if image is not None:
+            rendered_views.append((view.get("name", ""), image))
+
+    if not rendered_views:
         return [
             *elements,
             Paragraph("Anteprima pezzo non disponibile", fallback_style),
             Spacer(1, 4 * mm),
         ]
+    if len(rendered_views) == 1:
+        name, image = rendered_views[0]
+        larger_image = _preview_image(
+            view_payloads[0]["image_png_base64"],
+            max_width=120 * mm,
+            max_height=72 * mm,
+        )
+        if larger_image is not None:
+            return [
+                *elements,
+                Paragraph(PREVIEW_LABELS.get(name, name.title()), label_style),
+                larger_image,
+                Spacer(1, 4 * mm),
+            ]
+
+    cells = [
+        [
+            Paragraph(PREVIEW_LABELS.get(name, name.title()), label_style),
+            image,
+        ]
+        for name, image in rendered_views
+    ]
+    if len(cells) % 2:
+        cells.append([])
+    grid_data = [cells[index:index + 2] for index in range(0, len(cells), 2)]
+    grid = Table(grid_data, colWidths=[85 * mm, 85 * mm], hAlign="CENTER")
+    grid.setStyle(
+        TableStyle(
+            [
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ("BOX", (0, 0), (-1, -1), 0.25, colors.HexColor("#D8DEE5")),
+                ("INNERGRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#D8DEE5")),
+                ("LEFTPADDING", (0, 0), (-1, -1), 3),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+                ("TOPPADDING", (0, 0), (-1, -1), 4),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ]
+        )
+    )
+    return [*elements, KeepTogether([grid]), Spacer(1, 4 * mm)]
 
 
 def generate_quote_pdf(

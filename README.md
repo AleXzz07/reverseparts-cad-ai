@@ -222,7 +222,7 @@ The initial pricing configuration is loaded independently from the FreeCAD healt
 
 La web app include tooltip e legenda per spiegare i parametri modificabili del preventivo.
 
-Il backend prova a generare una preview PNG isometrica del pezzo STEP tramite la tessellazione FreeCAD e un renderer software headless. La preview viene mostrata nella web app e inserita nel PDF quando disponibile. Se il rendering non è disponibile, la preview viene segnalata come non disponibile senza bloccare analisi CAD, preventivo o PDF.
+Il backend genera preview PNG ad alta risoluzione del pezzo STEP tramite la tessellazione FreeCAD e un renderer software headless. Le viste disponibili includono isometrica, frontale, destra e alto, con asse Z orientato verso l'alto. La web app mostra una gallery con miniature cliccabili e il PDF include una griglia delle viste quando disponibili. Se una vista o il rendering non sono disponibili, vengono restituiti warning senza bloccare analisi CAD, preventivo o PDF.
 
 The FastAPI backend must run from the repository Dockerfile on a service with Docker and enough resources for FreeCAD, such as Render, Railway, Fly.io, or a VPS. Vercel must not run the FreeCAD backend.
 

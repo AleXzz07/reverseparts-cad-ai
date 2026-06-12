@@ -19,6 +19,7 @@ def test_generate_step_preview_fails_safely_without_renderer_dependencies(
 
     assert result["available"] is False
     assert result["image_png_base64"] is None
+    assert result["views"] == []
     assert result["warnings"]
     assert result["warnings"][0].startswith("Preview generation failed:")
 
@@ -30,6 +31,37 @@ def test_generate_step_preview_fails_safely_for_missing_file(tmp_path):
 
     assert result["available"] is False
     assert result["image_png_base64"] is None
+    assert result["views"] == []
     assert result["warnings"] == [
         "Preview generation failed: STEP file does not exist."
+    ]
+
+
+def test_generate_step_previews_keeps_successful_views(tmp_path, monkeypatch):
+    step_path = tmp_path / "part.step"
+    step_path.write_text("STEP", encoding="ascii")
+    monkeypatch.setattr(
+        preview_renderer,
+        "_load_geometry",
+        lambda source: (object(), [], [], 1.0),
+    )
+
+    def fake_render(shape, points, facets, diagonal, view_name):
+        if view_name == "right":
+            raise RuntimeError("right view unavailable")
+        return f"encoded-{view_name}"
+
+    monkeypatch.setattr(preview_renderer, "render_named_view", fake_render)
+
+    result = preview_renderer.generate_step_previews(str(step_path))
+
+    assert result["available"] is True
+    assert result["image_png_base64"] == "encoded-isometric"
+    assert [view["name"] for view in result["views"]] == [
+        "isometric",
+        "front",
+        "top",
+    ]
+    assert result["warnings"] == [
+        "Preview view 'right' generation failed: right view unavailable"
     ]

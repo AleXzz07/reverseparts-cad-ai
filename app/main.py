@@ -12,7 +12,7 @@ from fastapi.responses import HTMLResponse
 
 from .cad_analyzer import VALID_STEP_SUFFIXES, analyze_step_file, get_freecad_status
 from .pdf_report import generate_quote_pdf
-from .preview_renderer import generate_step_preview
+from .preview_renderer import generate_step_previews
 from .quote_engine import load_materials_config, load_pricing_config, quote_from_cad
 from .schemas import AnalyzeAndQuoteResponse, CadAnalysisResponse, HealthResponse, QuotePdfRequest, QuoteRequest
 
@@ -254,11 +254,12 @@ async def analyze_and_quote(
         with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as step_file:
             step_file.write(file_bytes)
             step_path = step_file.name
-        preview_payload = generate_step_preview(step_path)
+        preview_payload = generate_step_previews(step_path)
     except Exception as exc:
         preview_payload = {
             "image_png_base64": None,
             "available": False,
+            "views": [],
             "warnings": [f"Preview generation failed: {exc}"],
         }
     finally:
