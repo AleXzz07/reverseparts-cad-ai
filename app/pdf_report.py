@@ -4,6 +4,7 @@ import base64
 import binascii
 from io import BytesIO
 from typing import Any
+from xml.sax.saxutils import escape
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -19,6 +20,12 @@ from reportlab.platypus import (
     TableStyle,
 )
 from PIL import Image as PillowImage
+
+
+UNKNOWN_HOLE_WARNING = (
+    "Some openings were detected but their shape could not be classified "
+    "with confidence."
+)
 
 
 def _value(value: Any, unit: str = "") -> str:
@@ -37,6 +44,88 @@ def _dimensions(analysis: dict[str, Any]) -> str:
     if any(value is None for value in values):
         return "-"
     return " x ".join(_value(value) for value in values)
+
+
+def _part_rows(
+    analysis: dict[str, Any],
+    quote: dict[str, Any],
+) -> list[tuple[str, Any]]:
+    material = quote.get("material", {})
+    cutting = analysis.get("cutting", {})
+    bends = analysis.get("bends", {})
+    holes = analysis.get("holes", {})
+    features = quote.get("features_summary", {})
+
+    def hole_count(summary_key: str, group_key: str) -> int:
+        value = features.get(summary_key)
+        if value is None:
+            value = holes.get(summary_key)
+        if value is None:
+            value = len(holes.get(group_key, []) or [])
+        return int(value)
+
+    circular_holes = hole_count("circular_holes", "circular")
+    elongated_holes = hole_count("elongated_holes", "elongated")
+    polygonal_holes = hole_count("polygonal_holes", "polygonal")
+    formed_holes = hole_count("formed_holes", "formed")
+    unknown_holes = hole_count("unknown_holes", "unknown")
+    total_holes = features.get("total_holes")
+    if total_holes is None:
+        total_holes = (
+            circular_holes
+            + elongated_holes
+            + polygonal_holes
+            + formed_holes
+            + unknown_holes
+        )
+
+    return [
+        ("Nome pezzo", quote.get("part_name") or analysis.get("part_name")),
+        ("Materiale", material.get("name")),
+        ("Quantità", quote.get("quantity")),
+        ("Dimensioni mm", _dimensions(analysis)),
+        (
+            "Spessore",
+            material.get("thickness_mm")
+            or analysis.get("detected_thickness_mm"),
+        ),
+        (
+            "Peso unitario stimato",
+            _value(material.get("estimated_weight_kg"), "kg"),
+        ),
+        (
+            "Lunghezza taglio totale",
+            _value(cutting.get("total_cut_length_mm"), "mm"),
+        ),
+        ("Fori circolari", circular_holes),
+        ("Asole", elongated_holes),
+        ("Fori poligonali", polygonal_holes),
+        ("Fori sagomati/imbutiti", formed_holes),
+        ("Fori non riconosciuti", unknown_holes),
+        ("Fori totali", total_holes),
+        (
+            "Numero pieghe",
+            bends.get("count")
+            if bends.get("count") is not None
+            else features.get("bends"),
+        ),
+    ]
+
+
+def _verification_rows(
+    analysis: dict[str, Any],
+    quote: dict[str, Any],
+) -> list[tuple[str, Any]]:
+    holes = analysis.get("holes", {})
+    features = quote.get("features_summary", {})
+    unknown_holes = features.get("unknown_holes")
+    if unknown_holes is None:
+        unknown_holes = holes.get("unknown_holes")
+    if unknown_holes is None:
+        unknown_holes = len(holes.get("unknown", []) or [])
+    if int(unknown_holes) <= 0:
+        return []
+    return [("Aperture non riconosciute", UNKNOWN_HOLE_WARNING)]
 
 
 def _section(title: str, rows: list[tuple[str, Any]]) -> list[Any]:
@@ -58,7 +147,15 @@ def _section(title: str, rows: list[tuple[str, Any]]) -> list[Any]:
         spaceAfter=4,
     )
     table_data = [[Paragraph("<b>Voce</b>", body_style), Paragraph("<b>Valore</b>", body_style)]]
-    table_data.extend([[label, _value(value)] for label, value in rows])
+    table_data.extend(
+        [
+            [
+                Paragraph(escape(str(label)), body_style),
+                Paragraph(escape(_value(value)), body_style),
+            ]
+            for label, value in rows
+        ]
+    )
     table = Table(table_data, colWidths=[70 * mm, 100 * mm])
     table.setStyle(
         TableStyle(
@@ -267,9 +364,6 @@ def generate_quote_pdf(
     times = quote.get("estimated_times_min", {})
     laser = quote.get("laser_details", {})
     bending = quote.get("bending_details", {})
-    cutting = analysis.get("cutting", {})
-    bends = analysis.get("bends", {})
-    features = quote.get("features_summary", {})
     config_used = quote.get("config_used", {})
     pricing = config_used.get("pricing", {})
 
@@ -282,20 +376,7 @@ def generate_quote_pdf(
     elements.extend(
         _section(
             "Pezzo",
-            [
-                ("Nome pezzo", quote.get("part_name") or analysis.get("part_name")),
-                ("Materiale", material.get("name")),
-                ("Quantità", quote.get("quantity")),
-                ("Dimensioni mm", _dimensions(analysis)),
-                ("Spessore", material.get("thickness_mm") or analysis.get("detected_thickness_mm")),
-                ("Peso unitario stimato", _value(material.get("estimated_weight_kg"), "kg")),
-                ("Lunghezza taglio totale", _value(cutting.get("total_cut_length_mm"), "mm")),
-                ("Fori circolari", features.get("circular_holes")),
-                ("Fori poligonali", features.get("polygonal_holes")),
-                ("Fori sagomati/imbutiti", features.get("formed_holes")),
-                ("Fori totali", features.get("total_holes")),
-                ("Numero pieghe", bends.get("count") or features.get("bends")),
-            ],
+            _part_rows(analysis, quote),
         )
     )
     elements.extend(
@@ -342,6 +423,14 @@ def generate_quote_pdf(
             ],
         )
     )
+    verification_rows = _verification_rows(analysis, quote)
+    if verification_rows:
+        elements.extend(
+            _section(
+                "Avvisi di verifica",
+                verification_rows,
+            )
+        )
     elements.append(
         Paragraph(
             "Preventivo tecnico preliminare. Il margine commerciale e il prezzo finale devono essere decisi dall'azienda.",

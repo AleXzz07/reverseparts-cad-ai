@@ -14,6 +14,13 @@ from .schemas import BendFeature, CadAnalysisResponse, Dimensions, HoleFeature
 VALID_STEP_SUFFIXES = {".stp", ".step"}
 CIRCULAR_HOLE_MIN_DIAMETER_MM = 4.0
 CIRCULAR_HOLE_MAX_DIAMETER_MM = 20.0
+UNKNOWN_HOLE_WARNING = (
+    "Some openings were detected but their shape could not be classified "
+    "with confidence."
+)
+UNKNOWN_HOLE_REASON = (
+    "Hole/opening detected but shape classification is uncertain"
+)
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_ANALYSIS_CONFIG_PATH = PROJECT_ROOT / "config" / "analysis_default.json"
 FREECAD_PATH_CANDIDATES = (
@@ -593,6 +600,114 @@ def _detect_formed_holes(
     return formed
 
 
+def _center_matches_feature(
+    center: tuple[float, float, float],
+    feature: HoleFeature,
+    tolerance_mm: float = 3.0,
+) -> bool:
+    if feature.center is None:
+        return False
+    return (
+        _vector_norm(
+            tuple(
+                left - right
+                for left, right in zip(center, tuple(feature.center))
+            )
+        )
+        <= tolerance_mm
+    )
+
+
+def _append_unique_unknown(
+    unknown: list[HoleFeature],
+    candidate: HoleFeature,
+) -> None:
+    for existing in unknown:
+        if (
+            existing.center is not None
+            and candidate.center is not None
+            and existing.axis is not None
+            and candidate.axis is not None
+            and existing.max_dimension_mm is not None
+            and candidate.max_dimension_mm is not None
+            and abs(
+                existing.max_dimension_mm - candidate.max_dimension_mm
+            )
+            <= 1.0
+            and _axis_aligned(
+                tuple(existing.axis),
+                tuple(candidate.axis),
+                tolerance=0.95,
+            )
+            and _vector_norm(
+                tuple(
+                    left - right
+                    for left, right in zip(
+                        existing.center,
+                        candidate.center,
+                    )
+                )
+            )
+            <= 3.0
+        ):
+            existing.confidence = "medium"
+            return
+    unknown.append(candidate)
+
+
+def _detect_unknown_holes(
+    shape,
+    known_features: list[HoleFeature],
+) -> list[HoleFeature]:
+    unknown: list[HoleFeature] = []
+    for face in shape.Faces:
+        surface = face.Surface
+        if getattr(surface, "TypeId", "") != "Part::GeomPlane":
+            continue
+
+        for wire_index, wire in enumerate(face.Wires):
+            if wire_index == 0 or not wire.isClosed():
+                continue
+
+            perimeter = float(wire.Length)
+            bbox = wire.BoundBox
+            max_dimension = max(
+                float(bbox.XLength),
+                float(bbox.YLength),
+                float(bbox.ZLength),
+            )
+            if perimeter <= 2.0 or max_dimension <= 1.0:
+                continue
+
+            center = _wire_center(wire)
+            if any(
+                _center_matches_feature(center, feature)
+                for feature in known_features
+            ):
+                continue
+
+            _append_unique_unknown(
+                unknown,
+                HoleFeature(
+                    type="unknown opening",
+                    reason=UNKNOWN_HOLE_REASON,
+                    max_dimension_mm=round(max_dimension, 2),
+                    bounding_box_mm=Dimensions(
+                        x=round(float(bbox.XLength), 3),
+                        y=round(float(bbox.YLength), 3),
+                        z=round(float(bbox.ZLength), 3),
+                    ),
+                    perimeter_mm=round(perimeter, 2),
+                    center=_rounded_vector(center),
+                    axis=_rounded_vector(_normalize_vector(surface.Axis)),
+                    confidence="low",
+                ),
+            )
+
+    unknown.sort(key=lambda hole: hole.center or [])
+    return unknown
+
+
 def _is_duplicate_bend(candidate: BendFeature, existing: BendFeature) -> bool:
     if candidate.radius_mm is None or existing.radius_mm is None:
         return False
@@ -774,6 +889,7 @@ def _detect_cutting_lengths(
     elongated: list[HoleFeature],
     polygonal: list[HoleFeature],
     formed: list[HoleFeature],
+    unknown: list[HoleFeature],
 ):
     warnings = [
         "Cut length is preliminary: outer loop is selected from the longest planar external wire and inner loop length is derived from deduplicated detected features."
@@ -810,6 +926,9 @@ def _detect_cutting_lengths(
     for formed_hole in formed:
         if formed_hole.length_mm is not None:
             inner_cut_length += float(formed_hole.length_mm)
+    for unknown_hole in unknown:
+        if unknown_hole.perimeter_mm is not None:
+            inner_cut_length += float(unknown_hole.perimeter_mm)
 
     inner_cut_length = round(inner_cut_length, 2) if inner_cut_length > 0 else None
     total_cut_length = (
@@ -979,15 +1098,26 @@ def analyze_step_file(
         response.holes.elongated = _detect_elongated_holes(shape)
         response.holes.polygonal = _detect_polygonal_holes(shape)
         response.holes.formed = _detect_formed_holes(shape, analysis_parameters)
+        response.holes.unknown = _detect_unknown_holes(
+            shape,
+            [
+                *response.holes.circular,
+                *response.holes.elongated,
+                *response.holes.polygonal,
+                *response.holes.formed,
+            ],
+        )
         response.holes.circular_holes = len(response.holes.circular)
         response.holes.elongated_holes = len(response.holes.elongated)
         response.holes.polygonal_holes = len(response.holes.polygonal)
         response.holes.formed_holes = len(response.holes.formed)
+        response.holes.unknown_holes = len(response.holes.unknown)
         response.holes.total_holes = (
             response.holes.circular_holes
             + response.holes.elongated_holes
             + response.holes.polygonal_holes
             + response.holes.formed_holes
+            + response.holes.unknown_holes
         )
         if len(response.holes.circular) >= 4:
             response.holes.confidence = "medium"
@@ -1000,6 +1130,8 @@ def analyze_step_file(
             response.warnings.append(
                 "Circular hole detection found no high-confidence candidates in the configured diameter range."
             )
+        if response.holes.unknown_holes > 0:
+            response.warnings.append(UNKNOWN_HOLE_WARNING)
 
         response.bends.items = _detect_bends(
             shape,
@@ -1044,6 +1176,7 @@ def analyze_step_file(
             response.holes.elongated,
             response.holes.polygonal,
             response.holes.formed,
+            response.holes.unknown,
         )
 
         if response.detected_thickness_mm is None:

@@ -10,6 +10,7 @@ from PIL import Image
 
 import app.main as api
 from app.main import app
+from app.pdf_report import _part_rows, _verification_rows
 from app.schemas import CadAnalysisResponse
 
 
@@ -93,6 +94,8 @@ def test_frontend_returns_html():
     assert "Destra" in response.text
     assert "Alto" in response.text
     assert "Anteprima non disponibile, analisi CAD comunque eseguita." in response.text
+    assert '["Asole",' in response.text
+    assert '["Fori non riconosciuti",' in response.text
 
 
 def test_app_config_uses_api_base_url(monkeypatch):
@@ -295,6 +298,34 @@ def test_quote_pdf_endpoint_returns_pdf():
     assert response.content.startswith(b"%PDF")
 
 
+def test_quote_pdf_part_rows_include_all_hole_categories():
+    analysis = json.loads(STAFFA_ACTUAL_FILE.read_text(encoding="utf-8"))
+    quote = json.loads(STAFFA_QUOTE_FILE.read_text(encoding="utf-8"))
+    quote["features_summary"]["unknown_holes"] = 0
+
+    rows = dict(_part_rows(analysis, quote))
+
+    assert rows["Fori circolari"] == 4
+    assert rows["Asole"] == 2
+    assert rows["Fori poligonali"] == 2
+    assert rows["Fori sagomati/imbutiti"] == 0
+    assert rows["Fori non riconosciuti"] == 0
+    assert rows["Fori totali"] == 8
+
+
+def test_quote_pdf_includes_unknown_hole_verification_warning():
+    analysis = json.loads(STAFFA_ACTUAL_FILE.read_text(encoding="utf-8"))
+    quote = json.loads(STAFFA_QUOTE_FILE.read_text(encoding="utf-8"))
+    quote["features_summary"]["unknown_holes"] = 1
+
+    rows = dict(_verification_rows(analysis, quote))
+
+    assert rows["Aperture non riconosciute"] == (
+        "Some openings were detected but their shape could not be "
+        "classified with confidence."
+    )
+
+
 def test_quote_pdf_endpoint_accepts_preview_png():
     analysis = json.loads(STAFFA_ACTUAL_FILE.read_text(encoding="utf-8"))
     quote = json.loads(STAFFA_QUOTE_FILE.read_text(encoding="utf-8"))
@@ -346,6 +377,9 @@ def test_analyze_cad_staffa_test_1_real_step_file():
     assert raw_bounding_box["z"] is not None
 
     assert payload["holes"]["confidence"] in {"medium", "high"}
+    assert payload["holes"]["elongated_holes"] == 2
+    assert payload["holes"]["unknown_holes"] == 0
+    assert payload["holes"]["total_holes"] == 8
     assert payload["bends"]["confidence"] in {"medium", "high"}
     assert isinstance(payload["warnings"], list)
 
@@ -376,6 +410,10 @@ def test_analyze_and_quote_staffa_test_1_real_step_file():
     assert abs(payload["quote"]["material"]["estimated_weight_kg"] - 0.05) <= 0.005
     assert payload["quote"]["laser_details"]["cut_speed_mm_min"] == 2500.0
     assert payload["quote"]["features_summary"]["bends"] == 2
+    assert payload["quote"]["features_summary"]["elongated_holes"] == 2
+    assert payload["quote"]["features_summary"]["unknown_holes"] == 0
+    assert payload["quote"]["features_summary"]["total_holes"] == 8
+    assert payload["quote"]["laser_details"]["pierce_count"] == 9
     assert "preview" in payload
     assert isinstance(payload["preview"]["available"], bool)
     assert "image_png_base64" in payload["preview"]

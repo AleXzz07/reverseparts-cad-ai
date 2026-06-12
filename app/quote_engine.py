@@ -151,6 +151,7 @@ def _complexity(
     elongated_holes: int,
     polygonal_holes: int,
     formed_holes: int,
+    unknown_holes: int,
     bends: int,
 ) -> str:
     feature_score = (
@@ -158,6 +159,7 @@ def _complexity(
         + elongated_holes * 2
         + polygonal_holes * 2
         + formed_holes * 3
+        + unknown_holes * 2
         + bends * 2
     )
     if feature_score >= 25:
@@ -185,6 +187,7 @@ def _estimate_amounts(
     elongated_holes: int,
     polygonal_holes: int,
     formed_holes: int,
+    unknown_holes: int,
     total_holes: int,
     bends: int,
     bends_count_available: bool,
@@ -220,6 +223,7 @@ def _estimate_amounts(
             + elongated_holes * 0.35
             + polygonal_holes * 0.3
             + formed_holes * 0.4
+            + unknown_holes * 0.4
         )
         laser_cutting = round((2.0 + laser_feature_factor) * quantity, 2)
         laser_time_source = "fallback_feature_based"
@@ -359,11 +363,13 @@ def quote_from_cad(
     elongated_holes = _feature_count(cad_data, "elongated")
     polygonal_holes = _feature_count(cad_data, "polygonal")
     formed_holes = _feature_count(cad_data, "formed")
-    total_holes = int(
-        cad_data.get("holes", {}).get(
-            "total_holes",
-            circular_holes + elongated_holes + polygonal_holes + formed_holes,
-        )
+    unknown_holes = _feature_count(cad_data, "unknown")
+    total_holes = (
+        circular_holes
+        + elongated_holes
+        + polygonal_holes
+        + formed_holes
+        + unknown_holes
     )
     bends = _bend_count(cad_data)
     bends_count_available = _bend_count_is_declared(cad_data)
@@ -415,12 +421,18 @@ def quote_from_cad(
         warnings.append(
             "Parte CAD complessa: tempi e feature rilevate richiedono verifica tecnica."
         )
+    if unknown_holes > 0:
+        warnings.append(
+            "Some openings were detected but their shape could not be "
+            "classified with confidence."
+        )
 
     complexity = _complexity(
         circular_holes,
         elongated_holes,
         polygonal_holes,
         formed_holes,
+        unknown_holes,
         bends,
     )
     amounts = _estimate_amounts(
@@ -429,6 +441,7 @@ def quote_from_cad(
         elongated_holes=elongated_holes,
         polygonal_holes=polygonal_holes,
         formed_holes=formed_holes,
+        unknown_holes=unknown_holes,
         total_holes=total_holes,
         bends=bends,
         bends_count_available=bends_count_available,
@@ -445,6 +458,7 @@ def quote_from_cad(
             elongated_holes=elongated_holes,
             polygonal_holes=polygonal_holes,
             formed_holes=formed_holes,
+            unknown_holes=unknown_holes,
             total_holes=total_holes,
             bends=bends,
             bends_count_available=bends_count_available,
@@ -486,6 +500,7 @@ def quote_from_cad(
             "elongated_holes": elongated_holes,
             "polygonal_holes": polygonal_holes,
             "formed_holes": formed_holes,
+            "unknown_holes": unknown_holes,
             "total_holes": total_holes,
             "bends": bends,
         },
@@ -497,7 +512,13 @@ def quote_from_cad(
             ),
             "laser_cutting_complexity": (
                 "medium: profilo lamiera con fori circolari, asole e fori poligonali"
-                if circular_holes + elongated_holes + polygonal_holes >= 6
+                if (
+                    circular_holes
+                    + elongated_holes
+                    + polygonal_holes
+                    + unknown_holes
+                    >= 6
+                )
                 else "low: geometria semplice"
             ),
             "bending_complexity": (

@@ -644,6 +644,13 @@
       const bending = quote.bending_details || {};
       const guidance = quote.commercial_guidance || {};
       const preview = payload.preview || {};
+      const circularHoles = features.circular_holes ?? holes.circular_holes ?? holes.circular?.length ?? 0;
+      const elongatedHoles = features.elongated_holes ?? holes.elongated_holes ?? holes.elongated?.length ?? 0;
+      const polygonalHoles = features.polygonal_holes ?? holes.polygonal_holes ?? holes.polygonal?.length ?? 0;
+      const formedHoles = features.formed_holes ?? holes.formed_holes ?? holes.formed?.length ?? 0;
+      const unknownHoles = features.unknown_holes ?? holes.unknown_holes ?? holes.unknown?.length ?? 0;
+      const totalHoles = features.total_holes ?? holes.total_holes
+        ?? (circularHoles + elongatedHoles + polygonalHoles + formedHoles + unknownHoles);
       renderPreviewGallery(preview);
 
       document.getElementById("part-name").textContent = quote.part_name || analysis.part_name || "-";
@@ -653,10 +660,12 @@
       document.getElementById("analysis-data").innerHTML = rows([
         ["Dimensioni", `${number(dimensions.x)} x ${number(dimensions.y)} x ${number(dimensions.z)} mm`],
         ["Peso stimato", number(quote.material?.estimated_weight_kg, "kg")],
-        ["Fori circolari", features.circular_holes ?? holes.circular_holes ?? 0],
-        ["Fori poligonali", features.polygonal_holes ?? holes.polygonal_holes ?? 0],
-        ["Fori sagomati/imbutiti", features.formed_holes ?? holes.formed_holes ?? 0],
-        ["Fori totali", features.total_holes ?? holes.total_holes ?? 0],
+        ["Fori circolari", circularHoles],
+        ["Asole", elongatedHoles],
+        ["Fori poligonali", polygonalHoles],
+        ["Fori sagomati/imbutiti", formedHoles],
+        ["Fori non riconosciuti", unknownHoles],
+        ["Fori totali", totalHoles],
         ["Pieghe", features.bends ?? analysis.bends?.count ?? 0],
         ["Lunghezza taglio", number(analysis.cutting?.total_cut_length_mm, "mm")]
       ]);

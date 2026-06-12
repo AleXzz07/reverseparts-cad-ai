@@ -34,6 +34,7 @@ def test_quote_from_cad_staffa_test_1():
         "elongated_holes": 2,
         "polygonal_holes": 2,
         "formed_holes": 0,
+        "unknown_holes": 0,
         "total_holes": 8,
         "bends": 2,
     }
@@ -147,6 +148,31 @@ def test_quote_uses_cut_length_when_available():
     assert quote["estimated_internal_cost_eur"]["laser"] == 0.59
     assert quote["estimated_internal_cost_eur"]["bending"] == 5.09
     assert quote["estimated_internal_cost_eur"]["total"] == 24.52
+
+
+def test_quote_counts_unknown_holes_and_adds_warning():
+    cad_data = _cad_data_without_cutting()
+    cad_data["holes"]["unknown"] = [
+        {
+            "max_dimension_mm": 12.0,
+            "center": [0.0, 0.0, 0.0],
+            "confidence": "low",
+            "reason": (
+                "Hole/opening detected but shape classification is uncertain"
+            ),
+        }
+    ]
+    cad_data["cutting"] = {"total_cut_length_mm": 500.0}
+
+    quote = quote_from_cad(cad_data)
+
+    assert quote["features_summary"]["unknown_holes"] == 1
+    assert quote["features_summary"]["total_holes"] == 9
+    assert quote["laser_details"]["pierce_count"] == 10
+    assert (
+        "Some openings were detected but their shape could not be "
+        "classified with confidence."
+    ) in quote["warnings"]
 
 
 def test_quote_uses_material_laser_profile_for_cut_length():
