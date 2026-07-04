@@ -111,6 +111,7 @@ class PreviewView(BaseModel):
 class PreviewResponse(BaseModel):
     image_png_base64: str | None = None
     available: bool = False
+    mode: Literal["full", "light", "ultra_light", "failed"] = "failed"
     views: list[PreviewView] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
 

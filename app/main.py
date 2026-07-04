@@ -141,6 +141,9 @@ def config_defaults() -> dict[str, Any]:
         "preview_max_render_views_high_complexity": (
             preview_settings.max_render_views_high_complexity
         ),
+        "preview_timeout_sec": preview_settings.timeout_sec,
+        "preview_light_timeout_sec": preview_settings.light_timeout_sec,
+        "preview_ultra_light_timeout_sec": preview_settings.ultra_light_timeout_sec,
         "viewer_model_timeout_sec": viewer_settings.timeout_sec,
     }
 

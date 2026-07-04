@@ -30,6 +30,7 @@ def _unavailable(message: str) -> dict[str, Any]:
     return {
         "image_png_base64": None,
         "available": False,
+        "mode": "failed",
         "views": [],
         "warnings": [f"Preview generation failed: {message}"],
     }
@@ -313,6 +314,38 @@ def _deduplicate_screen_lines(
     return unique
 
 
+def _convex_hull(
+    points: list[tuple[float, float]],
+) -> list[tuple[float, float]]:
+    unique_points = sorted(set(points))
+    if len(unique_points) <= 1:
+        return unique_points
+
+    def cross(
+        origin: tuple[float, float],
+        left: tuple[float, float],
+        right: tuple[float, float],
+    ) -> float:
+        return (
+            (left[0] - origin[0]) * (right[1] - origin[1])
+            - (left[1] - origin[1]) * (right[0] - origin[0])
+        )
+
+    lower: list[tuple[float, float]] = []
+    for point in unique_points:
+        while len(lower) >= 2 and cross(lower[-2], lower[-1], point) <= 0:
+            lower.pop()
+        lower.append(point)
+
+    upper: list[tuple[float, float]] = []
+    for point in reversed(unique_points):
+        while len(upper) >= 2 and cross(upper[-2], upper[-1], point) <= 0:
+            upper.pop()
+        upper.append(point)
+
+    return lower[:-1] + upper[:-1]
+
+
 def _visible_hlr_lines(
     shape: Any,
     direction: tuple[float, float, float],
@@ -444,41 +477,55 @@ def render_named_view(
         polygon = [_to_screen(point, transform) for point in projected_triangle]
         draw.polygon(polygon, fill=_shade(_normal(*triangle)))
 
-    curved_edge_step = max(diagonal / 3000.0, 0.015)
-    if PREVIEW_RENDER_MODE == "clean":
-        try:
-            projected_lines = _visible_hlr_lines(
-                shape,
-                VIEW_DIRECTIONS[view_name],
-                projected,
-                curved_edge_step,
+    if PREVIEW_RENDER_MODE == "ultra_light":
+        hull = _convex_hull([_to_screen(point, transform) for point in projected])
+        if len(hull) >= 3:
+            draw.line(
+                [*hull, hull[0]],
+                fill=(48, 55, 60),
+                width=2 * RENDER_SCALE,
+                joint="curve",
             )
-        except Exception:
+    else:
+        curved_edge_step = (
+            max(diagonal / 3000.0, 0.015)
+            if PREVIEW_RENDER_MODE == "clean"
+            else max(diagonal / 900.0, 0.08)
+        )
+        if PREVIEW_RENDER_MODE == "clean":
+            try:
+                projected_lines = _visible_hlr_lines(
+                    shape,
+                    VIEW_DIRECTIONS[view_name],
+                    projected,
+                    curved_edge_step,
+                )
+            except Exception:
+                projected_lines = _fallback_topology_lines(
+                    shape,
+                    basis,
+                    curved_edge_step,
+                )
+        else:
             projected_lines = _fallback_topology_lines(
                 shape,
                 basis,
                 curved_edge_step,
             )
-    else:
-        projected_lines = _fallback_topology_lines(
-            shape,
-            basis,
-            curved_edge_step,
-        )
 
-    screen_lines = _deduplicate_screen_lines(
-        [
-            [_to_screen(point, transform) for point in line]
-            for line in projected_lines
-        ]
-    )
-    for line in screen_lines:
-        draw.line(
-            line,
-            fill=(48, 55, 60),
-            width=2 * RENDER_SCALE,
-            joint="curve",
+        screen_lines = _deduplicate_screen_lines(
+            [
+                [_to_screen(point, transform) for point in line]
+                for line in projected_lines
+            ]
         )
+        for line in screen_lines:
+            draw.line(
+                line,
+                fill=(48, 55, 60),
+                width=2 * RENDER_SCALE,
+                joint="curve",
+            )
 
     resampling = getattr(Image, "Resampling", Image).LANCZOS
     image = image.resize(
@@ -541,12 +588,20 @@ def generate_step_previews(
         return {
             "image_png_base64": None,
             "available": False,
+            "mode": "failed",
             "views": [],
             "warnings": warnings or ["Preview generation failed: no views generated."],
         }
     return {
         "image_png_base64": primary,
         "available": True,
+        "mode": (
+            "ultra_light"
+            if PREVIEW_RENDER_MODE == "ultra_light"
+            else "light"
+            if PREVIEW_RENDER_MODE == "light"
+            else "full"
+        ),
         "views": views,
         "warnings": warnings,
     }

@@ -684,8 +684,15 @@
 
     function showPreviewView(view, button) {
       const previewImage = document.getElementById("part-preview");
+      const previewFallback = document.getElementById("preview-fallback");
       const currentLabel = document.getElementById("preview-current-label");
       const label = previewViewLabels[view.name] || view.name;
+      previewImage.onerror = () => {
+        previewImage.removeAttribute("src");
+        previewImage.hidden = true;
+        previewFallback.textContent = "Anteprima non disponibile: immagine non leggibile dal browser";
+        previewFallback.hidden = false;
+      };
       previewImage.src = `data:image/png;base64,${view.image_png_base64}`;
       previewImage.alt = `Anteprima ${label.toLowerCase()} del pezzo STEP`;
       currentLabel.textContent = label;
@@ -720,7 +727,10 @@
         return;
       }
 
-      previewStatus.textContent = "Anteprima disponibile";
+      const simplifiedPreview = preview.mode === "light" || preview.mode === "ultra_light";
+      previewStatus.textContent = simplifiedPreview
+        ? "Anteprima disponibile. Anteprima leggera generata per pezzo complesso"
+        : "Anteprima disponibile";
       previewImage.hidden = false;
       previewFallback.hidden = true;
       currentLabel.hidden = false;
@@ -734,6 +744,10 @@
         button.className = "preview-thumb";
         button.setAttribute("aria-label", `Mostra vista ${label}`);
         button.setAttribute("aria-pressed", "false");
+        image.addEventListener("error", () => {
+          image.removeAttribute("src");
+          image.hidden = true;
+        });
         image.src = `data:image/png;base64,${view.image_png_base64}`;
         image.alt = "";
         caption.textContent = label;

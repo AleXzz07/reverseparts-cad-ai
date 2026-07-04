@@ -241,6 +241,14 @@ def _preview_section(preview: dict[str, Any] | None) -> list[Any]:
         textColor=colors.HexColor("#63707C"),
     )
     elements: list[Any] = [Paragraph("Anteprima pezzo", heading_style)]
+    preview_mode = (preview or {}).get("mode")
+    if preview_mode in {"light", "ultra_light"}:
+        elements.append(
+            Paragraph(
+                "Anteprima semplificata per pezzo complesso",
+                fallback_style,
+            )
+        )
     label_style = ParagraphStyle(
         "PreviewLabel",
         parent=styles["Normal"],

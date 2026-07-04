@@ -222,21 +222,33 @@ The initial pricing configuration is loaded independently from the FreeCAD healt
 
 La web app include tooltip e legenda per spiegare i parametri modificabili del preventivo.
 
-Il backend genera preview PNG ad alta risoluzione del pezzo STEP tramite la tessellazione FreeCAD e un renderer software headless. Le viste disponibili includono isometrica, frontale, destra e alto, con asse Z orientato verso l'alto. La web app mostra una gallery con miniature cliccabili e il PDF include una griglia delle viste quando disponibili. Se una vista o il rendering non sono disponibili, vengono restituiti warning senza bloccare analisi CAD, preventivo o PDF.
+Il backend genera preview PNG del pezzo STEP tramite la tessellazione FreeCAD e un renderer software headless. Le viste disponibili includono isometrica, frontale, destra e alto, con asse Z orientato verso l'alto. La web app mostra una gallery con miniature cliccabili e il PDF include una griglia delle viste quando disponibili. Se una vista o il rendering non sono disponibili, vengono restituiti warning senza bloccare analisi CAD, preventivo o PDF.
 
 La modalità preview `clean`, attiva di default e configurabile con `PREVIEW_RENDER_MODE=clean`, usa la hidden-line removal di FreeCAD per mostrare solo i contorni tecnici visibili. Seam, raccordi tangenti, micro-edge e linee proiettate duplicate vengono filtrati, rendendo più leggibili anche aperture formate, collarini e imbutiture nei componenti complessi.
 
-La generazione preview viene eseguita in un subprocess isolato: un crash del renderer o di FreeCAD non interrompe il processo FastAPI. Analisi CAD, preventivo e PDF restano disponibili anche quando la preview viene saltata o supera il timeout. Le impostazioni disponibili sono:
+La generazione preview viene eseguita in un subprocess isolato: un crash del renderer o di FreeCAD non interrompe il processo FastAPI. Analisi CAD, preventivo e PDF restano disponibili anche quando la preview viene saltata o supera il timeout.
+
+La preview usa fallback progressivi:
+
+- `full`: fino a 4 viste, risoluzione alta e qualità completa.
+- `light`: solo isometrica, 1000x750, meno edge secondari.
+- `ultra_light`: solo isometrica, rendering semplificato con outline, pensato per evitare timeout su pezzi complessi.
+
+I pezzi con `complexity_score=high` non partono dalla preview completa: usano direttamente la modalità leggera e, se serve, l'ultra-light. Il JSON `preview` include sempre `mode` con `full`, `light`, `ultra_light` oppure `failed`, più warning leggibili come `Full preview timed out, light preview used` o `Preview generation failed after all fallback modes`.
+
+Le impostazioni disponibili sono:
 
 ```text
 PREVIEW_ENABLED=true
-PREVIEW_TIMEOUT_SEC=15
+PREVIEW_TIMEOUT_SEC=12
+PREVIEW_LIGHT_TIMEOUT_SEC=8
+PREVIEW_ULTRA_LIGHT_TIMEOUT_SEC=5
 PREVIEW_MAX_FILE_SIZE_MB=20
 PREVIEW_MAX_RENDER_VIEWS=4
 PREVIEW_MAX_RENDER_VIEWS_HIGH_COMPLEXITY=1
 ```
 
-La preview immagini è automatica e isolata dal processo FastAPI. I pezzi semplici possono generare fino a quattro viste; i pezzi `high` tentano sempre almeno una vista isometrica leggera a 1000x750, con un solo render e timeout ridotto. Se il worker fallisce, la risposta conserva analysis e quote e riporta il motivo preciso in `preview.warnings`. Su Render è consigliato mantenere `PREVIEW_ENABLED=true`.
+La preview immagini è automatica e isolata dal processo FastAPI. I pezzi semplici possono generare fino a quattro viste; i pezzi `high` tentano sempre almeno una vista isometrica leggera a 1000x750, con un solo render e timeout ridotto. Se anche i fallback falliscono, la risposta conserva analysis e quote e riporta il motivo preciso in `preview.warnings`. Su Render è consigliato mantenere `PREVIEW_ENABLED=true`.
 
 La web app include anche una vista 3D interattiva basata su Three.js. Gli asset Three.js sono inclusi nel repository e serviti dalla stessa origine, senza dipendere da CDN esterne. Dopo analisi e preventivo, il pulsante `Carica vista 3D interattiva` invia il file al solo endpoint `POST /viewer-model`; `/analyze-and-quote` non genera e non trasporta più il GLB. Il browser permette rotazione, zoom, pan, adattamento alla vista e viste isometrica, frontale, laterale e dall'alto. Il PDF rimane statico e continua a usare le immagini PNG.
 
@@ -250,12 +262,17 @@ VIEWER_MODEL_MAX_FILE_SIZE_MB=10
 
 `VIEWER_MODEL_ENABLED` è `false` per default. Su Render abilitarlo esplicitamente solo se l'istanza ha risorse sufficienti. Se disabilitato o se l'export fallisce, preview statiche, analisi CAD, quote, `/health` e PDF continuano a funzionare. I componenti con `complexity_score=high` mostrano un avviso e il GLB non viene mai creato automaticamente.
 
-`GET /config/defaults` espone anche `preview_enabled`, `viewer_model_enabled`, `preview_max_render_views`, `preview_max_render_views_high_complexity` e `viewer_model_timeout_sec`. La web app usa questi valori per mostrare il pulsante 3D solo quando il server consente l'export e per distinguere chiaramente una funzione disabilitata da un errore di generazione.
+`GET /config/defaults` espone anche `preview_enabled`, `viewer_model_enabled`, `preview_max_render_views`, `preview_max_render_views_high_complexity`, `preview_timeout_sec`, `preview_light_timeout_sec`, `preview_ultra_light_timeout_sec` e `viewer_model_timeout_sec`. La web app usa questi valori per mostrare il pulsante 3D solo quando il server consente l'export e per distinguere chiaramente una funzione disabilitata da un errore di generazione.
 
 Configurazione Render consigliata con sole preview statiche:
 
 ```text
 PREVIEW_ENABLED=true
+PREVIEW_TIMEOUT_SEC=12
+PREVIEW_LIGHT_TIMEOUT_SEC=8
+PREVIEW_ULTRA_LIGHT_TIMEOUT_SEC=5
+PREVIEW_MAX_RENDER_VIEWS=4
+PREVIEW_MAX_RENDER_VIEWS_HIGH_COMPLEXITY=1
 VIEWER_MODEL_ENABLED=false
 ```
 

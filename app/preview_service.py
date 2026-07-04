@@ -15,6 +15,7 @@ def unavailable_preview(reason: str) -> dict[str, Any]:
     return {
         "image_png_base64": None,
         "available": False,
+        "mode": "failed",
         "views": [],
         "warnings": [f"Preview generation skipped or failed: {reason}"],
     }
@@ -45,6 +46,8 @@ def _env_int(name: str, default: int) -> int:
 class PreviewSettings:
     enabled: bool
     timeout_sec: float
+    light_timeout_sec: float
+    ultra_light_timeout_sec: float
     max_file_size_mb: float
     max_render_views: int
     max_render_views_high_complexity: int
@@ -54,7 +57,15 @@ class PreviewSettings:
     def from_env(cls) -> "PreviewSettings":
         return cls(
             enabled=_env_bool("PREVIEW_ENABLED", True),
-            timeout_sec=max(1.0, _env_float("PREVIEW_TIMEOUT_SEC", 15.0)),
+            timeout_sec=max(1.0, _env_float("PREVIEW_TIMEOUT_SEC", 12.0)),
+            light_timeout_sec=max(
+                1.0,
+                _env_float("PREVIEW_LIGHT_TIMEOUT_SEC", 8.0),
+            ),
+            ultra_light_timeout_sec=max(
+                1.0,
+                _env_float("PREVIEW_ULTRA_LIGHT_TIMEOUT_SEC", 5.0),
+            ),
             max_file_size_mb=max(
                 0.1,
                 _env_float("PREVIEW_MAX_FILE_SIZE_MB", 20.0),
@@ -100,7 +111,7 @@ def _run_worker(
     step_path: Path,
     *,
     max_views: int,
-    lightweight: bool,
+    mode: str,
     timeout_sec: float,
     max_output_mb: float,
 ) -> dict[str, Any]:
@@ -111,12 +122,31 @@ def _run_worker(
     output_path = Path(output_file.name)
     output_file.close()
     environment = os.environ.copy()
-    if lightweight:
+    if mode == "full":
+        environment.update(
+            {
+                "PREVIEW_WIDTH_PX": "1600",
+                "PREVIEW_HEIGHT_PX": "1200",
+                "PREVIEW_RENDER_SCALE": "2",
+                "PREVIEW_RENDER_MODE": "clean",
+            }
+        )
+    elif mode == "light":
         environment.update(
             {
                 "PREVIEW_WIDTH_PX": "1000",
                 "PREVIEW_HEIGHT_PX": "750",
                 "PREVIEW_RENDER_SCALE": "1",
+                "PREVIEW_RENDER_MODE": "light",
+            }
+        )
+    else:
+        environment.update(
+            {
+                "PREVIEW_WIDTH_PX": "800",
+                "PREVIEW_HEIGHT_PX": "600",
+                "PREVIEW_RENDER_SCALE": "1",
+                "PREVIEW_RENDER_MODE": "ultra_light",
             }
         )
 
@@ -188,21 +218,61 @@ def generate_safe_step_preview(
         )
 
     normalized_complexity = str(complexity_score).strip().lower()
-    lightweight = normalized_complexity == "high"
-    max_views = (
-        active_settings.max_render_views_high_complexity
-        if lightweight
-        else active_settings.max_render_views
-    )
-    timeout_sec = (
-        min(active_settings.timeout_sec, 12.0)
-        if lightweight
-        else active_settings.timeout_sec
-    )
-    return _run_worker(
-        source,
-        max_views=max_views,
-        lightweight=lightweight,
-        timeout_sec=timeout_sec,
-        max_output_mb=active_settings.max_output_mb,
-    )
+    if normalized_complexity == "high":
+        attempts = [
+            (
+                "light",
+                active_settings.max_render_views_high_complexity,
+                active_settings.light_timeout_sec,
+            ),
+            ("ultra_light", 1, active_settings.ultra_light_timeout_sec),
+        ]
+        leading_warnings = [
+            "High complexity part: using light preview mode",
+        ]
+    else:
+        attempts = [
+            (
+                "full",
+                active_settings.max_render_views,
+                active_settings.timeout_sec,
+            ),
+            ("light", 1, active_settings.light_timeout_sec),
+            ("ultra_light", 1, active_settings.ultra_light_timeout_sec),
+        ]
+        leading_warnings = []
+
+    failed_warnings: list[str] = []
+    for mode, max_views, timeout_sec in attempts:
+        result = _run_worker(
+            source,
+            max_views=max_views,
+            mode=mode,
+            timeout_sec=timeout_sec,
+            max_output_mb=active_settings.max_output_mb,
+        )
+        result["mode"] = mode if result.get("available") else "failed"
+        if result.get("available"):
+            warnings = [
+                *leading_warnings,
+                *failed_warnings,
+                *(result.get("warnings") or []),
+            ]
+            if failed_warnings and mode == "light":
+                warnings.append("Full preview timed out or failed, light preview used")
+            if failed_warnings and mode == "ultra_light":
+                warnings.append(
+                    "Full/light preview timed out or failed, ultra-light preview used"
+                )
+            result["warnings"] = warnings
+            return result
+        failed_warnings.extend(result.get("warnings") or [])
+
+    failed = unavailable_preview("Preview generation failed after all fallback modes.")
+    failed["mode"] = "failed"
+    failed["warnings"] = [
+        *leading_warnings,
+        *failed_warnings,
+        "Preview generation failed after all fallback modes",
+    ]
+    return failed

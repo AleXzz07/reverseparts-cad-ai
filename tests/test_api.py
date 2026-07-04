@@ -95,6 +95,8 @@ def test_frontend_returns_html():
     assert "Carica vista 3D interattiva" in response.text
     assert "Vista 3D disabilitata sul server" in response.text
     assert "Anteprima non disponibile:" in response.text
+    assert "Anteprima leggera generata per pezzo complesso" in response.text
+    assert "immagine non leggibile dal browser" in response.text
     assert 'fetchApi("/viewer-model"' in response.text
     assert '<script src="/vendor/three.min.js"></script>' in response.text
     assert "dataset.threeReady" in response.text
@@ -146,6 +148,9 @@ def test_app_config_defaults_to_relative_requests(monkeypatch):
 
 def test_config_defaults_exposes_preview_and_viewer_runtime(monkeypatch):
     monkeypatch.setenv("PREVIEW_ENABLED", "true")
+    monkeypatch.setenv("PREVIEW_TIMEOUT_SEC", "12")
+    monkeypatch.setenv("PREVIEW_LIGHT_TIMEOUT_SEC", "8")
+    monkeypatch.setenv("PREVIEW_ULTRA_LIGHT_TIMEOUT_SEC", "5")
     monkeypatch.setenv("PREVIEW_MAX_RENDER_VIEWS", "3")
     monkeypatch.setenv("PREVIEW_MAX_RENDER_VIEWS_HIGH_COMPLEXITY", "1")
     monkeypatch.setenv("VIEWER_MODEL_ENABLED", "false")
@@ -159,6 +164,9 @@ def test_config_defaults_exposes_preview_and_viewer_runtime(monkeypatch):
     assert payload["viewer_model_enabled"] is False
     assert payload["preview_max_render_views"] == 3
     assert payload["preview_max_render_views_high_complexity"] == 1
+    assert payload["preview_timeout_sec"] == 12.0
+    assert payload["preview_light_timeout_sec"] == 8.0
+    assert payload["preview_ultra_light_timeout_sec"] == 5.0
     assert payload["viewer_model_timeout_sec"] == 20.0
 
 
@@ -382,6 +390,7 @@ def test_quote_pdf_endpoint_accepts_preview_png():
             "preview": {
                 "image_png_base64": preview_png,
                 "available": True,
+                "mode": "light",
                 "views": [
                     {
                         "name": name,
@@ -464,6 +473,7 @@ def test_analyze_and_quote_staffa_test_1_real_step_file():
     assert "preview" in payload
     assert isinstance(payload["preview"]["available"], bool)
     assert "image_png_base64" in payload["preview"]
+    assert payload["preview"]["mode"] in {"full", "light", "ultra_light", "failed"}
     assert isinstance(payload["preview"]["views"], list)
     assert isinstance(payload["preview"]["warnings"], list)
     assert "viewer_model" in payload
@@ -616,6 +626,7 @@ def test_analyze_and_quote_does_not_call_viewer_worker(monkeypatch):
         lambda *args, **kwargs: {
             "available": False,
             "image_png_base64": None,
+            "mode": "failed",
             "views": [],
             "warnings": [],
         },
