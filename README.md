@@ -250,9 +250,9 @@ PREVIEW_MAX_RENDER_VIEWS_HIGH_COMPLEXITY=1
 
 La preview immagini è automatica e isolata dal processo FastAPI. I pezzi semplici possono generare fino a quattro viste; i pezzi `high` tentano sempre almeno una vista isometrica leggera a 1000x750, con un solo render e timeout ridotto. Se anche i fallback falliscono, la risposta conserva analysis e quote e riporta il motivo preciso in `preview.warnings`. Su Render è consigliato mantenere `PREVIEW_ENABLED=true`.
 
-La web app include anche una vista 3D interattiva basata su Three.js. Gli asset Three.js sono inclusi nel repository e serviti dalla stessa origine, senza dipendere da CDN esterne. Dopo analisi e preventivo, il pulsante `Carica vista 3D interattiva` invia il file al solo endpoint `POST /viewer-model`; `/analyze-and-quote` non genera e non trasporta più il GLB. Il browser permette rotazione, zoom, pan, adattamento alla vista e viste isometrica, frontale, laterale e dall'alto. Il PDF rimane statico e continua a usare le immagini PNG.
+Le viste statiche sono il metodo principale di visualizzazione nella web app e nel PDF. La vista 3D interattiva/GLB è considerata sperimentale, non fa parte del flusso principale e non viene mostrata dalla web app. `/analyze-and-quote` non genera e non trasporta modelli GLB: il flusso resta centrato su analisi STEP, preventivo interno, preview statiche e PDF.
 
-Anche l'export STEP-to-GLB è isolato in un subprocess e può fallire senza interrompere analisi o preventivo. Per pezzi complessi viene applicato un limite triangoli più prudente. Le impostazioni principali sono:
+L'endpoint sperimentale `POST /viewer-model` può restare disponibile per prove tecniche future, ma è disattivato per default e non è usato dal frontend. Anche l'export STEP-to-GLB è isolato in un subprocess e può fallire senza interrompere analisi o preventivo. Le impostazioni principali sono:
 
 ```text
 VIEWER_MODEL_ENABLED=false
@@ -260,9 +260,9 @@ VIEWER_MODEL_TIMEOUT_SEC=20
 VIEWER_MODEL_MAX_FILE_SIZE_MB=10
 ```
 
-`VIEWER_MODEL_ENABLED` è `false` per default. Su Render abilitarlo esplicitamente solo se l'istanza ha risorse sufficienti. Se disabilitato o se l'export fallisce, preview statiche, analisi CAD, quote, `/health` e PDF continuano a funzionare. I componenti con `complexity_score=high` mostrano un avviso e il GLB non viene mai creato automaticamente.
+`VIEWER_MODEL_ENABLED` è `false` per default. Su Render è consigliato lasciarlo disattivato. Se l'endpoint sperimentale viene abilitato e l'export fallisce, preview statiche, analisi CAD, quote, `/health` e PDF continuano a funzionare. I componenti con `complexity_score=high` non generano mai GLB automaticamente.
 
-`GET /config/defaults` espone anche `preview_enabled`, `viewer_model_enabled`, `preview_max_render_views`, `preview_max_render_views_high_complexity`, `preview_timeout_sec`, `preview_light_timeout_sec`, `preview_ultra_light_timeout_sec` e `viewer_model_timeout_sec`. La web app usa questi valori per mostrare il pulsante 3D solo quando il server consente l'export e per distinguere chiaramente una funzione disabilitata da un errore di generazione.
+`GET /config/defaults` espone anche `preview_enabled`, `viewer_model_enabled`, `preview_max_render_views`, `preview_max_render_views_high_complexity`, `preview_timeout_sec`, `preview_light_timeout_sec`, `preview_ultra_light_timeout_sec` e `viewer_model_timeout_sec`. La web app usa i valori preview per gestire le viste statiche e ignora il viewer 3D nel flusso principale.
 
 Configurazione Render consigliata con sole preview statiche:
 
@@ -276,7 +276,7 @@ PREVIEW_MAX_RENDER_VIEWS_HIGH_COMPLEXITY=1
 VIEWER_MODEL_ENABLED=false
 ```
 
-Per abilitare anche il caricamento GLB su richiesta:
+Configurazione sperimentale per test tecnici dell'endpoint GLB, fuori dal flusso principale:
 
 ```text
 PREVIEW_ENABLED=true

@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 import app.main as api
+import app.pdf_report as pdf_report
 from app.main import app
 from app.pdf_report import _part_rows, _verification_rows
 from app.schemas import CadAnalysisResponse
@@ -87,20 +88,20 @@ def test_frontend_returns_html():
     assert 'class="info-tip"' in response.text
     assert "Densit&agrave; del materiale." in response.text
     assert "Anteprima pezzo" in response.text
-    assert "Vista 3D interattiva" in response.text
-    assert 'id="viewer-frame"' in response.text
-    assert 'data-viewer-action="fit"' in response.text
-    assert 'data-viewer-view="isometric"' in response.text
-    assert 'id="load-viewer-button"' in response.text
-    assert "Carica vista 3D interattiva" in response.text
-    assert "Vista 3D disabilitata sul server" in response.text
-    assert "Anteprima non disponibile:" in response.text
+    assert "Vista 3D interattiva" not in response.text
+    assert 'id="viewer-frame"' not in response.text
+    assert 'data-viewer-action="fit"' not in response.text
+    assert 'data-viewer-view="isometric"' not in response.text
+    assert 'id="load-viewer-button"' not in response.text
+    assert "Carica vista 3D interattiva" not in response.text
+    assert "Vista 3D disabilitata sul server" not in response.text
+    assert "Anteprima statica non disponibile per complessit&agrave; elevata." in response.text
     assert "Anteprima leggera generata per pezzo complesso" in response.text
     assert "immagine non leggibile dal browser" in response.text
-    assert 'fetchApi("/viewer-model"' in response.text
-    assert '<script src="/vendor/three.min.js"></script>' in response.text
-    assert "dataset.threeReady" in response.text
-    assert "THREE.OrbitControls" in response.text
+    assert 'fetchApi("/viewer-model"' not in response.text
+    assert '<script src="/vendor/three.min.js"></script>' not in response.text
+    assert "dataset.threeReady" not in response.text
+    assert "THREE.OrbitControls" not in response.text
     assert 'id="part-preview"' in response.text
     assert 'id="preview-thumbnails"' in response.text
     assert "Isometrica" in response.text
@@ -413,6 +414,34 @@ def test_quote_pdf_endpoint_accepts_preview_png():
     assert response.headers["content-type"] == "application/pdf"
     assert response.content.startswith(b"%PDF")
     assert len(response.content) > 1000
+
+
+def test_quote_pdf_ignores_legacy_viewer_model_section(monkeypatch):
+    analysis = json.loads(STAFFA_ACTUAL_FILE.read_text(encoding="utf-8"))
+    quote = json.loads(STAFFA_QUOTE_FILE.read_text(encoding="utf-8"))
+    section_titles = []
+    original_section = pdf_report._section
+
+    def recording_section(title, rows):
+        section_titles.append(title)
+        return original_section(title, rows)
+
+    monkeypatch.setattr(pdf_report, "_section", recording_section)
+
+    pdf = pdf_report.generate_quote_pdf(
+        analysis,
+        quote,
+        preview=None,
+        viewer_model={
+            "available": True,
+            "format": "glb",
+            "model_base64": "Z2xURg==",
+            "warnings": [],
+        },
+    )
+
+    assert pdf.startswith(b"%PDF")
+    assert "Modello 3D" not in section_titles
 
 
 def test_analyze_cad_staffa_test_1_real_step_file():
