@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import signal
 import subprocess
@@ -9,6 +10,10 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+
+logger = logging.getLogger(__name__)
+STANDARD_VIEW_ORDER = ("isometric", "top", "front", "right")
 
 
 def unavailable_preview(reason: str) -> dict[str, Any]:
@@ -128,7 +133,10 @@ def _run_worker(
                 "PREVIEW_WIDTH_PX": "1600",
                 "PREVIEW_HEIGHT_PX": "1200",
                 "PREVIEW_RENDER_SCALE": "2",
-                "PREVIEW_RENDER_MODE": "clean",
+                "PREVIEW_RENDER_MODE": os.getenv(
+                    "PREVIEW_FULL_RENDER_MODE",
+                    "light",
+                ),
             }
         )
     elif mode == "light":
@@ -159,6 +167,13 @@ def _run_worker(
         "--max-views",
         str(max_views),
     ]
+    logger.info(
+        "Preview worker start: mode=%s requested_views=%s timeout_sec=%s file=%s",
+        mode,
+        list(STANDARD_VIEW_ORDER[:max_views]),
+        timeout_sec,
+        step_path.name,
+    )
     popen_kwargs: dict[str, Any] = {
         "stdout": subprocess.PIPE,
         "stderr": subprocess.PIPE,
@@ -190,6 +205,23 @@ def _run_worker(
         payload = json.loads(output_path.read_text(encoding="utf-8"))
         if not isinstance(payload, dict):
             return unavailable_preview("renderer returned an invalid payload.")
+        generated_views = [
+            view.get("name")
+            for view in payload.get("views", [])
+            if isinstance(view, dict)
+        ]
+        failed_views = [
+            warning
+            for warning in payload.get("warnings", [])
+            if isinstance(warning, str)
+            and warning.startswith("Preview view ")
+        ]
+        logger.info(
+            "Preview worker finished: mode=%s generated_views=%s failed_views=%s",
+            mode,
+            generated_views,
+            failed_views,
+        )
         return payload
     except (OSError, json.JSONDecodeError, subprocess.SubprocessError) as exc:
         return unavailable_preview(str(exc))
@@ -241,6 +273,15 @@ def generate_safe_step_preview(
             ("ultra_light", 1, active_settings.ultra_light_timeout_sec),
         ]
         leading_warnings = []
+
+    logger.info(
+        "Preview selection: complexity_score=%s attempts=%s",
+        normalized_complexity or "unknown",
+        [
+            {"mode": mode, "max_views": max_views, "timeout_sec": timeout_sec}
+            for mode, max_views, timeout_sec in attempts
+        ],
+    )
 
     failed_warnings: list[str] = []
     for mode, max_views, timeout_sec in attempts:

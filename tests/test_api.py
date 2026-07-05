@@ -21,6 +21,7 @@ STAFFA_TEST_FILE = PROJECT_ROOT / "tests" / "test_files" / "STAFFA TEST 1.stp"
 STAFFA_EXPECTED_FILE = PROJECT_ROOT / "tests" / "ground_truth" / "staffa_test_1_expected.json"
 STAFFA_ACTUAL_FILE = PROJECT_ROOT / "tests" / "output" / "staffa_test_1_actual.json"
 STAFFA_QUOTE_FILE = PROJECT_ROOT / "tests" / "output" / "staffa_test_1_quote.json"
+LAMIERA_TEST_FILE = PROJECT_ROOT / "tests" / "dataset" / "lamiera_piana_test_1" / "input.stp"
 
 
 def _skip_without_freecad_for_real_fixture() -> None:
@@ -425,6 +426,40 @@ def test_quote_pdf_endpoint_accepts_preview_png():
     assert len(response.content) > 1000
 
 
+def test_quote_pdf_preview_section_uses_all_static_view_labels():
+    image_buffer = BytesIO()
+    Image.new("RGB", (4, 3), (220, 224, 228)).save(image_buffer, format="PNG")
+    preview_png = base64.b64encode(image_buffer.getvalue()).decode("ascii")
+
+    elements = pdf_report._preview_section(
+        {
+            "image_png_base64": preview_png,
+            "available": True,
+            "mode": "full",
+            "views": [
+                {
+                    "name": name,
+                    "label": label,
+                    "image_png_base64": preview_png,
+                }
+                for name, label in (
+                    ("isometric", "Isometrica"),
+                    ("top", "Alto"),
+                    ("front", "Frontale"),
+                    ("right", "Destra"),
+                )
+            ],
+            "warnings": [],
+        }
+    )
+
+    rendered = "\n".join(str(element) for element in elements)
+    assert "Isometrica" in rendered
+    assert "Alto" in rendered
+    assert "Frontale" in rendered
+    assert "Destra" in rendered
+
+
 def test_quote_pdf_ignores_legacy_viewer_model_section(monkeypatch):
     analysis = json.loads(STAFFA_ACTUAL_FILE.read_text(encoding="utf-8"))
     quote = json.loads(STAFFA_QUOTE_FILE.read_text(encoding="utf-8"))
@@ -535,6 +570,33 @@ def test_analyze_and_quote_staffa_test_1_real_step_file():
         assert labels_by_name["right"] == "Destra"
         preview_bytes = base64.b64decode(payload["preview"]["image_png_base64"])
         assert preview_bytes.startswith(b"\x89PNG\r\n\x1a\n")
+
+
+def test_analyze_and_quote_lamiera_piana_generates_four_full_static_views():
+    _skip_without_freecad_for_real_fixture()
+
+    with LAMIERA_TEST_FILE.open("rb") as step_file:
+        response = client.post(
+            "/analyze-and-quote",
+            data={
+                "material": "alluminio",
+                "declared_thickness_mm": "2.0",
+                "quantity": "1",
+            },
+            files={"file": ("lamiera_piana_test_1.stp", step_file, "application/step")},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["analysis"]["complexity_score"] == "low"
+    assert payload["preview"]["available"] is True
+    assert payload["preview"]["mode"] == "full"
+    assert len(payload["preview"]["views"]) >= 4
+    names = [view["name"] for view in payload["preview"]["views"]]
+    assert names[:4] == ["isometric", "top", "front", "right"]
+    labels = [view["label"] for view in payload["preview"]["views"][:4]]
+    assert labels == ["Isometrica", "Alto", "Frontale", "Destra"]
+    assert payload["preview"]["warnings"] == []
 
 
 def test_analyze_and_quote_rejects_unknown_material_before_analysis():

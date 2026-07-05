@@ -605,7 +605,7 @@
       });
     }
 
-    function renderPreviewGallery(preview) {
+    function renderPreviewGallery(preview, complexityScore = "unknown") {
       const previewImage = document.getElementById("part-preview");
       const previewFallback = document.getElementById("preview-fallback");
       const previewStatus = document.getElementById("preview-status");
@@ -632,9 +632,10 @@
 
       const simplifiedPreview = preview.mode === "light" || preview.mode === "ultra_light";
       const partialPreview = views.length < 4;
+      const highComplexity = String(complexityScore || "").toLowerCase() === "high";
       previewStatus.textContent = partialPreview
         ? "Anteprima disponibile con alcune viste statiche. Alcune viste non sono state generate."
-        : simplifiedPreview
+        : simplifiedPreview && highComplexity
           ? "Anteprima disponibile. Anteprima leggera generata per pezzo complesso"
           : "Anteprima disponibile";
       previewImage.hidden = false;
@@ -682,7 +683,7 @@
       const unknownHoles = features.unknown_holes ?? holes.unknown_holes ?? holes.unknown?.length ?? 0;
       const totalHoles = features.total_holes ?? holes.total_holes
         ?? (circularHoles + elongatedHoles + polygonalHoles + formedHoles + unknownHoles);
-      renderPreviewGallery(preview);
+      renderPreviewGallery(preview, analysis.complexity_score);
 
       document.getElementById("part-name").textContent = quote.part_name || analysis.part_name || "-";
       document.getElementById("complexity").innerHTML = `<span class="badge">${escapeHtml(analysis.complexity_score)}</span>`;
