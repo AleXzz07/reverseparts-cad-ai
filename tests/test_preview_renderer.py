@@ -1,4 +1,5 @@
 import inspect
+import time
 from pathlib import Path
 
 import pytest
@@ -130,6 +131,37 @@ def test_generate_step_previews_returns_four_views_when_all_succeed(
         "Frontale",
         "Destra",
     ]
+
+
+def test_generate_step_previews_returns_generated_views_after_total_timeout(
+    tmp_path,
+    monkeypatch,
+):
+    step_path = tmp_path / "part.step"
+    step_path.write_text("STEP", encoding="ascii")
+    rendered = []
+
+    monkeypatch.setattr(
+        preview_renderer,
+        "_load_geometry",
+        lambda source: (object(), [], [], 1.0),
+    )
+    monkeypatch.setattr(preview_renderer, "PREVIEW_TOTAL_TIMEOUT_SEC", 0.01)
+
+    def fake_render(shape, points, facets, diagonal, view_name):
+        rendered.append(view_name)
+        time.sleep(0.02)
+        return f"encoded-{view_name}"
+
+    monkeypatch.setattr(preview_renderer, "render_named_view", fake_render)
+
+    result = preview_renderer.generate_step_previews(str(step_path))
+
+    assert result["available"] is True
+    assert result["partial"] is True
+    assert rendered == ["isometric"]
+    assert [view["name"] for view in result["views"]] == ["isometric"]
+    assert "Preview total timeout reached; returning generated views." in result["warnings"]
 
 
 def test_ultra_light_render_does_not_draw_convex_hull_outline():

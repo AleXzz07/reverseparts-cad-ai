@@ -21,6 +21,8 @@ def _settings(**overrides) -> preview_service.PreviewSettings:
         "light_timeout_sec": 8.0,
         "ultra_light_timeout_sec": 5.0,
         "high_complexity_timeout_sec": 30.0,
+        "high_complexity_total_timeout_sec": 45.0,
+        "high_complexity_per_view_timeout_sec": 30.0,
         "total_timeout_sec": 30.0,
         "per_view_timeout_sec": 8.0,
         "max_file_size_mb": 20.0,
@@ -85,7 +87,8 @@ def test_safe_preview_attempts_complex_parts_in_ultra_light_mode(
     ]
     assert [attempt["mode"] for attempt in captured] == ["ultra_light"]
     assert captured[0]["view_names"] == ["isometric", "top", "front", "right"]
-    assert captured[0]["timeout_sec"] == 30.0
+    assert captured[0]["timeout_sec"] == 45.0
+    assert captured[0]["per_view_timeout_sec"] == 30.0
 
 
 def test_high_complexity_uses_one_ultra_light_view(tmp_path, monkeypatch):
@@ -115,6 +118,36 @@ def test_high_complexity_uses_one_ultra_light_view(tmp_path, monkeypatch):
     assert [view["name"] for view in result["views"]] == ["isometric"]
     assert [attempt["mode"] for attempt in captured] == ["ultra_light"]
     assert captured[0]["view_names"] == ["isometric"]
+
+
+def test_high_complexity_accepts_partial_ultra_light_views(tmp_path, monkeypatch):
+    step_path = tmp_path / "part.step"
+    step_path.write_text("STEP", encoding="ascii")
+
+    def fake_worker(source: Path, **kwargs):
+        return {
+            "image_png_base64": "image",
+            "available": True,
+            "mode": "ultra_light",
+            "views": [
+                {"name": "isometric", "image_png_base64": "image-isometric"},
+                {"name": "top", "image_png_base64": "image-top"},
+            ],
+            "warnings": ["Preview total timeout reached; returning generated views."],
+        }
+
+    monkeypatch.setattr(preview_service, "_run_worker", fake_worker)
+    result = preview_service.generate_safe_step_preview(
+        str(step_path),
+        complexity_score="high",
+        settings=_settings(),
+    )
+
+    assert result["available"] is True
+    assert result["mode"] == "ultra_light"
+    assert result["partial"] is True
+    assert [view["name"] for view in result["views"]] == ["isometric", "top"]
+    assert "Preview total timeout reached; returning generated views." in result["warnings"]
 
 
 def test_high_complexity_failure_returns_controlled_fallback(tmp_path, monkeypatch):

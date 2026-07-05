@@ -68,6 +68,8 @@ class PreviewSettings:
     light_timeout_sec: float
     ultra_light_timeout_sec: float
     high_complexity_timeout_sec: float
+    high_complexity_total_timeout_sec: float
+    high_complexity_per_view_timeout_sec: float
     total_timeout_sec: float
     per_view_timeout_sec: float
     max_file_size_mb: float
@@ -92,6 +94,14 @@ class PreviewSettings:
             high_complexity_timeout_sec=max(
                 1.0,
                 _env_float("PREVIEW_HIGH_COMPLEXITY_TIMEOUT_SEC", 30.0),
+            ),
+            high_complexity_total_timeout_sec=max(
+                1.0,
+                _env_float("PREVIEW_HIGH_COMPLEXITY_TOTAL_TIMEOUT_SEC", 45.0),
+            ),
+            high_complexity_per_view_timeout_sec=max(
+                1.0,
+                _env_float("PREVIEW_HIGH_COMPLEXITY_PER_VIEW_TIMEOUT_SEC", 30.0),
             ),
             total_timeout_sec=max(
                 1.0,
@@ -368,8 +378,10 @@ def generate_safe_step_preview(
             source,
             view_names=list(selected_views),
             mode=mode,
-            timeout_sec=active_settings.total_timeout_sec,
-            per_view_timeout_sec=active_settings.per_view_timeout_sec,
+            timeout_sec=active_settings.high_complexity_total_timeout_sec,
+            per_view_timeout_sec=(
+                active_settings.high_complexity_per_view_timeout_sec
+            ),
             max_output_mb=active_settings.max_output_mb,
         )
         result["mode"] = mode if result.get("available") else "failed"

@@ -662,8 +662,11 @@
 
       thumbnails.replaceChildren();
       if (!preview.available || !views.length) {
+        const isHighComplexity = String(complexityScore || "").toLowerCase() === "high";
         const reason = preview.mode === "not_generated"
           ? "Le anteprime non sono state generate automaticamente."
+          : isHighComplexity
+            ? "Anteprima statica non disponibile per complessit&agrave; elevata."
           : "Anteprima statica non disponibile per questo pezzo.";
         previewImage.removeAttribute("src");
         previewImage.hidden = true;
@@ -678,11 +681,18 @@
       }
 
       const partialPreview = preview.partial === true || views.length < 4;
-      previewStatus.textContent = views.length === 1
-        ? "Anteprima disponibile con una sola vista statica."
-        : partialPreview
-          ? "Anteprima disponibile con alcune viste statiche. Alcune viste non sono state generate."
-          : "Anteprima disponibile con viste statiche complete.";
+      const isHighComplexity = String(complexityScore || "").toLowerCase() === "high";
+      if (isHighComplexity && preview.mode === "ultra_light") {
+        previewStatus.textContent = views.length === 1
+          ? "Anteprima semplificata generata per pezzo complesso."
+          : "Anteprima semplificata disponibile con alcune viste statiche.";
+      } else {
+        previewStatus.textContent = views.length === 1
+          ? "Anteprima disponibile con una sola vista statica."
+          : partialPreview
+            ? "Anteprima disponibile con alcune viste statiche. Alcune viste non sono state generate."
+            : "Anteprima disponibile con viste statiche complete.";
+      }
       previewImage.hidden = false;
       previewFallback.hidden = true;
       currentLabel.hidden = false;
