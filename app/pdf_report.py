@@ -271,9 +271,14 @@ def _preview_section(preview: dict[str, Any] | None) -> list[Any]:
             }
         ]
     if not view_payloads:
+        message = (
+            "Anteprima pezzo non generata"
+            if (preview or {}).get("mode") == "not_generated"
+            else "Anteprima pezzo non disponibile"
+        )
         return [
             *elements,
-            Paragraph("Anteprima pezzo non disponibile", fallback_style),
+            Paragraph(message, fallback_style),
             Spacer(1, 4 * mm),
         ]
 
@@ -300,9 +305,14 @@ def _preview_section(preview: dict[str, Any] | None) -> list[Any]:
             )
 
     if not rendered_views:
+        message = (
+            "Anteprima pezzo non generata"
+            if (preview or {}).get("mode") == "not_generated"
+            else "Anteprima pezzo non disponibile"
+        )
         return [
             *elements,
-            Paragraph("Anteprima pezzo non disponibile", fallback_style),
+            Paragraph(message, fallback_style),
             Spacer(1, 4 * mm),
         ]
     if len(rendered_views) == 1:

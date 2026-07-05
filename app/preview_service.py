@@ -27,6 +27,17 @@ def unavailable_preview(reason: str) -> dict[str, Any]:
     }
 
 
+def not_generated_preview() -> dict[str, Any]:
+    return {
+        "image_png_base64": None,
+        "available": False,
+        "mode": "not_generated",
+        "partial": False,
+        "views": [],
+        "warnings": ["Preview not generated automatically. Use /generate-preview."],
+    }
+
+
 def _env_bool(name: str, default: bool) -> bool:
     value = os.getenv(name)
     if value is None:
@@ -51,6 +62,7 @@ def _env_int(name: str, default: int) -> int:
 @dataclass(frozen=True)
 class PreviewSettings:
     enabled: bool
+    on_demand_only: bool
     timeout_sec: float
     light_timeout_sec: float
     ultra_light_timeout_sec: float
@@ -64,6 +76,7 @@ class PreviewSettings:
     def from_env(cls) -> "PreviewSettings":
         return cls(
             enabled=_env_bool("PREVIEW_ENABLED", True),
+            on_demand_only=_env_bool("PREVIEW_ON_DEMAND_ONLY", True),
             timeout_sec=max(1.0, _env_float("PREVIEW_TIMEOUT_SEC", 12.0)),
             light_timeout_sec=max(
                 1.0,
@@ -90,7 +103,7 @@ class PreviewSettings:
                 min(
                     _env_int(
                         "PREVIEW_MAX_RENDER_VIEWS_HIGH_COMPLEXITY",
-                        1,
+                        4,
                     ),
                     4,
                 ),
@@ -271,13 +284,16 @@ def generate_safe_step_preview(
 
     normalized_complexity = str(complexity_score).strip().lower()
     if normalized_complexity == "high":
+        selected_views = STANDARD_VIEW_ORDER[
+            : active_settings.max_render_views_high_complexity
+        ]
         logger.info(
             "Preview selection: complexity_score=high per_view_mode=ultra_light requested_views=%s",
-            list(STANDARD_VIEW_ORDER),
+            list(selected_views),
         )
         views: list[dict[str, Any]] = []
         failed_warnings: list[str] = []
-        for view_name in STANDARD_VIEW_ORDER:
+        for view_name in selected_views:
             timeout_sec = (
                 active_settings.high_complexity_timeout_sec
                 if view_name == "isometric"
@@ -314,7 +330,7 @@ def generate_safe_step_preview(
             return {
                 "image_png_base64": primary,
                 "available": True,
-                "partial": len(views) < len(STANDARD_VIEW_ORDER),
+                "partial": len(views) < len(selected_views),
                 "mode": "ultra_light",
                 "views": views,
                 "warnings": failed_warnings,

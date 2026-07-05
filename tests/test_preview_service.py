@@ -9,13 +9,14 @@ import app.preview_service as preview_service
 def _settings(**overrides) -> preview_service.PreviewSettings:
     values = {
         "enabled": True,
+        "on_demand_only": True,
         "timeout_sec": 12.0,
         "light_timeout_sec": 8.0,
         "ultra_light_timeout_sec": 5.0,
         "high_complexity_timeout_sec": 30.0,
         "max_file_size_mb": 20.0,
         "max_render_views": 4,
-        "max_render_views_high_complexity": 1,
+        "max_render_views_high_complexity": 4,
         "max_output_mb": 25.0,
     }
     values.update(overrides)
@@ -106,9 +107,9 @@ def test_high_complexity_uses_one_ultra_light_view(tmp_path, monkeypatch):
     )
 
     assert result["available"] is True
-    assert result["partial"] is True
+    assert result["partial"] is False
     assert [view["name"] for view in result["views"]] == ["isometric"]
-    assert [attempt["mode"] for attempt in captured] == ["ultra_light"] * 4
+    assert [attempt["mode"] for attempt in captured] == ["ultra_light"]
 
 
 def test_high_complexity_failure_returns_controlled_fallback(tmp_path, monkeypatch):

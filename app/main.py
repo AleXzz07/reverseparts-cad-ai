@@ -20,6 +20,7 @@ from .model_service import (
 from .pdf_report import generate_quote_pdf
 from .preview_service import (
     generate_safe_step_preview,
+    not_generated_preview,
     PreviewSettings,
     unavailable_preview,
 )
@@ -30,6 +31,7 @@ from .schemas import (
     HealthResponse,
     QuotePdfRequest,
     QuoteRequest,
+    GeneratePreviewResponse,
     ViewerModelResponse,
 )
 
@@ -136,6 +138,7 @@ def config_defaults() -> dict[str, Any]:
         },
         "materials": load_materials_config(),
         "preview_enabled": preview_settings.enabled,
+        "preview_on_demand_only": preview_settings.on_demand_only,
         "viewer_model_enabled": viewer_settings.enabled,
         "preview_max_render_views": preview_settings.max_render_views,
         "preview_max_render_views_high_complexity": (
@@ -295,6 +298,58 @@ async def viewer_model(
             Path(step_path).unlink(missing_ok=True)
 
 
+@app.post("/generate-preview", response_model=GeneratePreviewResponse)
+async def generate_preview(
+    file: UploadFile = File(...),
+    complexity_score: str = Form(default="unknown"),
+    analysis: str | None = Form(default=None),
+) -> GeneratePreviewResponse:
+    filename = file.filename or ""
+    if not filename:
+        raise HTTPException(status_code=400, detail="CAD file is required.")
+    if not any(filename.lower().endswith(suffix) for suffix in VALID_STEP_SUFFIXES):
+        raise HTTPException(
+            status_code=400,
+            detail="Only .stp and .step files are accepted.",
+        )
+    file_bytes = await file.read()
+    if not file_bytes:
+        raise HTTPException(status_code=400, detail="Uploaded CAD file is empty.")
+
+    effective_complexity = complexity_score
+    if analysis:
+        try:
+            analysis_payload = json.loads(analysis)
+            if isinstance(analysis_payload, dict):
+                effective_complexity = str(
+                    analysis_payload.get("complexity_score") or complexity_score
+                )
+        except json.JSONDecodeError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail="analysis must be valid JSON.",
+            ) from exc
+
+    step_path: str | None = None
+    try:
+        suffix = Path(filename).suffix.lower() or ".step"
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as step_file:
+            step_file.write(file_bytes)
+            step_path = step_file.name
+        preview_payload = generate_safe_step_preview(
+            step_path,
+            complexity_score=effective_complexity,
+        )
+        return GeneratePreviewResponse(preview=preview_payload)
+    except Exception as exc:
+        return GeneratePreviewResponse(
+            preview=unavailable_preview(f"Preview generation failed: {exc}")
+        )
+    finally:
+        if step_path:
+            Path(step_path).unlink(missing_ok=True)
+
+
 @app.post("/analyze-and-quote", response_model=AnalyzeAndQuoteResponse)
 async def analyze_and_quote(
     file: UploadFile = File(...),
@@ -338,35 +393,10 @@ async def analyze_and_quote(
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    preview_payload: dict[str, Any] = unavailable_preview(
-        "preview was not attempted."
-    )
+    preview_payload: dict[str, Any] = not_generated_preview()
     viewer_model_payload = deferred_viewer_model(
         analysis_payload.get("complexity_score", "unknown")
     )
-    step_path: str | None = None
-    try:
-        await file.seek(0)
-        file_bytes = await file.read()
-        suffix = Path(file.filename or "part.step").suffix.lower() or ".step"
-        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as step_file:
-            step_file.write(file_bytes)
-            step_path = step_file.name
-        try:
-            preview_payload = generate_safe_step_preview(
-                step_path,
-                complexity_score=analysis_payload.get(
-                    "complexity_score",
-                    "unknown",
-                ),
-            )
-        except Exception as exc:
-            preview_payload = unavailable_preview(str(exc))
-    except Exception as exc:
-        preview_payload = unavailable_preview(str(exc))
-    finally:
-        if step_path:
-            Path(step_path).unlink(missing_ok=True)
     return AnalyzeAndQuoteResponse(
         analysis=analysis_payload,
         quote=quote_payload,

@@ -296,6 +296,11 @@
       text-align: center;
       line-height: 1.5;
     }
+    .preview-actions {
+      display: flex;
+      justify-content: center;
+      margin-top: 10px;
+    }
     .summary-strip {
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -413,6 +418,9 @@
           </div>
           <div class="preview-current-label" id="preview-current-label" hidden></div>
           <div class="preview-thumbnails" id="preview-thumbnails" hidden></div>
+          <div class="preview-actions">
+            <button class="secondary" id="generate-preview-button" type="button" disabled>Genera viste statiche</button>
+          </div>
         </section>
         <div class="summary-strip">
           <div class="metric"><span>Pezzo</span><strong id="part-name">-</strong></div>
@@ -510,6 +518,7 @@
     const previewViewOrder = ["isometric", "top", "front", "right"];
     let defaults = null;
     let lastResult = null;
+    let lastCadFile = null;
 
     const money = value => value == null ? "-" : `${Number(value).toFixed(2)} EUR`;
     const number = (value, unit = "") => value == null ? "-" : `${Number(value).toFixed(2).replace(/\.00$/, "")}${unit ? " " + unit : ""}`;
@@ -645,6 +654,7 @@
       const previewStatus = document.getElementById("preview-status");
       const currentLabel = document.getElementById("preview-current-label");
       const thumbnails = document.getElementById("preview-thumbnails");
+      const generatePreviewButton = document.getElementById("generate-preview-button");
       console.log("[preview] payload received", preview);
       const views = normalizePreviewViews(preview || {});
       console.log("[preview] preview.views count", views.length);
@@ -652,7 +662,9 @@
 
       thumbnails.replaceChildren();
       if (!preview.available || !views.length) {
-        const reason = "Anteprima statica non disponibile.";
+        const reason = preview.mode === "not_generated"
+          ? "Le anteprime non sono state generate automaticamente."
+          : "Anteprima statica non disponibile per questo pezzo.";
         previewImage.removeAttribute("src");
         previewImage.hidden = true;
         previewStatus.innerHTML = reason;
@@ -660,6 +672,8 @@
         previewFallback.hidden = false;
         currentLabel.hidden = true;
         thumbnails.hidden = true;
+        generatePreviewButton.hidden = false;
+        generatePreviewButton.disabled = !lastResult || !lastCadFile;
         return;
       }
 
@@ -672,6 +686,8 @@
       previewImage.hidden = false;
       previewFallback.hidden = true;
       currentLabel.hidden = false;
+      generatePreviewButton.hidden = false;
+      generatePreviewButton.disabled = !lastResult || !lastCadFile;
       thumbnails.hidden = false;
       views.forEach((view, index) => {
         const label = view.label || previewViewLabels[view.name] || view.name;
@@ -831,6 +847,7 @@
       event.preventDefault();
       const file = document.getElementById("cad-file").files[0];
       if (!file) return setStatus("Seleziona un file .stp o .step.", "error");
+      lastCadFile = file;
 
       const pricingKeys = [...parameterGroups.laser, ...parameterGroups.bending, ...parameterGroups.general].map(item => item[0]);
       const materialKeys = parameterGroups.material.map(item => item[0]);
@@ -856,6 +873,45 @@
         setStatus(error.message || "Analisi non riuscita.", "error");
       } finally {
         submit.disabled = false;
+      }
+    });
+
+    document.getElementById("generate-preview-button").addEventListener("click", async () => {
+      if (!lastResult || !lastCadFile) {
+        setStatus("Esegui prima analisi e preventivo.", "error");
+        return;
+      }
+      const button = document.getElementById("generate-preview-button");
+      const previewStatus = document.getElementById("preview-status");
+      const formData = new FormData();
+      formData.append("file", lastCadFile);
+      formData.append("complexity_score", lastResult.analysis?.complexity_score || "unknown");
+      formData.append("analysis", JSON.stringify(lastResult.analysis || {}));
+      button.disabled = true;
+      previewStatus.textContent = "Generazione viste statiche in corso...";
+      setStatus("Generazione viste statiche in corso...", "loading");
+      try {
+        const response = await fetchApi("/generate-preview", { method: "POST", body: formData });
+        const payload = await response.json();
+        lastResult.preview = payload.preview || {
+          available: false,
+          mode: "failed",
+          views: [],
+          warnings: ["Preview generation failed: empty response"],
+        };
+        renderPreviewGallery(lastResult.preview, lastResult.analysis?.complexity_score || "unknown");
+        clearStatus();
+      } catch (error) {
+        lastResult.preview = {
+          available: false,
+          mode: "failed",
+          views: [],
+          warnings: [error.message || "Preview generation failed"],
+        };
+        renderPreviewGallery(lastResult.preview, lastResult.analysis?.complexity_score || "unknown");
+        setStatus(error.message || "Generazione viste statiche non riuscita.", "error");
+      } finally {
+        button.disabled = false;
       }
     });
 

@@ -77,6 +77,7 @@ def test_frontend_returns_html():
     assert 'fetchApi("/health")' in response.text
     assert 'fetchApi("/config/defaults")' in response.text
     assert 'fetchApi("/analyze-and-quote"' in response.text
+    assert 'fetchApi("/generate-preview"' in response.text
     assert 'fetchApi("/quote-pdf"' in response.text
     assert 'fetch(apiUrl("/health"))' not in response.text
     assert 'fetch(apiUrl("/config/defaults"))' not in response.text
@@ -96,7 +97,10 @@ def test_frontend_returns_html():
     assert 'id="load-viewer-button"' not in response.text
     assert "Carica vista 3D interattiva" not in response.text
     assert "Vista 3D disabilitata sul server" not in response.text
-    assert "Anteprima statica non disponibile." in response.text
+    assert "Le anteprime non sono state generate automaticamente." in response.text
+    assert "Genera viste statiche" in response.text
+    assert "Generazione viste statiche in corso" in response.text
+    assert "Anteprima statica non disponibile per questo pezzo." in response.text
     assert "Anteprima disponibile con viste statiche complete." in response.text
     assert "Anteprima disponibile con una sola vista statica." in response.text
     assert "immagine non leggibile dal browser" in response.text
@@ -115,6 +119,7 @@ def test_frontend_returns_html():
     assert "button.dataset.previewKey = view.name" in response.text
     assert 'button.addEventListener("click", () => showPreviewView(view, button))' in response.text
     assert "showPreviewView(view, button)" in response.text
+    assert "lastResult.preview = payload.preview" in response.text
     assert "Isometrica" in response.text
     assert "Frontale" in response.text
     assert "Destra" in response.text
@@ -163,6 +168,7 @@ def test_app_config_defaults_to_relative_requests(monkeypatch):
 
 def test_config_defaults_exposes_preview_and_viewer_runtime(monkeypatch):
     monkeypatch.setenv("PREVIEW_ENABLED", "true")
+    monkeypatch.setenv("PREVIEW_ON_DEMAND_ONLY", "true")
     monkeypatch.setenv("PREVIEW_TIMEOUT_SEC", "12")
     monkeypatch.setenv("PREVIEW_LIGHT_TIMEOUT_SEC", "8")
     monkeypatch.setenv("PREVIEW_ULTRA_LIGHT_TIMEOUT_SEC", "5")
@@ -177,6 +183,7 @@ def test_config_defaults_exposes_preview_and_viewer_runtime(monkeypatch):
     assert response.status_code == 200
     payload = response.json()
     assert payload["preview_enabled"] is True
+    assert payload["preview_on_demand_only"] is True
     assert payload["viewer_model_enabled"] is False
     assert payload["preview_max_render_views"] == 3
     assert payload["preview_max_render_views_high_complexity"] == 1
@@ -501,6 +508,22 @@ def test_quote_pdf_preview_section_uses_ultra_light_preview_note():
     assert "Isometrica" in rendered
 
 
+def test_quote_pdf_preview_section_handles_not_generated_preview():
+    elements = pdf_report._preview_section(
+        {
+            "image_png_base64": None,
+            "available": False,
+            "mode": "not_generated",
+            "partial": False,
+            "views": [],
+            "warnings": ["Preview not generated automatically. Use /generate-preview."],
+        }
+    )
+
+    rendered = "\n".join(str(element) for element in elements)
+    assert "Anteprima pezzo non generata" in rendered
+
+
 def test_quote_pdf_ignores_legacy_viewer_model_section(monkeypatch):
     analysis = json.loads(STAFFA_ACTUAL_FILE.read_text(encoding="utf-8"))
     quote = json.loads(STAFFA_QUOTE_FILE.read_text(encoding="utf-8"))
@@ -585,65 +608,93 @@ def test_analyze_and_quote_staffa_test_1_real_step_file():
     assert payload["quote"]["features_summary"]["total_holes"] == 8
     assert payload["quote"]["laser_details"]["pierce_count"] == 9
     assert "preview" in payload
-    assert isinstance(payload["preview"]["available"], bool)
-    assert "image_png_base64" in payload["preview"]
-    assert payload["preview"]["mode"] in {"full", "light", "ultra_light", "failed"}
-    assert isinstance(payload["preview"]["partial"], bool)
-    assert isinstance(payload["preview"]["views"], list)
-    assert isinstance(payload["preview"]["warnings"], list)
+    assert payload["preview"]["available"] is False
+    assert payload["preview"]["image_png_base64"] is None
+    assert payload["preview"]["mode"] == "not_generated"
+    assert payload["preview"]["partial"] is False
+    assert payload["preview"]["views"] == []
+    assert payload["preview"]["warnings"] == [
+        "Preview not generated automatically. Use /generate-preview."
+    ]
     assert "viewer_model" in payload
     assert payload["viewer_model"]["available"] is False
     assert payload["viewer_model"]["format"] is None
     assert payload["viewer_model"]["model_base64"] is None
     assert isinstance(payload["viewer_model"]["warnings"], list)
-    if os.getenv("REVERSEPARTS_RUNNING_IN_DOCKER") == "1":
-        assert payload["preview"]["available"] is True
-        assert len(payload["preview"]["views"]) >= 4
-        assert {
-            view["name"] for view in payload["preview"]["views"]
-        } >= {"isometric", "top", "front", "right"}
-        assert {
-            view["key"] for view in payload["preview"]["views"]
-        } >= {"isometric", "top", "front", "right"}
-        labels_by_name = {
-            view["name"]: view.get("label")
-            for view in payload["preview"]["views"]
-        }
-        assert labels_by_name["isometric"] == "Isometrica"
-        assert labels_by_name["top"] == "Alto"
-        assert labels_by_name["front"] == "Frontale"
-        assert labels_by_name["right"] == "Destra"
-        preview_bytes = base64.b64decode(payload["preview"]["image_png_base64"])
-        assert preview_bytes.startswith(b"\x89PNG\r\n\x1a\n")
 
 
-def test_analyze_and_quote_lamiera_piana_generates_four_full_static_views():
+def test_generate_preview_lamiera_piana_generates_static_views():
     _skip_without_freecad_for_real_fixture()
 
     with LAMIERA_TEST_FILE.open("rb") as step_file:
         response = client.post(
-            "/analyze-and-quote",
-            data={
-                "material": "alluminio",
-                "declared_thickness_mm": "2.0",
-                "quantity": "1",
-            },
+            "/generate-preview",
+            data={"complexity_score": "low"},
             files={"file": ("lamiera_piana_test_1.stp", step_file, "application/step")},
         )
 
     assert response.status_code == 200
-    payload = response.json()
-    assert payload["analysis"]["complexity_score"] == "low"
-    assert payload["preview"]["available"] is True
-    assert payload["preview"]["mode"] == "full"
-    assert len(payload["preview"]["views"]) >= 4
-    names = [view["name"] for view in payload["preview"]["views"]]
+    preview = response.json()["preview"]
+    assert preview["available"] is True
+    assert preview["mode"] in {"full", "light", "ultra_light"}
+    assert len(preview["views"]) >= 4
+    names = [view["name"] for view in preview["views"]]
     assert names[:4] == ["isometric", "top", "front", "right"]
-    keys = [view["key"] for view in payload["preview"]["views"][:4]]
+    keys = [view["key"] for view in preview["views"][:4]]
     assert keys == ["isometric", "top", "front", "right"]
-    labels = [view["label"] for view in payload["preview"]["views"][:4]]
+    labels = [view["label"] for view in preview["views"][:4]]
     assert labels == ["Isometrica", "Alto", "Frontale", "Destra"]
-    assert payload["preview"]["warnings"] == []
+    assert preview["image_png_base64"]
+
+
+def test_generate_preview_returns_partial_views_when_one_view_fails(monkeypatch):
+    def fake_preview(step_path, *, complexity_score):
+        return {
+            "image_png_base64": "image-isometric",
+            "available": True,
+            "mode": "full",
+            "partial": True,
+            "views": [
+                {
+                    "key": "isometric",
+                    "name": "isometric",
+                    "label": "Isometrica",
+                    "image_png_base64": "image-isometric",
+                },
+                {
+                    "key": "top",
+                    "name": "top",
+                    "label": "Alto",
+                    "image_png_base64": "image-top",
+                },
+                {
+                    "key": "front",
+                    "name": "front",
+                    "label": "Frontale",
+                    "image_png_base64": "image-front",
+                },
+            ],
+            "warnings": ["Preview view 'right' generation failed: timeout"],
+        }
+
+    monkeypatch.setattr(api, "generate_safe_step_preview", fake_preview)
+
+    response = client.post(
+        "/generate-preview",
+        data={"complexity_score": "medium"},
+        files={"file": ("partial.step", b"STEP", "application/step")},
+    )
+
+    assert response.status_code == 200
+    preview = response.json()["preview"]
+    assert preview["available"] is True
+    assert preview["partial"] is True
+    assert [view["name"] for view in preview["views"]] == [
+        "isometric",
+        "top",
+        "front",
+    ]
+    assert "right" in preview["warnings"][0]
 
 
 def test_analyze_and_quote_rejects_unknown_material_before_analysis():
@@ -660,7 +711,7 @@ def test_analyze_and_quote_rejects_unknown_material_before_analysis():
     assert "Unknown material 'titanio'" in response.json()["detail"]
 
 
-def test_analyze_and_quote_survives_preview_failure(monkeypatch):
+def test_analyze_and_quote_does_not_generate_preview_automatically(monkeypatch):
     events = []
 
     async def fake_analysis(**kwargs):
@@ -680,13 +731,15 @@ def test_analyze_and_quote_survives_preview_failure(monkeypatch):
             "process_plan": ["laser 2D"],
         }
 
-    def failed_preview(*args, **kwargs):
-        events.append("preview")
-        raise RuntimeError("renderer process crashed")
-
     monkeypatch.setattr(api, "_analyze_uploaded_cad", fake_analysis)
     monkeypatch.setattr(api, "quote_from_cad", fake_quote)
-    monkeypatch.setattr(api, "generate_safe_step_preview", failed_preview)
+    monkeypatch.setattr(
+        api,
+        "generate_safe_step_preview",
+        lambda *args, **kwargs: pytest.fail(
+            "preview worker must not run inside /analyze-and-quote"
+        ),
+    )
 
     response = client.post(
         "/analyze-and-quote",
@@ -696,12 +749,15 @@ def test_analyze_and_quote_survives_preview_failure(monkeypatch):
 
     assert response.status_code == 200
     payload = response.json()
-    assert events == ["analysis", "quote", "preview"]
+    assert events == ["analysis", "quote"]
     assert payload["analysis"]["part_name"] == "safe-preview-test"
     assert payload["quote"]["part_name"] == "safe-preview-test"
     assert payload["preview"]["available"] is False
+    assert payload["preview"]["mode"] == "not_generated"
     assert payload["preview"]["views"] == []
-    assert "renderer process crashed" in payload["preview"]["warnings"][0]
+    assert payload["preview"]["warnings"] == [
+        "Preview not generated automatically. Use /generate-preview."
+    ]
 
     health_response = client.get("/health")
     assert health_response.status_code == 200
@@ -778,14 +834,9 @@ def test_analyze_and_quote_does_not_call_viewer_worker(monkeypatch):
     monkeypatch.setattr(
         api,
         "generate_safe_step_preview",
-        lambda *args, **kwargs: {
-            "available": False,
-            "image_png_base64": None,
-            "mode": "failed",
-            "partial": False,
-            "views": [],
-            "warnings": [],
-        },
+        lambda *args, **kwargs: pytest.fail(
+            "preview worker must not run inside /analyze-and-quote"
+        ),
     )
 
     response = client.post(
@@ -798,6 +849,9 @@ def test_analyze_and_quote_does_not_call_viewer_worker(monkeypatch):
     payload = response.json()
     assert payload["analysis"]["part_name"] == "no-auto-viewer"
     assert payload["quote"]["part_name"] == "no-auto-viewer"
+    assert payload["preview"]["available"] is False
+    assert payload["preview"]["mode"] == "not_generated"
+    assert payload["preview"]["views"] == []
     assert payload["viewer_model"]["available"] is False
     assert payload["viewer_model"]["model_base64"] is None
     assert "3D viewer model generation disabled" in payload["viewer_model"]["warnings"]
