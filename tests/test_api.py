@@ -100,6 +100,8 @@ def test_frontend_returns_html():
     assert "Le anteprime non sono state generate automaticamente." in response.text
     assert "Genera viste statiche" in response.text
     assert "Generazione viste statiche in corso" in response.text
+    assert "Il pezzo &egrave; complesso, la generazione pu&ograve; richiedere qualche secondo." in response.text
+    assert "window.setTimeout" in response.text
     assert "Anteprima statica non disponibile per questo pezzo." in response.text
     assert "Anteprima disponibile con viste statiche complete." in response.text
     assert "Anteprima disponibile con una sola vista statica." in response.text
@@ -173,6 +175,8 @@ def test_config_defaults_exposes_preview_and_viewer_runtime(monkeypatch):
     monkeypatch.setenv("PREVIEW_LIGHT_TIMEOUT_SEC", "8")
     monkeypatch.setenv("PREVIEW_ULTRA_LIGHT_TIMEOUT_SEC", "5")
     monkeypatch.setenv("PREVIEW_HIGH_COMPLEXITY_TIMEOUT_SEC", "30")
+    monkeypatch.setenv("PREVIEW_TOTAL_TIMEOUT_SEC", "31")
+    monkeypatch.setenv("PREVIEW_PER_VIEW_TIMEOUT_SEC", "9")
     monkeypatch.setenv("PREVIEW_MAX_RENDER_VIEWS", "3")
     monkeypatch.setenv("PREVIEW_MAX_RENDER_VIEWS_HIGH_COMPLEXITY", "1")
     monkeypatch.setenv("VIEWER_MODEL_ENABLED", "false")
@@ -191,6 +195,8 @@ def test_config_defaults_exposes_preview_and_viewer_runtime(monkeypatch):
     assert payload["preview_light_timeout_sec"] == 8.0
     assert payload["preview_ultra_light_timeout_sec"] == 5.0
     assert payload["preview_high_complexity_timeout_sec"] == 30.0
+    assert payload["preview_total_timeout_sec"] == 31.0
+    assert payload["preview_per_view_timeout_sec"] == 9.0
     assert payload["viewer_model_timeout_sec"] == 20.0
 
 

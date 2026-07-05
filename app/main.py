@@ -150,6 +150,8 @@ def config_defaults() -> dict[str, Any]:
         "preview_high_complexity_timeout_sec": (
             preview_settings.high_complexity_timeout_sec
         ),
+        "preview_total_timeout_sec": preview_settings.total_timeout_sec,
+        "preview_per_view_timeout_sec": preview_settings.per_view_timeout_sec,
         "viewer_model_timeout_sec": viewer_settings.timeout_sec,
     }
 

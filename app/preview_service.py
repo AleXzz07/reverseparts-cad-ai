@@ -7,6 +7,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -67,6 +68,8 @@ class PreviewSettings:
     light_timeout_sec: float
     ultra_light_timeout_sec: float
     high_complexity_timeout_sec: float
+    total_timeout_sec: float
+    per_view_timeout_sec: float
     max_file_size_mb: float
     max_render_views: int
     max_render_views_high_complexity: int
@@ -89,6 +92,14 @@ class PreviewSettings:
             high_complexity_timeout_sec=max(
                 1.0,
                 _env_float("PREVIEW_HIGH_COMPLEXITY_TIMEOUT_SEC", 30.0),
+            ),
+            total_timeout_sec=max(
+                1.0,
+                _env_float("PREVIEW_TOTAL_TIMEOUT_SEC", 30.0),
+            ),
+            per_view_timeout_sec=max(
+                1.0,
+                _env_float("PREVIEW_PER_VIEW_TIMEOUT_SEC", 8.0),
             ),
             max_file_size_mb=max(
                 0.1,
@@ -115,6 +126,55 @@ class PreviewSettings:
         )
 
 
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as file:
+        for chunk in iter(lambda: file.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _cache_root() -> Path:
+    return Path(os.getenv("PREVIEW_CACHE_DIR", "/tmp/reverseparts_previews"))
+
+
+def _cache_key(file_hash: str, mode: str, views: tuple[str, ...]) -> str:
+    views_part = "-".join(views)
+    return f"{file_hash}_{mode}_{views_part}"
+
+
+def _read_cached_preview(cache_path: Path) -> dict[str, Any] | None:
+    payload_path = cache_path / "preview.json"
+    if not payload_path.is_file():
+        return None
+    try:
+        payload = json.loads(payload_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    payload["warnings"] = [
+        "Preview loaded from temporary cache.",
+        *(payload.get("warnings") or []),
+    ]
+    logger.info("[preview] cache hit: %s", cache_path)
+    return payload
+
+
+def _write_cached_preview(cache_path: Path, payload: dict[str, Any]) -> None:
+    if not payload.get("available"):
+        return
+    try:
+        cache_path.mkdir(parents=True, exist_ok=True)
+        (cache_path / "preview.json").write_text(
+            json.dumps(payload),
+            encoding="utf-8",
+        )
+        logger.info("[preview] cache write: %s", cache_path)
+    except OSError as exc:
+        logger.warning("[preview] cache write failed: %s", exc)
+
+
 def _stop_worker(process: subprocess.Popen[str]) -> None:
     if process.poll() is not None:
         return
@@ -138,6 +198,7 @@ def _run_worker(
     view_names: list[str] | None = None,
     mode: str,
     timeout_sec: float,
+    per_view_timeout_sec: float,
     max_output_mb: float,
 ) -> dict[str, Any]:
     output_file = tempfile.NamedTemporaryFile(
@@ -177,6 +238,12 @@ def _run_worker(
                 "PREVIEW_RENDER_MODE": "ultra_light",
             }
         )
+    environment.update(
+        {
+            "PREVIEW_TOTAL_TIMEOUT_SEC": str(timeout_sec),
+            "PREVIEW_PER_VIEW_TIMEOUT_SEC": str(per_view_timeout_sec),
+        }
+    )
 
     command = [
         sys.executable,
@@ -287,62 +354,40 @@ def generate_safe_step_preview(
         selected_views = STANDARD_VIEW_ORDER[
             : active_settings.max_render_views_high_complexity
         ]
+        mode = "ultra_light"
+        file_hash = _file_sha256(source)
+        cache_path = _cache_root() / _cache_key(file_hash, mode, tuple(selected_views))
+        cached = _read_cached_preview(cache_path)
+        if cached is not None:
+            return cached
         logger.info(
-            "Preview selection: complexity_score=high per_view_mode=ultra_light requested_views=%s",
+            "Preview selection: complexity_score=high mode=ultra_light requested_views=%s",
             list(selected_views),
         )
-        views: list[dict[str, Any]] = []
-        failed_warnings: list[str] = []
-        for view_name in selected_views:
-            timeout_sec = (
-                active_settings.high_complexity_timeout_sec
-                if view_name == "isometric"
-                else max(
-                    active_settings.ultra_light_timeout_sec,
-                    min(active_settings.high_complexity_timeout_sec, 8.0),
-                )
-            )
-            result = _run_worker(
-                source,
-                view_names=[view_name],
-                mode="ultra_light",
-                timeout_sec=timeout_sec,
-                max_output_mb=active_settings.max_output_mb,
-            )
-            if result.get("available"):
-                views.extend(result.get("views") or [])
-            else:
-                failed_warnings.extend(result.get("warnings") or [])
-        if views:
-            primary = next(
-                (
-                    view["image_png_base64"]
-                    for view in views
-                    if view.get("name") == "isometric"
-                ),
-                views[0]["image_png_base64"],
-            )
-            logger.info(
-                "Preview high complexity finished: generated_views=%s failed_count=%s",
-                [view.get("name") for view in views],
-                len(failed_warnings),
-            )
-            return {
-                "image_png_base64": primary,
-                "available": True,
-                "partial": len(views) < len(selected_views),
-                "mode": "ultra_light",
-                "views": views,
-                "warnings": failed_warnings,
-            }
-        failed = unavailable_preview(
-            "Preview generation failed after all high-complexity view attempts."
+        result = _run_worker(
+            source,
+            view_names=list(selected_views),
+            mode=mode,
+            timeout_sec=active_settings.total_timeout_sec,
+            per_view_timeout_sec=active_settings.per_view_timeout_sec,
+            max_output_mb=active_settings.max_output_mb,
         )
-        failed["warnings"] = [
-            *failed_warnings,
-            "Preview generation failed after all high-complexity view attempts",
-        ]
-        return failed
+        result["mode"] = mode if result.get("available") else "failed"
+        if result.get("available"):
+            generated_names = {
+                str(view.get("name"))
+                for view in result.get("views") or []
+                if isinstance(view, dict)
+            }
+            result["partial"] = len(generated_names) < len(selected_views)
+        else:
+            result["partial"] = False
+            result["warnings"] = [
+                *(result.get("warnings") or []),
+                "Preview generation failed after all high-complexity view attempts",
+            ]
+        _write_cached_preview(cache_path, result)
+        return result
     else:
         attempts = [
             (
@@ -374,11 +419,18 @@ def generate_safe_step_preview(
 
     failed_warnings: list[str] = []
     for mode, max_views, timeout_sec in attempts:
+        selected_views = STANDARD_VIEW_ORDER[:max_views]
+        file_hash = _file_sha256(source)
+        cache_path = _cache_root() / _cache_key(file_hash, mode, tuple(selected_views))
+        cached = _read_cached_preview(cache_path)
+        if cached is not None:
+            return cached
         result = _run_worker(
             source,
             max_views=max_views,
             mode=mode,
-            timeout_sec=timeout_sec,
+            timeout_sec=min(timeout_sec, active_settings.total_timeout_sec),
+            per_view_timeout_sec=active_settings.per_view_timeout_sec,
             max_output_mb=active_settings.max_output_mb,
         )
         result["mode"] = mode if result.get("available") else "failed"
@@ -395,6 +447,7 @@ def generate_safe_step_preview(
                     "Full/light preview timed out or failed, ultra-light preview used"
                 )
             result["warnings"] = warnings
+            _write_cached_preview(cache_path, result)
             return result
         failed_warnings.extend(result.get("warnings") or [])
 

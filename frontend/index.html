@@ -890,6 +890,9 @@
       button.disabled = true;
       previewStatus.textContent = "Generazione viste statiche in corso...";
       setStatus("Generazione viste statiche in corso...", "loading");
+      const slowPreviewMessage = window.setTimeout(() => {
+        previewStatus.innerHTML = "Il pezzo &egrave; complesso, la generazione pu&ograve; richiedere qualche secondo.";
+      }, 5000);
       try {
         const response = await fetchApi("/generate-preview", { method: "POST", body: formData });
         const payload = await response.json();
@@ -911,6 +914,7 @@
         renderPreviewGallery(lastResult.preview, lastResult.analysis?.complexity_score || "unknown");
         setStatus(error.message || "Generazione viste statiche non riuscita.", "error");
       } finally {
+        window.clearTimeout(slowPreviewMessage);
         button.disabled = false;
       }
     });

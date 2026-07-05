@@ -98,10 +98,16 @@ def test_generate_step_previews_returns_four_views_when_all_succeed(
     step_path = tmp_path / "part.step"
     step_path.write_text("STEP", encoding="ascii")
     rendered = []
+    imports = []
+
+    def fake_load(source):
+        imports.append(source)
+        return object(), [], [], 1.0
+
     monkeypatch.setattr(
         preview_renderer,
         "_load_geometry",
-        lambda source: (object(), [], [], 1.0),
+        fake_load,
     )
 
     def fake_render(shape, points, facets, diagonal, view_name):
@@ -113,6 +119,7 @@ def test_generate_step_previews_returns_four_views_when_all_succeed(
     result = preview_renderer.generate_step_previews(str(step_path))
 
     assert result["available"] is True
+    assert imports == [step_path]
     assert result["partial"] is False
     assert rendered == ["isometric", "top", "front", "right"]
     assert [view["name"] for view in result["views"]] == rendered

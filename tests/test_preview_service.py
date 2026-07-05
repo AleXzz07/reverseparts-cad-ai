@@ -3,7 +3,14 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+import pytest
+
 import app.preview_service as preview_service
+
+
+@pytest.fixture(autouse=True)
+def isolate_preview_cache(monkeypatch, tmp_path):
+    monkeypatch.setenv("PREVIEW_CACHE_DIR", str(tmp_path / "preview-cache"))
 
 
 def _settings(**overrides) -> preview_service.PreviewSettings:
@@ -14,6 +21,8 @@ def _settings(**overrides) -> preview_service.PreviewSettings:
         "light_timeout_sec": 8.0,
         "ultra_light_timeout_sec": 5.0,
         "high_complexity_timeout_sec": 30.0,
+        "total_timeout_sec": 30.0,
+        "per_view_timeout_sec": 8.0,
         "max_file_size_mb": 20.0,
         "max_render_views": 4,
         "max_render_views_high_complexity": 4,
@@ -47,12 +56,14 @@ def test_safe_preview_attempts_complex_parts_in_ultra_light_mode(
 
     def fake_worker(source: Path, **kwargs):
         captured.append(kwargs)
-        view_name = kwargs["view_names"][0]
         return {
             "image_png_base64": "image",
             "available": True,
             "mode": "ultra_light",
-            "views": [{"name": view_name, "image_png_base64": f"image-{view_name}"}],
+            "views": [
+                {"name": view_name, "image_png_base64": f"image-{view_name}"}
+                for view_name in kwargs["view_names"]
+            ],
             "warnings": [],
         }
 
@@ -72,13 +83,8 @@ def test_safe_preview_attempts_complex_parts_in_ultra_light_mode(
         "front",
         "right",
     ]
-    assert [attempt["mode"] for attempt in captured] == ["ultra_light"] * 4
-    assert [attempt["view_names"] for attempt in captured] == [
-        ["isometric"],
-        ["top"],
-        ["front"],
-        ["right"],
-    ]
+    assert [attempt["mode"] for attempt in captured] == ["ultra_light"]
+    assert captured[0]["view_names"] == ["isometric", "top", "front", "right"]
     assert captured[0]["timeout_sec"] == 30.0
 
 
@@ -89,8 +95,6 @@ def test_high_complexity_uses_one_ultra_light_view(tmp_path, monkeypatch):
 
     def fake_worker(source: Path, **kwargs):
         captured.append(kwargs)
-        if kwargs["view_names"][0] not in {"isometric"}:
-            return preview_service.unavailable_preview("secondary view failed")
         return {
             "image_png_base64": "image",
             "available": True,
@@ -110,6 +114,7 @@ def test_high_complexity_uses_one_ultra_light_view(tmp_path, monkeypatch):
     assert result["partial"] is False
     assert [view["name"] for view in result["views"]] == ["isometric"]
     assert [attempt["mode"] for attempt in captured] == ["ultra_light"]
+    assert captured[0]["view_names"] == ["isometric"]
 
 
 def test_high_complexity_failure_returns_controlled_fallback(tmp_path, monkeypatch):
@@ -130,11 +135,53 @@ def test_high_complexity_failure_returns_controlled_fallback(tmp_path, monkeypat
 
     assert result["available"] is False
     assert result["mode"] == "failed"
-    assert [attempt["mode"] for attempt in attempts] == ["ultra_light"] * 4
+    assert [attempt["mode"] for attempt in attempts] == ["ultra_light"]
     assert (
         "Preview generation failed after all high-complexity view attempts"
         in result["warnings"]
     )
+
+
+def test_preview_cache_reuses_existing_payload(tmp_path, monkeypatch):
+    step_path = tmp_path / "part.step"
+    step_path.write_text("STEP", encoding="ascii")
+    calls = []
+
+    def fake_worker(source: Path, **kwargs):
+        calls.append(kwargs)
+        return {
+            "image_png_base64": "image",
+            "available": True,
+            "mode": kwargs["mode"],
+            "views": [
+                {
+                    "name": "isometric",
+                    "key": "isometric",
+                    "label": "Isometrica",
+                    "image_png_base64": "image",
+                }
+            ],
+            "warnings": [],
+        }
+
+    monkeypatch.setattr(preview_service, "_run_worker", fake_worker)
+
+    first = preview_service.generate_safe_step_preview(
+        str(step_path),
+        complexity_score="medium",
+        settings=_settings(),
+    )
+    second = preview_service.generate_safe_step_preview(
+        str(step_path),
+        complexity_score="medium",
+        settings=_settings(),
+    )
+
+    assert first["available"] is True
+    assert second["available"] is True
+    assert len(calls) == 1
+    assert "Preview loaded from temporary cache." in second["warnings"]
+    assert second["views"] == first["views"]
 
 
 def test_simple_part_falls_back_from_full_to_light(tmp_path, monkeypatch):
@@ -232,6 +279,7 @@ def test_worker_timeout_returns_controlled_fallback(tmp_path, monkeypatch):
         max_views=1,
         mode="light",
         timeout_sec=0.1,
+        per_view_timeout_sec=0.1,
         max_output_mb=1.0,
     )
 

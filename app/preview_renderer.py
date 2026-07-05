@@ -6,6 +6,7 @@ import logging
 import math
 import os
 import tempfile
+import time
 from io import BytesIO
 from pathlib import Path
 from typing import Any
@@ -19,6 +20,8 @@ PREVIEW_RENDER_MODE = os.getenv(
     "PREVIEW_RENDER_MODE",
     "clean",
 ).strip().lower()
+PREVIEW_TOTAL_TIMEOUT_SEC = float(os.getenv("PREVIEW_TOTAL_TIMEOUT_SEC", "30"))
+PREVIEW_PER_VIEW_TIMEOUT_SEC = float(os.getenv("PREVIEW_PER_VIEW_TIMEOUT_SEC", "8"))
 PRIMARY_VIEW_NAME = "isometric"
 VIEW_ORDER = ("isometric", "top", "front", "right")
 VIEW_LABELS = {
@@ -601,23 +604,52 @@ def generate_step_previews(
     max_views: int | None = None,
     view_names: list[str] | tuple[str, ...] | None = None,
 ) -> dict[str, Any]:
+    return generate_static_previews(
+        step_path,
+        max_views=max_views,
+        view_names=view_names,
+    )
+
+
+def generate_static_previews(
+    step_path: str,
+    views: list[str] | tuple[str, ...] | None = None,
+    mode: str | None = None,
+    *,
+    max_views: int | None = None,
+    view_names: list[str] | tuple[str, ...] | None = None,
+) -> dict[str, Any]:
     source = Path(step_path)
     if not source.is_file():
         return _unavailable("STEP file does not exist.")
 
+    total_started = time.perf_counter()
     try:
+        import_started = time.perf_counter()
         shape, points, facets, diagonal = _load_geometry(source)
+        import_elapsed = time.perf_counter() - import_started
+        logger.info("[preview] import step: %.3f sec", import_elapsed)
     except Exception as exc:  # pragma: no cover - depends on host FreeCAD install
         return _unavailable(str(exc))
+    setup_started = time.perf_counter()
+    setup_elapsed = time.perf_counter() - setup_started
+    logger.info("[preview] setup scene: %.3f sec", setup_elapsed)
 
-    views: list[dict[str, str]] = []
+    requested_views = tuple(view_names or views or VIEW_ORDER)
+    rendered_views: list[dict[str, str]] = []
     warnings: list[str] = []
-    selected_views = tuple(view_names) if view_names else VIEW_ORDER
-    if max_views is not None and not view_names:
-        selected_views = VIEW_ORDER[:max(1, min(int(max_views), len(VIEW_ORDER)))]
-    logger.info("[preview] attempted views: %s", ", ".join(selected_views))
-    for view_name in selected_views:
+    if max_views is not None and not view_names and not views:
+        requested_views = VIEW_ORDER[:max(1, min(int(max_views), len(VIEW_ORDER)))]
+    logger.info("[preview] attempted views: %s", ", ".join(requested_views))
+    for view_name in requested_views:
+        elapsed_before_view = time.perf_counter() - total_started
+        if elapsed_before_view >= PREVIEW_TOTAL_TIMEOUT_SEC:
+            warnings.append(
+                "Preview total timeout reached; returning generated views."
+            )
+            break
         try:
+            render_started = time.perf_counter()
             encoded = render_named_view(
                 shape,
                 points,
@@ -625,7 +657,14 @@ def generate_step_previews(
                 diagonal,
                 view_name,
             )
-            views.append(
+            render_elapsed = time.perf_counter() - render_started
+            logger.info("[preview] render %s: %.3f sec", view_name, render_elapsed)
+            if render_elapsed > PREVIEW_PER_VIEW_TIMEOUT_SEC:
+                warnings.append(
+                    f"Preview view '{view_name}' exceeded per-view timeout "
+                    f"({render_elapsed:.1f}s > {PREVIEW_PER_VIEW_TIMEOUT_SEC:.1f}s)."
+                )
+            rendered_views.append(
                 {
                     "key": view_name,
                     "name": view_name,
@@ -638,10 +677,10 @@ def generate_step_previews(
                 f"Preview view '{view_name}' generation failed: {exc}"
             )
 
-    generated_names = [view["name"] for view in views]
+    generated_names = [view["name"] for view in rendered_views]
     failed_names = [
         view_name
-        for view_name in selected_views
+        for view_name in requested_views
         if view_name not in set(generated_names)
     ]
     logger.info(
@@ -656,16 +695,17 @@ def generate_step_previews(
         "[preview] returned views: %s",
         ", ".join(generated_names) if generated_names else "none",
     )
+    logger.info("[preview] total: %.3f sec", time.perf_counter() - total_started)
 
     primary = next(
         (
             view["image_png_base64"]
-            for view in views
+            for view in rendered_views
             if view["name"] == PRIMARY_VIEW_NAME
         ),
-        views[0]["image_png_base64"] if views else None,
+        rendered_views[0]["image_png_base64"] if rendered_views else None,
     )
-    if not views:
+    if not rendered_views:
         return {
             "image_png_base64": None,
             "available": False,
@@ -677,7 +717,7 @@ def generate_step_previews(
     return {
         "image_png_base64": primary,
         "available": True,
-        "partial": len(views) < len(selected_views),
+        "partial": len(rendered_views) < len(requested_views),
         "mode": (
             "ultra_light"
             if PREVIEW_RENDER_MODE == "ultra_light"
@@ -685,7 +725,7 @@ def generate_step_previews(
             if PREVIEW_RENDER_MODE == "light"
             else "full"
         ),
-        "views": views,
+        "views": rendered_views,
         "warnings": warnings,
     }
 
