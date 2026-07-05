@@ -1,3 +1,4 @@
+import inspect
 from pathlib import Path
 
 import pytest
@@ -69,6 +70,7 @@ def test_generate_step_previews_keeps_successful_views(tmp_path, monkeypatch):
 
     assert result["available"] is True
     assert result["image_png_base64"] == "encoded-isometric"
+    assert result["partial"] is True
     assert [view["name"] for view in result["views"]] == [
         "isometric",
         "top",
@@ -82,6 +84,12 @@ def test_generate_step_previews_keeps_successful_views(tmp_path, monkeypatch):
     assert result["warnings"] == [
         "Preview view 'right' generation failed: right view unavailable"
     ]
+
+
+def test_ultra_light_render_does_not_draw_convex_hull_outline():
+    source = inspect.getsource(preview_renderer.render_named_view)
+
+    assert "_convex_hull" not in source
 
 
 def test_deduplicate_screen_lines_removes_duplicates_and_micro_edges():

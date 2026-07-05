@@ -37,6 +37,7 @@ def _unavailable(message: str) -> dict[str, Any]:
         "image_png_base64": None,
         "available": False,
         "mode": "failed",
+        "partial": False,
         "views": [],
         "warnings": [f"Preview generation failed: {message}"],
     }
@@ -352,6 +353,49 @@ def _convex_hull(
     return lower[:-1] + upper[:-1]
 
 
+def _crop_to_content(image: Any) -> Any:
+    Image = importlib.import_module("PIL.Image")
+    width, height = image.size
+    pixels = image.load()
+    min_x = width
+    min_y = height
+    max_x = -1
+    max_y = -1
+    for y in range(height):
+        for x in range(width):
+            red, green, blue = pixels[x, y][:3]
+            if (red, green, blue) != (255, 255, 255):
+                min_x = min(min_x, x)
+                min_y = min(min_y, y)
+                max_x = max(max_x, x)
+                max_y = max(max_y, y)
+    if max_x < min_x or max_y < min_y:
+        return image
+
+    padding = max(16 * RENDER_SCALE, int(min(width, height) * 0.035))
+    crop_box = (
+        max(0, min_x - padding),
+        max(0, min_y - padding),
+        min(width, max_x + padding + 1),
+        min(height, max_y + padding + 1),
+    )
+    cropped = image.crop(crop_box)
+    target_ratio = width / height
+    crop_ratio = cropped.width / max(cropped.height, 1)
+    if crop_ratio > target_ratio:
+        new_width = cropped.width
+        new_height = max(1, round(new_width / target_ratio))
+    else:
+        new_height = cropped.height
+        new_width = max(1, round(new_height * target_ratio))
+    canvas = Image.new("RGB", (new_width, new_height), (255, 255, 255))
+    canvas.paste(
+        cropped,
+        ((new_width - cropped.width) // 2, (new_height - cropped.height) // 2),
+    )
+    return canvas
+
+
 def _visible_hlr_lines(
     shape: Any,
     direction: tuple[float, float, float],
@@ -483,16 +527,7 @@ def render_named_view(
         polygon = [_to_screen(point, transform) for point in projected_triangle]
         draw.polygon(polygon, fill=_shade(_normal(*triangle)))
 
-    if PREVIEW_RENDER_MODE == "ultra_light":
-        hull = _convex_hull([_to_screen(point, transform) for point in projected])
-        if len(hull) >= 3:
-            draw.line(
-                [*hull, hull[0]],
-                fill=(48, 55, 60),
-                width=2 * RENDER_SCALE,
-                joint="curve",
-            )
-    else:
+    if PREVIEW_RENDER_MODE != "ultra_light":
         curved_edge_step = (
             max(diagonal / 3000.0, 0.015)
             if PREVIEW_RENDER_MODE == "clean"
@@ -533,6 +568,7 @@ def render_named_view(
                 joint="curve",
             )
 
+    image = _crop_to_content(image)
     resampling = getattr(Image, "Resampling", Image).LANCZOS
     image = image.resize(
         (PREVIEW_WIDTH_PX, PREVIEW_HEIGHT_PX),
@@ -547,6 +583,7 @@ def generate_step_previews(
     step_path: str,
     *,
     max_views: int | None = None,
+    view_names: list[str] | tuple[str, ...] | None = None,
 ) -> dict[str, Any]:
     source = Path(step_path)
     if not source.is_file():
@@ -559,8 +596,8 @@ def generate_step_previews(
 
     views: list[dict[str, str]] = []
     warnings: list[str] = []
-    selected_views = VIEW_ORDER
-    if max_views is not None:
+    selected_views = tuple(view_names) if view_names else VIEW_ORDER
+    if max_views is not None and not view_names:
         selected_views = VIEW_ORDER[:max(1, min(int(max_views), len(VIEW_ORDER)))]
     for view_name in selected_views:
         try:
@@ -596,12 +633,14 @@ def generate_step_previews(
             "image_png_base64": None,
             "available": False,
             "mode": "failed",
+            "partial": False,
             "views": [],
             "warnings": warnings or ["Preview generation failed: no views generated."],
         }
     return {
         "image_png_base64": primary,
         "available": True,
+        "partial": len(views) < len(selected_views),
         "mode": (
             "ultra_light"
             if PREVIEW_RENDER_MODE == "ultra_light"

@@ -230,11 +230,11 @@ La generazione preview viene eseguita in un subprocess isolato: un crash del ren
 
 La preview usa fallback progressivi:
 
-- `full`: fino a 4 viste, nell'ordine Isometrica, Alto, Frontale, Destra, con risoluzione alta e qualità completa.
+- `full`: fino a 4 viste, nell'ordine Isometrica, Alto, Frontale, Destra, con risoluzione standard e qualità completa.
 - `light`: fallback per pezzi semplici/medi quando la preview completa non riesce, con meno edge secondari.
-- `ultra_light`: isometrica semplificata a risoluzione ridotta, pensata per pezzi complessi e per evitare timeout.
+- `ultra_light`: viste semplificate a risoluzione ridotta, pensate per pezzi complessi e per evitare timeout.
 
-I pezzi con `complexity_score=high` non partono dalla preview completa: usano direttamente la modalità `ultra_light`, con una sola vista isometrica statica e timeout dedicato. Il JSON `preview` include sempre `mode` con `full`, `light`, `ultra_light` oppure `failed`, più warning leggibili come `Full preview timed out, light preview used` o `Preview generation failed after all fallback modes`.
+I pezzi con `complexity_score=high` non partono dalla preview completa: usano direttamente la modalità `ultra_light` e tentano le viste Isometrica, Alto, Frontale e Destra una per volta, in processi separati. Se una vista fallisce, le altre restano utilizzabili e il JSON `preview` riporta `partial=true`. Il JSON `preview` include sempre `mode` con `full`, `light`, `ultra_light` oppure `failed`, più warning leggibili come `Full preview timed out, light preview used` o `Preview generation failed after all fallback modes`.
 
 Le impostazioni disponibili sono:
 
@@ -249,7 +249,7 @@ PREVIEW_MAX_RENDER_VIEWS=4
 PREVIEW_MAX_RENDER_VIEWS_HIGH_COMPLEXITY=1
 ```
 
-La preview immagini è automatica e isolata dal processo FastAPI. I pezzi semplici e medi provano a generare tutte e quattro le viste statiche standard; i pezzi `high` tentano sempre almeno una vista isometrica semplificata. Se anche l'ultra-light fallisce, la risposta conserva analysis e quote e riporta il motivo preciso in `preview.warnings`. Su Render è consigliato mantenere `PREVIEW_ENABLED=true`.
+La preview immagini è automatica e isolata dal processo FastAPI. I pezzi semplici e medi provano a generare tutte e quattro le viste statiche standard; i pezzi `high` tentano viste ultra-light indipendenti e mantengono tutte quelle riuscite. La modalità ultra-light evita il contorno nero esterno artificiale, riduce gli edge secondari e ritaglia l'immagine sugli ingombri reali del pezzo con un margine bianco. Se tutte le viste falliscono, la risposta conserva analysis e quote e riporta il motivo preciso in `preview.warnings`. Su Render è consigliato mantenere `PREVIEW_ENABLED=true`.
 
 Le viste statiche sono il metodo principale di visualizzazione nella web app e nel PDF. La vista 3D interattiva/GLB è considerata sperimentale, non fa parte del flusso principale e non viene mostrata dalla web app. `/analyze-and-quote` non genera e non trasporta modelli GLB: il flusso resta centrato su analisi STEP, preventivo interno, preview statiche e PDF.
 

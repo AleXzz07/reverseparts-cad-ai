@@ -619,7 +619,7 @@
 
       thumbnails.replaceChildren();
       if (!preview.available || !views.length) {
-        const reason = "Anteprima statica non disponibile per complessit&agrave; elevata.";
+        const reason = "Anteprima statica non disponibile.";
         previewImage.removeAttribute("src");
         previewImage.hidden = true;
         previewStatus.innerHTML = reason;
@@ -630,14 +630,10 @@
         return;
       }
 
-      const simplifiedPreview = preview.mode === "light" || preview.mode === "ultra_light";
-      const partialPreview = views.length < 4;
-      const highComplexity = String(complexityScore || "").toLowerCase() === "high";
-      previewStatus.textContent = simplifiedPreview && highComplexity
-        ? "Anteprima semplificata generata per pezzo complesso."
-        : partialPreview
-          ? "Anteprima disponibile con alcune viste statiche. Alcune viste non sono state generate."
-          : "Anteprima disponibile";
+      const partialPreview = preview.partial === true || views.length < 4;
+      previewStatus.textContent = partialPreview
+        ? "Anteprima disponibile con alcune viste statiche. Alcune viste non sono state generate."
+        : "Anteprima disponibile con viste statiche complete.";
       previewImage.hidden = false;
       previewFallback.hidden = true;
       currentLabel.hidden = false;

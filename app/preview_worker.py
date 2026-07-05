@@ -12,11 +12,13 @@ def main() -> int:
     parser.add_argument("step_path")
     parser.add_argument("output_path")
     parser.add_argument("--max-views", type=int, default=4)
+    parser.add_argument("--views", nargs="*")
     args = parser.parse_args()
 
     result = generate_step_previews(
         args.step_path,
         max_views=args.max_views,
+        view_names=args.views,
     )
     Path(args.output_path).write_text(
         json.dumps(result),

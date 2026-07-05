@@ -21,6 +21,7 @@ def unavailable_preview(reason: str) -> dict[str, Any]:
         "image_png_base64": None,
         "available": False,
         "mode": "failed",
+        "partial": False,
         "views": [],
         "warnings": [f"Preview generation skipped or failed: {reason}"],
     }
@@ -120,7 +121,8 @@ def _stop_worker(process: subprocess.Popen[str]) -> None:
 def _run_worker(
     step_path: Path,
     *,
-    max_views: int,
+    max_views: int | None = None,
+    view_names: list[str] | None = None,
     mode: str,
     timeout_sec: float,
     max_output_mb: float,
@@ -135,9 +137,9 @@ def _run_worker(
     if mode == "full":
         environment.update(
             {
-                "PREVIEW_WIDTH_PX": "1600",
-                "PREVIEW_HEIGHT_PX": "1200",
-                "PREVIEW_RENDER_SCALE": "2",
+                "PREVIEW_WIDTH_PX": "1000",
+                "PREVIEW_HEIGHT_PX": "750",
+                "PREVIEW_RENDER_SCALE": "1",
                 "PREVIEW_RENDER_MODE": os.getenv(
                     "PREVIEW_FULL_RENDER_MODE",
                     "light",
@@ -169,13 +171,15 @@ def _run_worker(
         "app.preview_worker",
         str(step_path),
         str(output_path),
-        "--max-views",
-        str(max_views),
     ]
+    if view_names:
+        command.extend(["--views", *view_names])
+    else:
+        command.extend(["--max-views", str(max_views or 1)])
     logger.info(
         "Preview worker start: mode=%s requested_views=%s timeout_sec=%s file=%s",
         mode,
-        list(STANDARD_VIEW_ORDER[:max_views]),
+        view_names or list(STANDARD_VIEW_ORDER[: max_views or 1]),
         timeout_sec,
         step_path.name,
     )
@@ -256,12 +260,62 @@ def generate_safe_step_preview(
 
     normalized_complexity = str(complexity_score).strip().lower()
     if normalized_complexity == "high":
-        attempts = [
-            ("ultra_light", 1, active_settings.high_complexity_timeout_sec),
+        logger.info(
+            "Preview selection: complexity_score=high per_view_mode=ultra_light requested_views=%s",
+            list(STANDARD_VIEW_ORDER),
+        )
+        views: list[dict[str, Any]] = []
+        failed_warnings: list[str] = []
+        for view_name in STANDARD_VIEW_ORDER:
+            timeout_sec = (
+                active_settings.high_complexity_timeout_sec
+                if view_name == "isometric"
+                else max(
+                    active_settings.ultra_light_timeout_sec,
+                    min(active_settings.high_complexity_timeout_sec, 8.0),
+                )
+            )
+            result = _run_worker(
+                source,
+                view_names=[view_name],
+                mode="ultra_light",
+                timeout_sec=timeout_sec,
+                max_output_mb=active_settings.max_output_mb,
+            )
+            if result.get("available"):
+                views.extend(result.get("views") or [])
+            else:
+                failed_warnings.extend(result.get("warnings") or [])
+        if views:
+            primary = next(
+                (
+                    view["image_png_base64"]
+                    for view in views
+                    if view.get("name") == "isometric"
+                ),
+                views[0]["image_png_base64"],
+            )
+            logger.info(
+                "Preview high complexity finished: generated_views=%s failed_count=%s",
+                [view.get("name") for view in views],
+                len(failed_warnings),
+            )
+            return {
+                "image_png_base64": primary,
+                "available": True,
+                "partial": len(views) < len(STANDARD_VIEW_ORDER),
+                "mode": "ultra_light",
+                "views": views,
+                "warnings": failed_warnings,
+            }
+        failed = unavailable_preview(
+            "Preview generation failed after all high-complexity view attempts."
+        )
+        failed["warnings"] = [
+            *failed_warnings,
+            "Preview generation failed after all high-complexity view attempts",
         ]
-        leading_warnings = [
-            "High complexity part: using ultra-light static preview mode",
-        ]
+        return failed
     else:
         attempts = [
             (
@@ -269,8 +323,16 @@ def generate_safe_step_preview(
                 active_settings.max_render_views,
                 active_settings.timeout_sec,
             ),
-            ("light", 1, active_settings.light_timeout_sec),
-            ("ultra_light", 1, active_settings.ultra_light_timeout_sec),
+            (
+                "light",
+                active_settings.max_render_views,
+                active_settings.light_timeout_sec,
+            ),
+            (
+                "ultra_light",
+                active_settings.max_render_views,
+                active_settings.ultra_light_timeout_sec,
+            ),
         ]
         leading_warnings = []
 

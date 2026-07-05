@@ -96,8 +96,8 @@ def test_frontend_returns_html():
     assert 'id="load-viewer-button"' not in response.text
     assert "Carica vista 3D interattiva" not in response.text
     assert "Vista 3D disabilitata sul server" not in response.text
-    assert "Anteprima statica non disponibile per complessit&agrave; elevata." in response.text
-    assert "Anteprima semplificata generata per pezzo complesso." in response.text
+    assert "Anteprima statica non disponibile." in response.text
+    assert "Anteprima disponibile con viste statiche complete." in response.text
     assert "immagine non leggibile dal browser" in response.text
     assert 'fetchApi("/viewer-model"' not in response.text
     assert '<script src="/vendor/three.min.js"></script>' not in response.text
@@ -398,6 +398,7 @@ def test_quote_pdf_endpoint_accepts_preview_png():
                 "image_png_base64": preview_png,
                 "available": True,
                 "mode": "light",
+                "partial": False,
                 "views": [
                     {
                         "name": name,
@@ -438,6 +439,7 @@ def test_quote_pdf_preview_section_uses_all_static_view_labels():
             "image_png_base64": preview_png,
             "available": True,
             "mode": "full",
+            "partial": False,
             "views": [
                 {
                     "name": name,
@@ -472,6 +474,7 @@ def test_quote_pdf_preview_section_uses_ultra_light_preview_note():
             "image_png_base64": preview_png,
             "available": True,
             "mode": "ultra_light",
+            "partial": True,
             "views": [
                 {
                     "name": "isometric",
@@ -575,6 +578,7 @@ def test_analyze_and_quote_staffa_test_1_real_step_file():
     assert isinstance(payload["preview"]["available"], bool)
     assert "image_png_base64" in payload["preview"]
     assert payload["preview"]["mode"] in {"full", "light", "ultra_light", "failed"}
+    assert isinstance(payload["preview"]["partial"], bool)
     assert isinstance(payload["preview"]["views"], list)
     assert isinstance(payload["preview"]["warnings"], list)
     assert "viewer_model" in payload
@@ -763,6 +767,7 @@ def test_analyze_and_quote_does_not_call_viewer_worker(monkeypatch):
             "available": False,
             "image_png_base64": None,
             "mode": "failed",
+            "partial": False,
             "views": [],
             "warnings": [],
         },
