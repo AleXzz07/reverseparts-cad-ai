@@ -12,6 +12,7 @@ def _settings(**overrides) -> preview_service.PreviewSettings:
         "timeout_sec": 12.0,
         "light_timeout_sec": 8.0,
         "ultra_light_timeout_sec": 5.0,
+        "high_complexity_timeout_sec": 30.0,
         "max_file_size_mb": 20.0,
         "max_render_views": 4,
         "max_render_views_high_complexity": 1,
@@ -35,7 +36,7 @@ def test_safe_preview_can_be_disabled(tmp_path):
     assert "PREVIEW_ENABLED" in result["warnings"][0]
 
 
-def test_safe_preview_attempts_complex_parts_in_lightweight_mode(
+def test_safe_preview_attempts_complex_parts_in_ultra_light_mode(
     tmp_path,
     monkeypatch,
 ):
@@ -48,7 +49,7 @@ def test_safe_preview_attempts_complex_parts_in_lightweight_mode(
         return {
             "image_png_base64": "image",
             "available": True,
-            "mode": "light",
+            "mode": "ultra_light",
             "views": [{"name": "isometric", "image_png_base64": "image"}],
             "warnings": [],
         }
@@ -61,14 +62,17 @@ def test_safe_preview_attempts_complex_parts_in_lightweight_mode(
     )
 
     assert result["available"] is True
-    assert result["mode"] == "light"
-    assert "High complexity part: using light preview mode" in result["warnings"]
-    assert captured["mode"] == "light"
+    assert result["mode"] == "ultra_light"
+    assert (
+        "High complexity part: using ultra-light static preview mode"
+        in result["warnings"]
+    )
+    assert captured["mode"] == "ultra_light"
     assert captured["max_views"] == 1
-    assert captured["timeout_sec"] == 8.0
+    assert captured["timeout_sec"] == 30.0
 
 
-def test_high_complexity_uses_one_lightweight_view(tmp_path, monkeypatch):
+def test_high_complexity_uses_one_ultra_light_view(tmp_path, monkeypatch):
     step_path = tmp_path / "part.step"
     step_path.write_text("STEP", encoding="ascii")
     captured = {}
@@ -78,7 +82,7 @@ def test_high_complexity_uses_one_lightweight_view(tmp_path, monkeypatch):
         return {
             "image_png_base64": "image",
             "available": True,
-            "mode": "light",
+            "mode": "ultra_light",
             "views": [{"name": "isometric", "image_png_base64": "image"}],
             "warnings": [],
         }
@@ -92,7 +96,29 @@ def test_high_complexity_uses_one_lightweight_view(tmp_path, monkeypatch):
 
     assert result["available"] is True
     assert captured["max_views"] == 1
-    assert captured["mode"] == "light"
+    assert captured["mode"] == "ultra_light"
+
+
+def test_high_complexity_failure_returns_controlled_fallback(tmp_path, monkeypatch):
+    step_path = tmp_path / "part.step"
+    step_path.write_text("STEP", encoding="ascii")
+    attempts = []
+
+    def fake_worker(source: Path, **kwargs):
+        attempts.append(kwargs)
+        return preview_service.unavailable_preview("ultra-light renderer failed")
+
+    monkeypatch.setattr(preview_service, "_run_worker", fake_worker)
+    result = preview_service.generate_safe_step_preview(
+        str(step_path),
+        complexity_score="high",
+        settings=_settings(),
+    )
+
+    assert result["available"] is False
+    assert result["mode"] == "failed"
+    assert [attempt["mode"] for attempt in attempts] == ["ultra_light"]
+    assert "Preview generation failed after all fallback modes" in result["warnings"]
 
 
 def test_simple_part_falls_back_from_full_to_light(tmp_path, monkeypatch):

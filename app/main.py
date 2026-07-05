@@ -144,6 +144,9 @@ def config_defaults() -> dict[str, Any]:
         "preview_timeout_sec": preview_settings.timeout_sec,
         "preview_light_timeout_sec": preview_settings.light_timeout_sec,
         "preview_ultra_light_timeout_sec": preview_settings.ultra_light_timeout_sec,
+        "preview_high_complexity_timeout_sec": (
+            preview_settings.high_complexity_timeout_sec
+        ),
         "viewer_model_timeout_sec": viewer_settings.timeout_sec,
     }
 

@@ -231,10 +231,10 @@ La generazione preview viene eseguita in un subprocess isolato: un crash del ren
 La preview usa fallback progressivi:
 
 - `full`: fino a 4 viste, nell'ordine Isometrica, Alto, Frontale, Destra, con risoluzione alta e qualità completa.
-- `light`: solo isometrica, 1000x750, meno edge secondari.
-- `ultra_light`: solo isometrica, rendering semplificato con outline, pensato per evitare timeout su pezzi complessi.
+- `light`: fallback per pezzi semplici/medi quando la preview completa non riesce, con meno edge secondari.
+- `ultra_light`: isometrica semplificata a risoluzione ridotta, pensata per pezzi complessi e per evitare timeout.
 
-I pezzi con `complexity_score=high` non partono dalla preview completa: usano direttamente la modalità leggera e, se serve, l'ultra-light. Il JSON `preview` include sempre `mode` con `full`, `light`, `ultra_light` oppure `failed`, più warning leggibili come `Full preview timed out, light preview used` o `Preview generation failed after all fallback modes`.
+I pezzi con `complexity_score=high` non partono dalla preview completa: usano direttamente la modalità `ultra_light`, con una sola vista isometrica statica e timeout dedicato. Il JSON `preview` include sempre `mode` con `full`, `light`, `ultra_light` oppure `failed`, più warning leggibili come `Full preview timed out, light preview used` o `Preview generation failed after all fallback modes`.
 
 Le impostazioni disponibili sono:
 
@@ -243,12 +243,13 @@ PREVIEW_ENABLED=true
 PREVIEW_TIMEOUT_SEC=12
 PREVIEW_LIGHT_TIMEOUT_SEC=8
 PREVIEW_ULTRA_LIGHT_TIMEOUT_SEC=5
+PREVIEW_HIGH_COMPLEXITY_TIMEOUT_SEC=30
 PREVIEW_MAX_FILE_SIZE_MB=20
 PREVIEW_MAX_RENDER_VIEWS=4
 PREVIEW_MAX_RENDER_VIEWS_HIGH_COMPLEXITY=1
 ```
 
-La preview immagini è automatica e isolata dal processo FastAPI. I pezzi semplici e medi provano a generare tutte e quattro le viste statiche standard; i pezzi `high` tentano sempre almeno una vista isometrica leggera a 1000x750 e possono generare solo alcune viste se il timeout non consente il set completo. Se anche i fallback falliscono, la risposta conserva analysis e quote e riporta il motivo preciso in `preview.warnings`. Su Render è consigliato mantenere `PREVIEW_ENABLED=true`.
+La preview immagini è automatica e isolata dal processo FastAPI. I pezzi semplici e medi provano a generare tutte e quattro le viste statiche standard; i pezzi `high` tentano sempre almeno una vista isometrica semplificata. Se anche l'ultra-light fallisce, la risposta conserva analysis e quote e riporta il motivo preciso in `preview.warnings`. Su Render è consigliato mantenere `PREVIEW_ENABLED=true`.
 
 Le viste statiche sono il metodo principale di visualizzazione nella web app e nel PDF. La vista 3D interattiva/GLB è considerata sperimentale, non fa parte del flusso principale e non viene mostrata dalla web app. `/analyze-and-quote` non genera e non trasporta modelli GLB: il flusso resta centrato su analisi STEP, preventivo interno, preview statiche e PDF.
 
@@ -262,7 +263,7 @@ VIEWER_MODEL_MAX_FILE_SIZE_MB=10
 
 `VIEWER_MODEL_ENABLED` è `false` per default. Su Render è consigliato lasciarlo disattivato. Se l'endpoint sperimentale viene abilitato e l'export fallisce, preview statiche, analisi CAD, quote, `/health` e PDF continuano a funzionare. I componenti con `complexity_score=high` non generano mai GLB automaticamente.
 
-`GET /config/defaults` espone anche `preview_enabled`, `viewer_model_enabled`, `preview_max_render_views`, `preview_max_render_views_high_complexity`, `preview_timeout_sec`, `preview_light_timeout_sec`, `preview_ultra_light_timeout_sec` e `viewer_model_timeout_sec`. La web app usa i valori preview per gestire le viste statiche e ignora il viewer 3D nel flusso principale.
+`GET /config/defaults` espone anche `preview_enabled`, `viewer_model_enabled`, `preview_max_render_views`, `preview_max_render_views_high_complexity`, `preview_timeout_sec`, `preview_light_timeout_sec`, `preview_ultra_light_timeout_sec`, `preview_high_complexity_timeout_sec` e `viewer_model_timeout_sec`. La web app usa i valori preview per gestire le viste statiche e ignora il viewer 3D nel flusso principale.
 
 Configurazione Render consigliata con sole preview statiche:
 
@@ -271,6 +272,7 @@ PREVIEW_ENABLED=true
 PREVIEW_TIMEOUT_SEC=12
 PREVIEW_LIGHT_TIMEOUT_SEC=8
 PREVIEW_ULTRA_LIGHT_TIMEOUT_SEC=5
+PREVIEW_HIGH_COMPLEXITY_TIMEOUT_SEC=30
 PREVIEW_MAX_RENDER_VIEWS=4
 PREVIEW_MAX_RENDER_VIEWS_HIGH_COMPLEXITY=1
 VIEWER_MODEL_ENABLED=false

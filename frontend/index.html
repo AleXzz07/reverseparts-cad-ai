@@ -633,10 +633,10 @@
       const simplifiedPreview = preview.mode === "light" || preview.mode === "ultra_light";
       const partialPreview = views.length < 4;
       const highComplexity = String(complexityScore || "").toLowerCase() === "high";
-      previewStatus.textContent = partialPreview
-        ? "Anteprima disponibile con alcune viste statiche. Alcune viste non sono state generate."
-        : simplifiedPreview && highComplexity
-          ? "Anteprima disponibile. Anteprima leggera generata per pezzo complesso"
+      previewStatus.textContent = simplifiedPreview && highComplexity
+        ? "Anteprima semplificata generata per pezzo complesso."
+        : partialPreview
+          ? "Anteprima disponibile con alcune viste statiche. Alcune viste non sono state generate."
           : "Anteprima disponibile";
       previewImage.hidden = false;
       previewFallback.hidden = true;

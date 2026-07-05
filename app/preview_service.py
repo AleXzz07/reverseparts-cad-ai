@@ -53,6 +53,7 @@ class PreviewSettings:
     timeout_sec: float
     light_timeout_sec: float
     ultra_light_timeout_sec: float
+    high_complexity_timeout_sec: float
     max_file_size_mb: float
     max_render_views: int
     max_render_views_high_complexity: int
@@ -70,6 +71,10 @@ class PreviewSettings:
             ultra_light_timeout_sec=max(
                 1.0,
                 _env_float("PREVIEW_ULTRA_LIGHT_TIMEOUT_SEC", 5.0),
+            ),
+            high_complexity_timeout_sec=max(
+                1.0,
+                _env_float("PREVIEW_HIGH_COMPLEXITY_TIMEOUT_SEC", 30.0),
             ),
             max_file_size_mb=max(
                 0.1,
@@ -151,8 +156,8 @@ def _run_worker(
     else:
         environment.update(
             {
-                "PREVIEW_WIDTH_PX": "800",
-                "PREVIEW_HEIGHT_PX": "600",
+                "PREVIEW_WIDTH_PX": "900",
+                "PREVIEW_HEIGHT_PX": "650",
                 "PREVIEW_RENDER_SCALE": "1",
                 "PREVIEW_RENDER_MODE": "ultra_light",
             }
@@ -252,15 +257,10 @@ def generate_safe_step_preview(
     normalized_complexity = str(complexity_score).strip().lower()
     if normalized_complexity == "high":
         attempts = [
-            (
-                "light",
-                active_settings.max_render_views_high_complexity,
-                active_settings.light_timeout_sec,
-            ),
-            ("ultra_light", 1, active_settings.ultra_light_timeout_sec),
+            ("ultra_light", 1, active_settings.high_complexity_timeout_sec),
         ]
         leading_warnings = [
-            "High complexity part: using light preview mode",
+            "High complexity part: using ultra-light static preview mode",
         ]
     else:
         attempts = [

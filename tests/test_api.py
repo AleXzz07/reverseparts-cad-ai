@@ -97,7 +97,7 @@ def test_frontend_returns_html():
     assert "Carica vista 3D interattiva" not in response.text
     assert "Vista 3D disabilitata sul server" not in response.text
     assert "Anteprima statica non disponibile per complessit&agrave; elevata." in response.text
-    assert "Anteprima leggera generata per pezzo complesso" in response.text
+    assert "Anteprima semplificata generata per pezzo complesso." in response.text
     assert "immagine non leggibile dal browser" in response.text
     assert 'fetchApi("/viewer-model"' not in response.text
     assert '<script src="/vendor/three.min.js"></script>' not in response.text
@@ -156,6 +156,7 @@ def test_config_defaults_exposes_preview_and_viewer_runtime(monkeypatch):
     monkeypatch.setenv("PREVIEW_TIMEOUT_SEC", "12")
     monkeypatch.setenv("PREVIEW_LIGHT_TIMEOUT_SEC", "8")
     monkeypatch.setenv("PREVIEW_ULTRA_LIGHT_TIMEOUT_SEC", "5")
+    monkeypatch.setenv("PREVIEW_HIGH_COMPLEXITY_TIMEOUT_SEC", "30")
     monkeypatch.setenv("PREVIEW_MAX_RENDER_VIEWS", "3")
     monkeypatch.setenv("PREVIEW_MAX_RENDER_VIEWS_HIGH_COMPLEXITY", "1")
     monkeypatch.setenv("VIEWER_MODEL_ENABLED", "false")
@@ -172,6 +173,7 @@ def test_config_defaults_exposes_preview_and_viewer_runtime(monkeypatch):
     assert payload["preview_timeout_sec"] == 12.0
     assert payload["preview_light_timeout_sec"] == 8.0
     assert payload["preview_ultra_light_timeout_sec"] == 5.0
+    assert payload["preview_high_complexity_timeout_sec"] == 30.0
     assert payload["viewer_model_timeout_sec"] == 20.0
 
 
@@ -458,6 +460,32 @@ def test_quote_pdf_preview_section_uses_all_static_view_labels():
     assert "Alto" in rendered
     assert "Frontale" in rendered
     assert "Destra" in rendered
+
+
+def test_quote_pdf_preview_section_uses_ultra_light_preview_note():
+    image_buffer = BytesIO()
+    Image.new("RGB", (4, 3), (220, 224, 228)).save(image_buffer, format="PNG")
+    preview_png = base64.b64encode(image_buffer.getvalue()).decode("ascii")
+
+    elements = pdf_report._preview_section(
+        {
+            "image_png_base64": preview_png,
+            "available": True,
+            "mode": "ultra_light",
+            "views": [
+                {
+                    "name": "isometric",
+                    "label": "Isometrica",
+                    "image_png_base64": preview_png,
+                }
+            ],
+            "warnings": [],
+        }
+    )
+
+    rendered = "\n".join(str(element) for element in elements)
+    assert "Anteprima semplificata per pezzo complesso" in rendered
+    assert "Isometrica" in rendered
 
 
 def test_quote_pdf_ignores_legacy_viewer_model_section(monkeypatch):
