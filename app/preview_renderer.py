@@ -17,12 +17,18 @@ PREVIEW_RENDER_MODE = os.getenv(
     "clean",
 ).strip().lower()
 PRIMARY_VIEW_NAME = "isometric"
-VIEW_ORDER = ("isometric", "front", "right", "top")
+VIEW_ORDER = ("isometric", "top", "front", "right")
+VIEW_LABELS = {
+    "isometric": "Isometrica",
+    "top": "Alto",
+    "front": "Frontale",
+    "right": "Destra",
+}
 VIEW_DIRECTIONS = {
     "isometric": (1.0, -1.0, 0.85),
+    "top": (0.0, 0.0, 1.0),
     "front": (0.0, -1.0, 0.0),
     "right": (1.0, 0.0, 0.0),
-    "top": (0.0, 0.0, 1.0),
 }
 
 
@@ -568,6 +574,7 @@ def generate_step_previews(
             views.append(
                 {
                     "name": view_name,
+                    "label": VIEW_LABELS.get(view_name, view_name.title()),
                     "image_png_base64": encoded,
                 }
             )

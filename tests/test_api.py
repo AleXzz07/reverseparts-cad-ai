@@ -108,6 +108,9 @@ def test_frontend_returns_html():
     assert "Frontale" in response.text
     assert "Destra" in response.text
     assert "Alto" in response.text
+    assert "Anteprima disponibile con alcune viste statiche." in response.text
+    assert "Alcune viste non sono state generate." in response.text
+    assert 'setAttribute("aria-pressed", "false")' in response.text
     assert (
         "Anteprima non disponibile. Analisi e preventivo generati correttamente."
         in response.text
@@ -395,9 +398,15 @@ def test_quote_pdf_endpoint_accepts_preview_png():
                 "views": [
                     {
                         "name": name,
+                        "label": {
+                            "isometric": "Isometrica",
+                            "top": "Alto",
+                            "front": "Frontale",
+                            "right": "Destra",
+                        }[name],
                         "image_png_base64": preview_png,
                     }
-                    for name in ("isometric", "front", "right", "top")
+                    for name in ("isometric", "top", "front", "right")
                 ],
                 "warnings": [],
             },
@@ -515,7 +524,15 @@ def test_analyze_and_quote_staffa_test_1_real_step_file():
         assert len(payload["preview"]["views"]) >= 4
         assert {
             view["name"] for view in payload["preview"]["views"]
-        } >= {"isometric", "front", "right", "top"}
+        } >= {"isometric", "top", "front", "right"}
+        labels_by_name = {
+            view["name"]: view.get("label")
+            for view in payload["preview"]["views"]
+        }
+        assert labels_by_name["isometric"] == "Isometrica"
+        assert labels_by_name["top"] == "Alto"
+        assert labels_by_name["front"] == "Frontale"
+        assert labels_by_name["right"] == "Destra"
         preview_bytes = base64.b64decode(payload["preview"]["image_png_base64"])
         assert preview_bytes.startswith(b"\x89PNG\r\n\x1a\n")
 

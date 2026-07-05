@@ -222,7 +222,7 @@ The initial pricing configuration is loaded independently from the FreeCAD healt
 
 La web app include tooltip e legenda per spiegare i parametri modificabili del preventivo.
 
-Il backend genera preview PNG del pezzo STEP tramite la tessellazione FreeCAD e un renderer software headless. Le viste disponibili includono isometrica, frontale, destra e alto, con asse Z orientato verso l'alto. La web app mostra una gallery con miniature cliccabili e il PDF include una griglia delle viste quando disponibili. Se una vista o il rendering non sono disponibili, vengono restituiti warning senza bloccare analisi CAD, preventivo o PDF.
+Il backend genera preview PNG del pezzo STEP tramite la tessellazione FreeCAD e un renderer software headless. Le viste statiche standard sono Isometrica, Alto, Frontale e Destra, con asse Z orientato verso l'alto. La web app mostra una vista principale grande con miniature cliccabili e il PDF include più viste statiche quando disponibili. Se una vista o il rendering non sono disponibili, vengono restituiti warning senza bloccare analisi CAD, preventivo o PDF.
 
 La modalità preview `clean`, attiva di default e configurabile con `PREVIEW_RENDER_MODE=clean`, usa la hidden-line removal di FreeCAD per mostrare solo i contorni tecnici visibili. Seam, raccordi tangenti, micro-edge e linee proiettate duplicate vengono filtrati, rendendo più leggibili anche aperture formate, collarini e imbutiture nei componenti complessi.
 
@@ -230,7 +230,7 @@ La generazione preview viene eseguita in un subprocess isolato: un crash del ren
 
 La preview usa fallback progressivi:
 
-- `full`: fino a 4 viste, risoluzione alta e qualità completa.
+- `full`: fino a 4 viste, nell'ordine Isometrica, Alto, Frontale, Destra, con risoluzione alta e qualità completa.
 - `light`: solo isometrica, 1000x750, meno edge secondari.
 - `ultra_light`: solo isometrica, rendering semplificato con outline, pensato per evitare timeout su pezzi complessi.
 
@@ -248,7 +248,7 @@ PREVIEW_MAX_RENDER_VIEWS=4
 PREVIEW_MAX_RENDER_VIEWS_HIGH_COMPLEXITY=1
 ```
 
-La preview immagini è automatica e isolata dal processo FastAPI. I pezzi semplici possono generare fino a quattro viste; i pezzi `high` tentano sempre almeno una vista isometrica leggera a 1000x750, con un solo render e timeout ridotto. Se anche i fallback falliscono, la risposta conserva analysis e quote e riporta il motivo preciso in `preview.warnings`. Su Render è consigliato mantenere `PREVIEW_ENABLED=true`.
+La preview immagini è automatica e isolata dal processo FastAPI. I pezzi semplici e medi provano a generare tutte e quattro le viste statiche standard; i pezzi `high` tentano sempre almeno una vista isometrica leggera a 1000x750 e possono generare solo alcune viste se il timeout non consente il set completo. Se anche i fallback falliscono, la risposta conserva analysis e quote e riporta il motivo preciso in `preview.warnings`. Su Render è consigliato mantenere `PREVIEW_ENABLED=true`.
 
 Le viste statiche sono il metodo principale di visualizzazione nella web app e nel PDF. La vista 3D interattiva/GLB è considerata sperimentale, non fa parte del flusso principale e non viene mostrata dalla web app. `/analyze-and-quote` non genera e non trasporta modelli GLB: il flusso resta centrato su analisi STEP, preventivo interno, preview statiche e PDF.
 

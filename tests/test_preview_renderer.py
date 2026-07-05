@@ -71,8 +71,13 @@ def test_generate_step_previews_keeps_successful_views(tmp_path, monkeypatch):
     assert result["image_png_base64"] == "encoded-isometric"
     assert [view["name"] for view in result["views"]] == [
         "isometric",
-        "front",
         "top",
+        "front",
+    ]
+    assert [view["label"] for view in result["views"]] == [
+        "Isometrica",
+        "Alto",
+        "Frontale",
     ]
     assert result["warnings"] == [
         "Preview view 'right' generation failed: right view unavailable"

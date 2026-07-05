@@ -285,7 +285,16 @@ def _preview_section(preview: dict[str, Any] | None) -> list[Any]:
             max_height=48 * mm,
         )
         if image is not None:
-            rendered_views.append((view.get("name", ""), image))
+            rendered_views.append(
+                (
+                    view.get("label")
+                    or PREVIEW_LABELS.get(
+                        view.get("name", ""),
+                        view.get("name", "").title(),
+                    ),
+                    image,
+                )
+            )
 
     if not rendered_views:
         return [
@@ -294,7 +303,7 @@ def _preview_section(preview: dict[str, Any] | None) -> list[Any]:
             Spacer(1, 4 * mm),
         ]
     if len(rendered_views) == 1:
-        name, image = rendered_views[0]
+        label, image = rendered_views[0]
         larger_image = _preview_image(
             view_payloads[0]["image_png_base64"],
             max_width=120 * mm,
@@ -303,17 +312,17 @@ def _preview_section(preview: dict[str, Any] | None) -> list[Any]:
         if larger_image is not None:
             return [
                 *elements,
-                Paragraph(PREVIEW_LABELS.get(name, name.title()), label_style),
+                Paragraph(label, label_style),
                 larger_image,
                 Spacer(1, 4 * mm),
             ]
 
     cells = [
         [
-            Paragraph(PREVIEW_LABELS.get(name, name.title()), label_style),
+            Paragraph(label, label_style),
             image,
         ]
-        for name, image in rendered_views
+        for label, image in rendered_views
     ]
     if len(cells) % 2:
         cells.append([])

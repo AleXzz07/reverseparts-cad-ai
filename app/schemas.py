@@ -105,6 +105,7 @@ class QuoteRequest(BaseModel):
 
 class PreviewView(BaseModel):
     name: str
+    label: str | None = None
     image_png_base64: str
 
 

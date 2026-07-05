@@ -589,7 +589,7 @@
       const previewImage = document.getElementById("part-preview");
       const previewFallback = document.getElementById("preview-fallback");
       const currentLabel = document.getElementById("preview-current-label");
-      const label = previewViewLabels[view.name] || view.name;
+      const label = view.label || previewViewLabels[view.name] || view.name;
       previewImage.onerror = () => {
         previewImage.removeAttribute("src");
         previewImage.hidden = true;
@@ -631,15 +631,18 @@
       }
 
       const simplifiedPreview = preview.mode === "light" || preview.mode === "ultra_light";
-      previewStatus.textContent = simplifiedPreview
-        ? "Anteprima disponibile. Anteprima leggera generata per pezzo complesso"
-        : "Anteprima disponibile";
+      const partialPreview = views.length < 4;
+      previewStatus.textContent = partialPreview
+        ? "Anteprima disponibile con alcune viste statiche. Alcune viste non sono state generate."
+        : simplifiedPreview
+          ? "Anteprima disponibile. Anteprima leggera generata per pezzo complesso"
+          : "Anteprima disponibile";
       previewImage.hidden = false;
       previewFallback.hidden = true;
       currentLabel.hidden = false;
       thumbnails.hidden = views.length <= 1;
       views.forEach((view, index) => {
-        const label = previewViewLabels[view.name] || view.name;
+        const label = view.label || previewViewLabels[view.name] || view.name;
         const button = document.createElement("button");
         const image = document.createElement("img");
         const caption = document.createElement("span");
