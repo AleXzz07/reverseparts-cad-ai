@@ -2,13 +2,16 @@ from __future__ import annotations
 
 import base64
 import importlib
+import logging
 import math
 import os
+import tempfile
 from io import BytesIO
 from pathlib import Path
 from typing import Any
 
 
+logger = logging.getLogger(__name__)
 PREVIEW_WIDTH_PX = int(os.getenv("PREVIEW_WIDTH_PX", "1600"))
 PREVIEW_HEIGHT_PX = int(os.getenv("PREVIEW_HEIGHT_PX", "1200"))
 RENDER_SCALE = int(os.getenv("PREVIEW_RENDER_SCALE", "2"))
@@ -575,7 +578,20 @@ def render_named_view(
         resample=resampling,
     )
     output = BytesIO()
-    image.save(output, format="PNG", optimize=True)
+    tmp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            prefix=f"reverseparts_preview_{view_name}_",
+            suffix=".png",
+            delete=False,
+        ) as tmp_file:
+            tmp_path = Path(tmp_file.name)
+        image.save(tmp_path, format="PNG", optimize=True)
+        logger.info("[preview] generated image: view=%s path=%s", view_name, tmp_path)
+        output.write(tmp_path.read_bytes())
+    finally:
+        if tmp_path is not None:
+            tmp_path.unlink(missing_ok=True)
     return base64.b64encode(output.getvalue()).decode("ascii")
 
 
@@ -599,6 +615,7 @@ def generate_step_previews(
     selected_views = tuple(view_names) if view_names else VIEW_ORDER
     if max_views is not None and not view_names:
         selected_views = VIEW_ORDER[:max(1, min(int(max_views), len(VIEW_ORDER)))]
+    logger.info("[preview] attempted views: %s", ", ".join(selected_views))
     for view_name in selected_views:
         try:
             encoded = render_named_view(
@@ -610,6 +627,7 @@ def generate_step_previews(
             )
             views.append(
                 {
+                    "key": view_name,
                     "name": view_name,
                     "label": VIEW_LABELS.get(view_name, view_name.title()),
                     "image_png_base64": encoded,
@@ -619,6 +637,25 @@ def generate_step_previews(
             warnings.append(
                 f"Preview view '{view_name}' generation failed: {exc}"
             )
+
+    generated_names = [view["name"] for view in views]
+    failed_names = [
+        view_name
+        for view_name in selected_views
+        if view_name not in set(generated_names)
+    ]
+    logger.info(
+        "[preview] generated ok: %s",
+        ", ".join(generated_names) if generated_names else "none",
+    )
+    logger.info(
+        "[preview] failed: %s",
+        ", ".join(failed_names) if failed_names else "none",
+    )
+    logger.info(
+        "[preview] returned views: %s",
+        ", ".join(generated_names) if generated_names else "none",
+    )
 
     primary = next(
         (

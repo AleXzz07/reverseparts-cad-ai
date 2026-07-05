@@ -285,14 +285,17 @@ def _preview_section(preview: dict[str, Any] | None) -> list[Any]:
             max_height=48 * mm,
         )
         if image is not None:
+            view_name = view.get("name") or view.get("key", "")
             rendered_views.append(
                 (
+                    view_name,
                     view.get("label")
                     or PREVIEW_LABELS.get(
-                        view.get("name", ""),
-                        view.get("name", "").title(),
+                        view_name,
+                        view_name.title(),
                     ),
                     image,
+                    view["image_png_base64"],
                 )
             )
 
@@ -303,9 +306,9 @@ def _preview_section(preview: dict[str, Any] | None) -> list[Any]:
             Spacer(1, 4 * mm),
         ]
     if len(rendered_views) == 1:
-        label, image = rendered_views[0]
+        _, label, _, image_png_base64 = rendered_views[0]
         larger_image = _preview_image(
-            view_payloads[0]["image_png_base64"],
+            image_png_base64,
             max_width=120 * mm,
             max_height=72 * mm,
         )
@@ -317,12 +320,41 @@ def _preview_section(preview: dict[str, Any] | None) -> list[Any]:
                 Spacer(1, 4 * mm),
             ]
 
+    primary_view = next(
+        (
+            rendered_view
+            for rendered_view in rendered_views
+            if rendered_view[0] == "isometric"
+        ),
+        rendered_views[0],
+    )
+    primary_name, primary_label, _, primary_png = primary_view
+    primary_image = _preview_image(
+        primary_png,
+        max_width=120 * mm,
+        max_height=62 * mm,
+    )
+    primary_elements = []
+    if primary_image is not None:
+        primary_elements = [
+            Paragraph(primary_label, label_style),
+            primary_image,
+            Spacer(1, 3 * mm),
+        ]
+    secondary_views = [
+        rendered_view
+        for rendered_view in rendered_views
+        if rendered_view[0] != primary_name
+    ]
+    if not secondary_views:
+        return [*elements, *primary_elements, Spacer(1, 4 * mm)]
+
     cells = [
         [
             Paragraph(label, label_style),
             image,
         ]
-        for label, image in rendered_views
+        for _, label, image, _ in secondary_views
     ]
     if len(cells) % 2:
         cells.append([])
@@ -342,7 +374,7 @@ def _preview_section(preview: dict[str, Any] | None) -> list[Any]:
             ]
         )
     )
-    return [*elements, KeepTogether([grid]), Spacer(1, 4 * mm)]
+    return [*elements, *primary_elements, KeepTogether([grid]), Spacer(1, 4 * mm)]
 
 
 def generate_quote_pdf(

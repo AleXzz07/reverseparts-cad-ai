@@ -98,6 +98,7 @@ def test_frontend_returns_html():
     assert "Vista 3D disabilitata sul server" not in response.text
     assert "Anteprima statica non disponibile." in response.text
     assert "Anteprima disponibile con viste statiche complete." in response.text
+    assert "Anteprima disponibile con una sola vista statica." in response.text
     assert "immagine non leggibile dal browser" in response.text
     assert 'fetchApi("/viewer-model"' not in response.text
     assert '<script src="/vendor/three.min.js"></script>' not in response.text
@@ -105,6 +106,15 @@ def test_frontend_returns_html():
     assert "THREE.OrbitControls" not in response.text
     assert 'id="part-preview"' in response.text
     assert 'id="preview-thumbnails"' in response.text
+    assert "normalizePreviewViews(preview || {})" in response.text
+    assert "window.REVERSEPARTS_PREVIEW_DEBUG" in response.text
+    assert 'console.log("[preview] payload received", preview)' in response.text
+    assert 'console.log("[preview] preview.views count", views.length)' in response.text
+    assert 'console.log("[preview] rendered view keys", views.map(view => view.name))' in response.text
+    assert "views.forEach((view, index) =>" in response.text
+    assert "button.dataset.previewKey = view.name" in response.text
+    assert 'button.addEventListener("click", () => showPreviewView(view, button))' in response.text
+    assert "showPreviewView(view, button)" in response.text
     assert "Isometrica" in response.text
     assert "Frontale" in response.text
     assert "Destra" in response.text
@@ -592,6 +602,9 @@ def test_analyze_and_quote_staffa_test_1_real_step_file():
         assert {
             view["name"] for view in payload["preview"]["views"]
         } >= {"isometric", "top", "front", "right"}
+        assert {
+            view["key"] for view in payload["preview"]["views"]
+        } >= {"isometric", "top", "front", "right"}
         labels_by_name = {
             view["name"]: view.get("label")
             for view in payload["preview"]["views"]
@@ -626,6 +639,8 @@ def test_analyze_and_quote_lamiera_piana_generates_four_full_static_views():
     assert len(payload["preview"]["views"]) >= 4
     names = [view["name"] for view in payload["preview"]["views"]]
     assert names[:4] == ["isometric", "top", "front", "right"]
+    keys = [view["key"] for view in payload["preview"]["views"][:4]]
+    assert keys == ["isometric", "top", "front", "right"]
     labels = [view["label"] for view in payload["preview"]["views"][:4]]
     assert labels == ["Isometrica", "Alto", "Frontale", "Destra"]
     assert payload["preview"]["warnings"] == []

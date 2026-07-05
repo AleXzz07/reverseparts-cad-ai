@@ -203,9 +203,19 @@ def _run_worker(
             return unavailable_preview(
                 f"renderer timed out after {timeout_sec:g} seconds."
             )
+        stderr_lines = [
+            line.strip()
+            for line in (stderr or "").splitlines()
+            if line.strip()
+        ]
+        for line in stderr_lines:
+            logger.info("%s", line)
         if process.returncode != 0:
-            detail = (stderr or "").strip().splitlines()
-            message = detail[-1] if detail else f"worker exited with code {process.returncode}."
+            message = (
+                stderr_lines[-1]
+                if stderr_lines
+                else f"worker exited with code {process.returncode}."
+            )
             return unavailable_preview(message)
         if not output_path.is_file():
             return unavailable_preview("renderer produced no output.")
@@ -226,10 +236,11 @@ def _run_worker(
             and warning.startswith("Preview view ")
         ]
         logger.info(
-            "Preview worker finished: mode=%s generated_views=%s failed_views=%s",
+            "[preview] worker finished: mode=%s generated ok=%s failed=%s returned views=%s",
             mode,
             generated_views,
             failed_views,
+            generated_views,
         )
         return payload
     except (OSError, json.JSONDecodeError, subprocess.SubprocessError) as exc:

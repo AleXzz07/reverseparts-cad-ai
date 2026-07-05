@@ -76,6 +76,11 @@ def test_generate_step_previews_keeps_successful_views(tmp_path, monkeypatch):
         "top",
         "front",
     ]
+    assert [view["key"] for view in result["views"]] == [
+        "isometric",
+        "top",
+        "front",
+    ]
     assert [view["label"] for view in result["views"]] == [
         "Isometrica",
         "Alto",
@@ -83,6 +88,40 @@ def test_generate_step_previews_keeps_successful_views(tmp_path, monkeypatch):
     ]
     assert result["warnings"] == [
         "Preview view 'right' generation failed: right view unavailable"
+    ]
+
+
+def test_generate_step_previews_returns_four_views_when_all_succeed(
+    tmp_path,
+    monkeypatch,
+):
+    step_path = tmp_path / "part.step"
+    step_path.write_text("STEP", encoding="ascii")
+    rendered = []
+    monkeypatch.setattr(
+        preview_renderer,
+        "_load_geometry",
+        lambda source: (object(), [], [], 1.0),
+    )
+
+    def fake_render(shape, points, facets, diagonal, view_name):
+        rendered.append(view_name)
+        return f"encoded-{view_name}"
+
+    monkeypatch.setattr(preview_renderer, "render_named_view", fake_render)
+
+    result = preview_renderer.generate_step_previews(str(step_path))
+
+    assert result["available"] is True
+    assert result["partial"] is False
+    assert rendered == ["isometric", "top", "front", "right"]
+    assert [view["name"] for view in result["views"]] == rendered
+    assert [view["key"] for view in result["views"]] == rendered
+    assert [view["label"] for view in result["views"]] == [
+        "Isometrica",
+        "Alto",
+        "Frontale",
+        "Destra",
     ]
 
 

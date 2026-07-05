@@ -501,12 +501,13 @@
     };
     const previewViewLabels = {
       isometric: "Isometrica",
+      top: "Alto",
       front: "Frontale",
       right: "Destra",
-      top: "Alto",
       rear: "Posteriore",
       left: "Sinistra"
     };
+    const previewViewOrder = ["isometric", "top", "front", "right"];
     let defaults = null;
     let lastResult = null;
 
@@ -589,14 +590,18 @@
       const previewImage = document.getElementById("part-preview");
       const previewFallback = document.getElementById("preview-fallback");
       const currentLabel = document.getElementById("preview-current-label");
-      const label = view.label || previewViewLabels[view.name] || view.name;
+      const viewKey = view.name || view.key || "preview";
+      const imageSource = view.image_png_base64
+        ? `data:image/png;base64,${view.image_png_base64}`
+        : view.image_url || view.url || "";
+      const label = view.label || previewViewLabels[viewKey] || viewKey;
       previewImage.onerror = () => {
         previewImage.removeAttribute("src");
         previewImage.hidden = true;
         previewFallback.textContent = "Anteprima non disponibile: immagine non leggibile dal browser";
         previewFallback.hidden = false;
       };
-      previewImage.src = `data:image/png;base64,${view.image_png_base64}`;
+      previewImage.src = imageSource;
       previewImage.alt = `Anteprima ${label.toLowerCase()} del pezzo STEP`;
       currentLabel.textContent = label;
       document.querySelectorAll(".preview-thumb").forEach(item => {
@@ -605,17 +610,45 @@
       });
     }
 
+    function normalizePreviewViews(preview) {
+      const rawViews = Array.isArray(preview.views) && preview.views.length
+        ? preview.views
+        : preview.image_png_base64
+          ? [{ name: "isometric", label: "Isometrica", image_png_base64: preview.image_png_base64 }]
+          : preview.image_url
+            ? [{ name: "isometric", label: "Isometrica", image_url: preview.image_url }]
+            : [];
+      const normalized = rawViews
+        .map((view, index) => {
+          const name = view.name || view.key || `view-${index + 1}`;
+          return {
+            ...view,
+            name,
+            key: view.key || name,
+            label: view.label || previewViewLabels[name] || name,
+            image_png_base64: view.image_png_base64 || null,
+            image_url: view.image_url || view.url || null,
+          };
+        })
+        .filter(view => view.image_png_base64 || view.image_url);
+      normalized.sort((left, right) => {
+        const leftIndex = previewViewOrder.indexOf(left.name);
+        const rightIndex = previewViewOrder.indexOf(right.name);
+        return (leftIndex === -1 ? 99 : leftIndex) - (rightIndex === -1 ? 99 : rightIndex);
+      });
+      return normalized;
+    }
+
     function renderPreviewGallery(preview, complexityScore = "unknown") {
       const previewImage = document.getElementById("part-preview");
       const previewFallback = document.getElementById("preview-fallback");
       const previewStatus = document.getElementById("preview-status");
       const currentLabel = document.getElementById("preview-current-label");
       const thumbnails = document.getElementById("preview-thumbnails");
-      const views = Array.isArray(preview.views) && preview.views.length
-        ? preview.views
-        : preview.image_png_base64
-          ? [{ name: "isometric", image_png_base64: preview.image_png_base64 }]
-          : [];
+      console.log("[preview] payload received", preview);
+      const views = normalizePreviewViews(preview || {});
+      console.log("[preview] preview.views count", views.length);
+      console.log("[preview] rendered view keys", views.map(view => view.name));
 
       thumbnails.replaceChildren();
       if (!preview.available || !views.length) {
@@ -631,13 +664,15 @@
       }
 
       const partialPreview = preview.partial === true || views.length < 4;
-      previewStatus.textContent = partialPreview
-        ? "Anteprima disponibile con alcune viste statiche. Alcune viste non sono state generate."
-        : "Anteprima disponibile con viste statiche complete.";
+      previewStatus.textContent = views.length === 1
+        ? "Anteprima disponibile con una sola vista statica."
+        : partialPreview
+          ? "Anteprima disponibile con alcune viste statiche. Alcune viste non sono state generate."
+          : "Anteprima disponibile con viste statiche complete.";
       previewImage.hidden = false;
       previewFallback.hidden = true;
       currentLabel.hidden = false;
-      thumbnails.hidden = views.length <= 1;
+      thumbnails.hidden = false;
       views.forEach((view, index) => {
         const label = view.label || previewViewLabels[view.name] || view.name;
         const button = document.createElement("button");
@@ -645,13 +680,16 @@
         const caption = document.createElement("span");
         button.type = "button";
         button.className = "preview-thumb";
+        button.dataset.previewKey = view.name;
         button.setAttribute("aria-label", `Mostra vista ${label}`);
         button.setAttribute("aria-pressed", "false");
         image.addEventListener("error", () => {
           image.removeAttribute("src");
           image.hidden = true;
         });
-        image.src = `data:image/png;base64,${view.image_png_base64}`;
+        image.src = view.image_png_base64
+          ? `data:image/png;base64,${view.image_png_base64}`
+          : view.image_url;
         image.alt = "";
         caption.textContent = label;
         button.append(image, caption);
@@ -660,6 +698,12 @@
         if (index === 0) showPreviewView(view, button);
       });
     }
+
+    window.REVERSEPARTS_PREVIEW_DEBUG = {
+      normalizePreviewViews,
+      renderPreviewGallery,
+      showPreviewView,
+    };
 
     function renderResult(payload) {
       const analysis = payload.analysis;

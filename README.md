@@ -249,7 +249,9 @@ PREVIEW_MAX_RENDER_VIEWS=4
 PREVIEW_MAX_RENDER_VIEWS_HIGH_COMPLEXITY=1
 ```
 
-La preview immagini è automatica e isolata dal processo FastAPI. I pezzi semplici e medi provano a generare tutte e quattro le viste statiche standard; i pezzi `high` tentano viste ultra-light indipendenti e mantengono tutte quelle riuscite. La modalità ultra-light evita il contorno nero esterno artificiale, riduce gli edge secondari e ritaglia l'immagine sugli ingombri reali del pezzo con un margine bianco. Se tutte le viste falliscono, la risposta conserva analysis e quote e riporta il motivo preciso in `preview.warnings`. Su Render è consigliato mantenere `PREVIEW_ENABLED=true`.
+La preview immagini è automatica e isolata dal processo FastAPI. I pezzi semplici e medi provano a generare tutte e quattro le viste statiche standard; i pezzi `high` tentano viste ultra-light indipendenti e mantengono tutte quelle riuscite. Il payload `preview.views` contiene tutte le viste generate, ordinate come Isometrica, Alto, Frontale e Destra, con `key`, `name`, `label` e `image_png_base64`. La web app mostra una miniatura per ogni vista presente e il click sulla miniatura aggiorna l'immagine principale. La modalità ultra-light evita il contorno nero esterno artificiale, riduce gli edge secondari e ritaglia l'immagine sugli ingombri reali del pezzo con un margine bianco. Se tutte le viste falliscono, la risposta conserva analysis e quote e riporta il motivo preciso in `preview.warnings`. Su Render è consigliato mantenere `PREVIEW_ENABLED=true`.
+
+Per debug, il backend registra log preview espliciti con viste tentate, viste generate, viste fallite, path temporaneo delle PNG e viste restituite nel JSON finale. Anche la web app stampa in console il payload `preview`, il numero di viste ricevute e le chiavi renderizzate.
 
 Le viste statiche sono il metodo principale di visualizzazione nella web app e nel PDF. La vista 3D interattiva/GLB è considerata sperimentale, non fa parte del flusso principale e non viene mostrata dalla web app. `/analyze-and-quote` non genera e non trasporta modelli GLB: il flusso resta centrato su analisi STEP, preventivo interno, preview statiche e PDF.
 

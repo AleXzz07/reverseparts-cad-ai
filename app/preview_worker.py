@@ -2,12 +2,18 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
+import os
 from pathlib import Path
 
 from .preview_renderer import generate_step_previews
 
 
 def main() -> int:
+    logging.basicConfig(
+        level=os.getenv("PREVIEW_LOG_LEVEL", "INFO"),
+        format="%(message)s",
+    )
     parser = argparse.ArgumentParser(description="Isolated STEP preview worker.")
     parser.add_argument("step_path")
     parser.add_argument("output_path")
