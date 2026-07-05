@@ -63,6 +63,18 @@ def test_health_returns_freecad_status():
     assert "freecad_error" in payload
 
 
+def test_healthz_returns_fast_ok_without_freecad_check(monkeypatch):
+    def fail_if_called():
+        raise AssertionError("healthz must not call FreeCAD diagnostics")
+
+    monkeypatch.setattr(api, "get_freecad_status", fail_if_called)
+
+    response = client.get("/healthz")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
 def test_frontend_returns_html():
     response = client.get("/")
 
@@ -101,6 +113,7 @@ def test_frontend_returns_html():
     assert "Genera viste statiche" in response.text
     assert "Generazione viste statiche in corso" in response.text
     assert "Il pezzo &egrave; complesso, la generazione pu&ograve; richiedere qualche secondo." in response.text
+    assert "Generazione anteprima non riuscita. Riprova oppure scarica il PDF senza immagini." in response.text
     assert "window.setTimeout" in response.text
     assert "Anteprima statica non disponibile per questo pezzo." in response.text
     assert "Anteprima statica non disponibile per complessit&agrave; elevata." in response.text
@@ -708,6 +721,49 @@ def test_generate_preview_returns_partial_views_when_one_view_fails(monkeypatch)
         "front",
     ]
     assert "right" in preview["warnings"][0]
+
+
+def test_generate_preview_failure_does_not_break_healthz(monkeypatch):
+    def fail_preview(step_path, *, complexity_score):
+        raise RuntimeError("renderer crashed")
+
+    monkeypatch.setattr(api, "generate_safe_step_preview", fail_preview)
+
+    response = client.post(
+        "/generate-preview",
+        data={"complexity_score": "high"},
+        files={"file": ("complex.step", b"STEP", "application/step")},
+    )
+
+    assert response.status_code == 200
+    preview = response.json()["preview"]
+    assert preview["available"] is False
+    assert preview["views"] == []
+    assert "renderer crashed" in preview["warnings"][0]
+
+    healthz_response = client.get("/healthz")
+    assert healthz_response.status_code == 200
+    assert healthz_response.json() == {"status": "ok"}
+
+
+def test_generate_preview_timeout_returns_controlled_payload(monkeypatch):
+    def timed_out_preview(step_path, *, complexity_score):
+        return api.unavailable_preview("renderer timed out after 1 seconds.")
+
+    monkeypatch.setattr(api, "generate_safe_step_preview", timed_out_preview)
+
+    response = client.post(
+        "/generate-preview",
+        data={"complexity_score": "high"},
+        files={"file": ("timeout.step", b"STEP", "application/step")},
+    )
+
+    assert response.status_code == 200
+    preview = response.json()["preview"]
+    assert preview["available"] is False
+    assert preview["mode"] == "failed"
+    assert preview["views"] == []
+    assert "timed out" in preview["warnings"][0]
 
 
 def test_analyze_and_quote_rejects_unknown_material_before_analysis():

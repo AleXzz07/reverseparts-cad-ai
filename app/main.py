@@ -213,6 +213,11 @@ def health() -> HealthResponse:
     )
 
 
+@app.get("/healthz")
+def healthz() -> dict[str, str]:
+    return {"status": "ok"}
+
+
 @app.post("/analyze-cad", response_model=CadAnalysisResponse)
 async def analyze_cad(
     file: UploadFile = File(...),

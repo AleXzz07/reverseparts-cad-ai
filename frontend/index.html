@@ -915,14 +915,16 @@
         renderPreviewGallery(lastResult.preview, lastResult.analysis?.complexity_score || "unknown");
         clearStatus();
       } catch (error) {
+        const previewErrorMessage = "Generazione anteprima non riuscita. Riprova oppure scarica il PDF senza immagini.";
         lastResult.preview = {
           available: false,
           mode: "failed",
           views: [],
-          warnings: [error.message || "Preview generation failed"],
+          warnings: [error.message || previewErrorMessage],
         };
         renderPreviewGallery(lastResult.preview, lastResult.analysis?.complexity_score || "unknown");
-        setStatus(error.message || "Generazione viste statiche non riuscita.", "error");
+        previewStatus.textContent = previewErrorMessage;
+        setStatus(previewErrorMessage, "error");
       } finally {
         window.clearTimeout(slowPreviewMessage);
         button.disabled = false;

@@ -330,6 +330,8 @@ VIEWER_MODEL_MAX_FILE_SIZE_MB=10
 
 The FastAPI backend must run from the repository Dockerfile on a service with Docker and enough resources for FreeCAD, such as Render, Railway, Fly.io, or a VPS. Vercel must not run the FreeCAD backend.
 
+On Render, set **Health Check Path** to `/healthz`. This endpoint returns only `{"status":"ok"}` and does not run FreeCAD or preview diagnostics, so it stays responsive while a heavy static preview is rendering. Keep `/health` for manual diagnostics because it reports `freecad_available` and `freecad_error`, but do not use `/health` as the production health check path.
+
 The backend allows `https://reverseparts-cad-ai.vercel.app`, `localhost`, and `127.0.0.1` by default. To replace or extend the explicit production origins on Render, configure:
 
 ```text
