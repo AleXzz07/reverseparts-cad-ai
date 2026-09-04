@@ -133,6 +133,32 @@ def test_generate_step_previews_returns_four_views_when_all_succeed(
     ]
 
 
+def test_generate_step_previews_checkpoints_completed_views(tmp_path, monkeypatch):
+    step_path = tmp_path / "part.step"
+    step_path.write_text("STEP", encoding="ascii")
+    checkpoints = []
+    monkeypatch.setattr(
+        preview_renderer,
+        "_load_geometry",
+        lambda source: (object(), [], [], 1.0),
+    )
+    monkeypatch.setattr(
+        preview_renderer,
+        "render_named_view",
+        lambda shape, points, facets, diagonal, view_name: f"encoded-{view_name}",
+    )
+
+    result = preview_renderer.generate_step_previews(
+        str(step_path),
+        progress_callback=checkpoints.append,
+    )
+
+    assert result["available"] is True
+    assert [len(checkpoint["views"]) for checkpoint in checkpoints] == [1, 2, 3, 4]
+    assert checkpoints[0]["partial"] is True
+    assert checkpoints[-1]["partial"] is False
+
+
 def test_generate_step_previews_returns_generated_views_after_total_timeout(
     tmp_path,
     monkeypatch,

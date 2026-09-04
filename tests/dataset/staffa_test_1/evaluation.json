@@ -83,6 +83,8 @@
     "circular_holes": {
       "status": "pass",
       "message": "Circular holes grouped by diameter.",
+      "expected_count": 4,
+      "actual_count": 4,
       "groups": [
         {
           "diameter_mm": 6.99,
@@ -101,6 +103,8 @@
     "elongated_holes": {
       "status": "pass",
       "message": "Elongated holes grouped by slot length.",
+      "expected_count": 2,
+      "actual_count": 2,
       "groups": [
         {
           "length_mm": 51.37,
@@ -113,6 +117,8 @@
     "polygonal_holes": {
       "status": "pass",
       "message": "Polygonal holes grouped by maximum dimension.",
+      "expected_count": 2,
+      "actual_count": 2,
       "groups": [
         {
           "max_dimension_mm": 27.71,
@@ -130,18 +136,8 @@
       "confidence": "high",
       "length_matches": 2,
       "expected_length_mm": 50.0
-    },
-    "cutting_total": {
-      "status": "warning",
-      "message": "Value not available for comparison.",
-      "actual": 517.66,
-      "expected": null,
-      "tolerance": 1.0,
-      "unit": "mm"
     }
   },
-  "warnings": [
-    "cutting_total: Value not available for comparison."
-  ],
+  "warnings": [],
   "next_improvements": []
 }

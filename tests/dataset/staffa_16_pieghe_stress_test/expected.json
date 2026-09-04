@@ -1,0 +1,17 @@
+{
+  "part_name": "STAFFA 16 PIEGHE STRESS TEST",
+  "part_type": "staffa piegata complessa in lamiera",
+  "detected_thickness_mm": 2.0,
+  "holes": {
+    "circular_holes": 8,
+    "elongated_holes": 0,
+    "polygonal_holes": 3,
+    "formed_holes": 1,
+    "unknown_holes": 0,
+    "total_holes": 12
+  },
+  "bends": {
+    "count": 17
+  },
+  "complexity_score": "high"
+}

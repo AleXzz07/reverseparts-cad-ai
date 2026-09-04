@@ -82,6 +82,8 @@
     "circular_holes": {
       "status": "pass",
       "message": "Circular holes grouped by diameter.",
+      "expected_count": 4,
+      "actual_count": 4,
       "groups": [
         {
           "diameter_mm": 4.0,

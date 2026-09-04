@@ -1,10 +1,14 @@
 import base64
+import asyncio
 import json
 import os
+import threading
+import time
 from io import BytesIO
 from pathlib import Path
 
 import pytest
+import httpx
 from fastapi.testclient import TestClient
 from PIL import Image
 
@@ -376,6 +380,23 @@ def test_quote_endpoint_validates_quantity():
     )
 
     assert response.status_code == 422
+
+
+def test_quote_endpoint_rejects_zero_laser_cut_speed():
+    analysis = json.loads(STAFFA_ACTUAL_FILE.read_text(encoding="utf-8"))
+
+    response = client.post(
+        "/quote",
+        json={
+            "analysis": analysis,
+            "quantity": 1,
+            "material": "alluminio",
+            "pricing_overrides": {"laser_cut_speed_mm_min": 0.0},
+        },
+    )
+
+    assert response.status_code == 400
+    assert "laser_cut_speed_mm_min" in response.json()["detail"]
 
 
 def test_quote_pdf_endpoint_returns_pdf():
@@ -764,6 +785,56 @@ def test_generate_preview_timeout_returns_controlled_payload(monkeypatch):
     assert preview["mode"] == "failed"
     assert preview["views"] == []
     assert "timed out" in preview["warnings"][0]
+
+
+def test_healthz_responds_while_preview_worker_is_running(monkeypatch):
+    preview_started = threading.Event()
+    release_preview = threading.Event()
+
+    def slow_preview(step_path, *, complexity_score):
+        preview_started.set()
+        release_preview.wait(timeout=3.0)
+        return api.unavailable_preview("controlled preview stop")
+
+    monkeypatch.setattr(api, "generate_safe_step_preview", slow_preview)
+
+    async def exercise_requests():
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(
+            transport=transport,
+            base_url="http://testserver",
+        ) as async_client:
+            started_at = time.monotonic()
+            preview_task = asyncio.create_task(
+                async_client.post(
+                    "/generate-preview",
+                    data={"complexity_score": "high"},
+                    files={"file": ("complex.step", b"STEP", "application/step")},
+                )
+            )
+            started = await asyncio.to_thread(preview_started.wait, 1.0)
+            assert started is True
+
+            health_response = await asyncio.wait_for(
+                async_client.get("/healthz"),
+                timeout=1.0,
+            )
+            health_elapsed = time.monotonic() - started_at
+            release_preview.set()
+            preview_response = await preview_task
+            return health_response, health_elapsed, preview_response
+
+    try:
+        health_response, health_elapsed, preview_response = asyncio.run(
+            exercise_requests()
+        )
+    finally:
+        release_preview.set()
+
+    assert health_response.status_code == 200
+    assert health_response.json() == {"status": "ok"}
+    assert health_elapsed < 1.0
+    assert preview_response.status_code == 200
 
 
 def test_analyze_and_quote_rejects_unknown_material_before_analysis():

@@ -12,8 +12,8 @@ from .schemas import BendFeature, CadAnalysisResponse, Dimensions, HoleFeature
 
 
 VALID_STEP_SUFFIXES = {".stp", ".step"}
-CIRCULAR_HOLE_MIN_DIAMETER_MM = 4.0
-CIRCULAR_HOLE_MAX_DIAMETER_MM = 20.0
+FALLBACK_CYLINDER_MIN_DIAMETER_MM = 4.0
+FALLBACK_CYLINDER_MAX_DIAMETER_MM = 20.0
 UNKNOWN_HOLE_WARNING = (
     "Some openings were detected but their shape could not be classified "
     "with confidence."
@@ -41,6 +41,10 @@ class AnalysisParameters:
     hole_center_tolerance_mm: float
     hole_diameter_tolerance_mm: float
     hole_axis_angle_tolerance_deg: float
+    opening_min_dimension_mm: float
+    opening_max_dimension_mm: float
+    opening_min_perimeter_mm: float
+    opening_max_perimeter_mm: float
     bend_center_tolerance_mm: float
     bend_radius_pair_tolerance_mm: float
     bend_axis_angle_tolerance_deg: float
@@ -50,16 +54,26 @@ class AnalysisParameters:
 def load_analysis_config(path: Path = DEFAULT_ANALYSIS_CONFIG_PATH) -> AnalysisParameters:
     data = json.loads(path.read_text(encoding="utf-8"))
     hole = data["circular_hole_deduplication"]
+    opening = data.get("planar_opening_detection", {})
     bend = data["bend_detection"]
-    return AnalysisParameters(
+    parameters = AnalysisParameters(
         hole_center_tolerance_mm=float(hole["center_tolerance_mm"]),
         hole_diameter_tolerance_mm=float(hole["diameter_tolerance_mm"]),
         hole_axis_angle_tolerance_deg=float(hole["axis_angle_tolerance_deg"]),
+        opening_min_dimension_mm=float(opening.get("min_dimension_mm", 0.5)),
+        opening_max_dimension_mm=float(opening.get("max_dimension_mm", 1000.0)),
+        opening_min_perimeter_mm=float(opening.get("min_perimeter_mm", 2.0)),
+        opening_max_perimeter_mm=float(opening.get("max_perimeter_mm", 5000.0)),
         bend_center_tolerance_mm=float(bend["center_tolerance_mm"]),
         bend_radius_pair_tolerance_mm=float(bend["radius_pair_tolerance_mm"]),
         bend_axis_angle_tolerance_deg=float(bend["axis_angle_tolerance_deg"]),
         bend_min_length_mm=float(bend["min_length_mm"]),
     )
+    if not 0 < parameters.opening_min_dimension_mm <= parameters.opening_max_dimension_mm:
+        raise ValueError("Invalid planar opening dimension limits in analysis config.")
+    if not 0 < parameters.opening_min_perimeter_mm <= parameters.opening_max_perimeter_mm:
+        raise ValueError("Invalid planar opening perimeter limits in analysis config.")
+    return parameters
 
 
 def _configure_freecad_path() -> None:
@@ -194,6 +208,22 @@ def _curve_type(edge) -> str:
     return getattr(edge.Curve, "TypeId", "")
 
 
+def _is_planar_opening_size_valid(
+    *,
+    dimension_mm: float,
+    perimeter_mm: float,
+    parameters: AnalysisParameters,
+) -> bool:
+    return (
+        parameters.opening_min_dimension_mm
+        <= dimension_mm
+        <= parameters.opening_max_dimension_mm
+        and parameters.opening_min_perimeter_mm
+        <= perimeter_mm
+        <= parameters.opening_max_perimeter_mm
+    )
+
+
 def _detect_circular_holes(shape, parameters: AnalysisParameters) -> tuple[list[HoleFeature], int]:
     face_candidates: list[HoleFeature] = []
     for face in shape.Faces:
@@ -203,7 +233,7 @@ def _detect_circular_holes(shape, parameters: AnalysisParameters) -> tuple[list[
 
         radius = float(surface.Radius)
         diameter = radius * 2.0
-        if not CIRCULAR_HOLE_MIN_DIAMETER_MM <= diameter <= CIRCULAR_HOLE_MAX_DIAMETER_MM:
+        if not FALLBACK_CYLINDER_MIN_DIAMETER_MM <= diameter <= FALLBACK_CYLINDER_MAX_DIAMETER_MM:
             continue
 
         axis = _normalize_vector(surface.Axis)
@@ -233,7 +263,7 @@ def _detect_circular_holes(shape, parameters: AnalysisParameters) -> tuple[list[
 
         radius = float(curve.Radius)
         diameter = radius * 2.0
-        if not CIRCULAR_HOLE_MIN_DIAMETER_MM <= diameter <= CIRCULAR_HOLE_MAX_DIAMETER_MM:
+        if not FALLBACK_CYLINDER_MIN_DIAMETER_MM <= diameter <= FALLBACK_CYLINDER_MAX_DIAMETER_MM:
             continue
 
         circular_edges.append(
@@ -307,7 +337,11 @@ def _detect_circular_holes(shape, parameters: AnalysisParameters) -> tuple[list[
             if max(radii) - min(radii) > parameters.hole_diameter_tolerance_mm / 2.0:
                 continue
             diameter = sum(radii) / len(radii) * 2.0
-            if not CIRCULAR_HOLE_MIN_DIAMETER_MM <= diameter <= CIRCULAR_HOLE_MAX_DIAMETER_MM:
+            if not _is_planar_opening_size_valid(
+                dimension_mm=diameter,
+                perimeter_mm=float(wire.Length),
+                parameters=parameters,
+            ):
                 continue
 
             planar_wire_candidates.append(
@@ -419,7 +453,10 @@ def _append_unique_polygon(polygons: list[HoleFeature], candidate: HoleFeature) 
     polygons.append(candidate)
 
 
-def _detect_elongated_holes(shape) -> list[HoleFeature]:
+def _detect_elongated_holes(
+    shape,
+    parameters: AnalysisParameters,
+) -> list[HoleFeature]:
     slots: list[HoleFeature] = []
     for face in shape.Faces:
         surface = face.Surface
@@ -440,15 +477,16 @@ def _detect_elongated_holes(shape) -> list[HoleFeature]:
                 continue
 
             width = sum(radii) / len(radii) * 2.0
-            if not 4.0 <= width <= 20.0:
-                continue
-
             line_directions = [_normalize_vector(edge.Curve.Direction) for edge in lines]
             if not _axis_aligned(line_directions[0], line_directions[1], tolerance=0.98):
                 continue
 
             length = float(wire.Length)
-            if not 45.0 <= length <= 60.0:
+            if not _is_planar_opening_size_valid(
+                dimension_mm=width,
+                perimeter_mm=length,
+                parameters=parameters,
+            ):
                 continue
 
             slot_axis = _slot_axis_from_arc_centers(arcs)
@@ -470,7 +508,10 @@ def _detect_elongated_holes(shape) -> list[HoleFeature]:
     return slots
 
 
-def _detect_polygonal_holes(shape) -> list[HoleFeature]:
+def _detect_polygonal_holes(
+    shape,
+    parameters: AnalysisParameters,
+) -> list[HoleFeature]:
     polygons: list[HoleFeature] = []
     for face in shape.Faces:
         surface = face.Surface
@@ -487,10 +528,6 @@ def _detect_polygonal_holes(shape) -> list[HoleFeature]:
             if any(_curve_type(edge) != "Part::GeomLine" for edge in edges):
                 continue
 
-            max_dimension = float(wire.Length)
-            if not 20.0 <= max_dimension <= 35.0:
-                continue
-
             bbox = wire.BoundBox
             bbox_dimensions = Dimensions(
                 x=round(float(bbox.XLength), 3),
@@ -505,11 +542,19 @@ def _detect_polygonal_holes(shape) -> list[HoleFeature]:
             if len(nonzero_bbox_dimensions) < 2:
                 continue
 
+            perimeter = float(wire.Length)
+            if not _is_planar_opening_size_valid(
+                dimension_mm=max(nonzero_bbox_dimensions),
+                perimeter_mm=perimeter,
+                parameters=parameters,
+            ):
+                continue
+
             _append_unique_polygon(
                 polygons,
                 HoleFeature(
                     num_sides=len(edges),
-                    max_dimension_mm=round(max_dimension, 2),
+                    max_dimension_mm=round(perimeter, 2),
                     bounding_box_mm=bbox_dimensions,
                     center=_rounded_vector(_wire_center(wire)),
                     axis=_rounded_vector(_normalize_vector(surface.Axis)),
@@ -658,6 +703,7 @@ def _append_unique_unknown(
 def _detect_unknown_holes(
     shape,
     known_features: list[HoleFeature],
+    parameters: AnalysisParameters,
 ) -> list[HoleFeature]:
     unknown: list[HoleFeature] = []
     for face in shape.Faces:
@@ -676,7 +722,11 @@ def _detect_unknown_holes(
                 float(bbox.YLength),
                 float(bbox.ZLength),
             )
-            if perimeter <= 2.0 or max_dimension <= 1.0:
+            if not _is_planar_opening_size_valid(
+                dimension_mm=max_dimension,
+                perimeter_mm=perimeter,
+                parameters=parameters,
+            ):
                 continue
 
             center = _wire_center(wire)
@@ -1095,8 +1145,8 @@ def analyze_step_file(
             shape,
             analysis_parameters,
         )
-        response.holes.elongated = _detect_elongated_holes(shape)
-        response.holes.polygonal = _detect_polygonal_holes(shape)
+        response.holes.elongated = _detect_elongated_holes(shape, analysis_parameters)
+        response.holes.polygonal = _detect_polygonal_holes(shape, analysis_parameters)
         response.holes.formed = _detect_formed_holes(shape, analysis_parameters)
         response.holes.unknown = _detect_unknown_holes(
             shape,
@@ -1106,6 +1156,7 @@ def analyze_step_file(
                 *response.holes.polygonal,
                 *response.holes.formed,
             ],
+            analysis_parameters,
         )
         response.holes.circular_holes = len(response.holes.circular)
         response.holes.elongated_holes = len(response.holes.elongated)

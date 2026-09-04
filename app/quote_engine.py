@@ -26,6 +26,7 @@ PRICING_OVERRIDE_FIELDS = {
     "minimum_order_value_eur",
 }
 MATERIAL_OVERRIDE_FIELDS = {"density_g_cm3", "cost_eur_kg"}
+STRICTLY_POSITIVE_OVERRIDE_FIELDS = {"laser_cut_speed_mm_min", "density_g_cm3"}
 
 
 @dataclass(frozen=True)
@@ -98,6 +99,16 @@ def _validated_overrides(
     invalid = sorted(key for key, value in values.items() if value < 0)
     if invalid:
         raise ValueError(f"Override {label} non validi: {', '.join(invalid)} devono essere >= 0.")
+    zero_not_allowed = sorted(
+        key
+        for key, value in values.items()
+        if key in STRICTLY_POSITIVE_OVERRIDE_FIELDS and value == 0
+    )
+    if zero_not_allowed:
+        raise ValueError(
+            f"Override {label} non validi: {', '.join(zero_not_allowed)} "
+            "devono essere maggiori di 0."
+        )
     return values
 
 

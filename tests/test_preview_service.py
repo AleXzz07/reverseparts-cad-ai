@@ -319,3 +319,47 @@ def test_worker_timeout_returns_controlled_fallback(tmp_path, monkeypatch):
     assert result["available"] is False
     assert result["views"] == []
     assert "timed out" in result["warnings"][0]
+
+
+def test_worker_timeout_returns_checkpointed_views(tmp_path, monkeypatch):
+    step_path = tmp_path / "part.step"
+    step_path.write_text("STEP", encoding="ascii")
+
+    class TimedOutWorker:
+        pid = 123
+        returncode = None
+
+        def __init__(self, output_path):
+            self.output_path = output_path
+
+        def communicate(self, timeout):
+            self.output_path.write_text(
+                '{"available":true,"mode":"ultra_light","partial":true,'
+                '"image_png_base64":"image","views":[{"name":"isometric",'
+                '"image_png_base64":"image"}],"warnings":[]}',
+                encoding="utf-8",
+            )
+            raise subprocess.TimeoutExpired("preview-worker", timeout)
+
+        def poll(self):
+            return None
+
+    def fake_popen(command, **kwargs):
+        return TimedOutWorker(Path(command[4]))
+
+    monkeypatch.setattr(preview_service.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(preview_service, "_stop_worker", lambda process: None)
+
+    result = preview_service._run_worker(
+        step_path,
+        view_names=["isometric", "top", "front", "right"],
+        mode="ultra_light",
+        timeout_sec=0.1,
+        per_view_timeout_sec=0.1,
+        max_output_mb=1.0,
+    )
+
+    assert result["available"] is True
+    assert result["partial"] is True
+    assert [view["name"] for view in result["views"]] == ["isometric"]
+    assert "returning completed views" in result["warnings"][-1]

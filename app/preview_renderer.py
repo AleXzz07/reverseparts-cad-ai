@@ -7,6 +7,7 @@ import math
 import os
 import tempfile
 import time
+from collections.abc import Callable
 from io import BytesIO
 from pathlib import Path
 from typing import Any
@@ -603,11 +604,13 @@ def generate_step_previews(
     *,
     max_views: int | None = None,
     view_names: list[str] | tuple[str, ...] | None = None,
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     return generate_static_previews(
         step_path,
         max_views=max_views,
         view_names=view_names,
+        progress_callback=progress_callback,
     )
 
 
@@ -618,6 +621,7 @@ def generate_static_previews(
     *,
     max_views: int | None = None,
     view_names: list[str] | tuple[str, ...] | None = None,
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     source = Path(step_path)
     if not source.is_file():
@@ -676,6 +680,13 @@ def generate_static_previews(
             warnings.append(
                 f"Preview view '{view_name}' generation failed: {exc}"
             )
+        if progress_callback is not None:
+            try:
+                progress_callback(
+                    _preview_result(rendered_views, requested_views, warnings)
+                )
+            except Exception as exc:
+                logger.warning("[preview] progress checkpoint failed: %s", exc)
 
     generated_names = [view["name"] for view in rendered_views]
     failed_names = [
@@ -697,15 +708,24 @@ def generate_static_previews(
     )
     logger.info("[preview] total: %.3f sec", time.perf_counter() - total_started)
 
+    return _preview_result(rendered_views, requested_views, warnings)
+
+
+def _preview_result(
+    rendered_views: list[dict[str, str]],
+    requested_views: tuple[str, ...],
+    warnings: list[str],
+) -> dict[str, Any]:
+    view_snapshot = [dict(view) for view in rendered_views]
     primary = next(
         (
             view["image_png_base64"]
-            for view in rendered_views
+            for view in view_snapshot
             if view["name"] == PRIMARY_VIEW_NAME
         ),
-        rendered_views[0]["image_png_base64"] if rendered_views else None,
+        view_snapshot[0]["image_png_base64"] if view_snapshot else None,
     )
-    if not rendered_views:
+    if not view_snapshot:
         return {
             "image_png_base64": None,
             "available": False,
@@ -717,7 +737,7 @@ def generate_static_previews(
     return {
         "image_png_base64": primary,
         "available": True,
-        "partial": len(rendered_views) < len(requested_views),
+        "partial": len(view_snapshot) < len(requested_views),
         "mode": (
             "ultra_light"
             if PREVIEW_RENDER_MODE == "ultra_light"
@@ -725,8 +745,8 @@ def generate_static_previews(
             if PREVIEW_RENDER_MODE == "light"
             else "full"
         ),
-        "views": rendered_views,
-        "warnings": warnings,
+        "views": view_snapshot,
+        "warnings": list(warnings),
     }
 
 

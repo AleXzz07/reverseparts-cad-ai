@@ -201,6 +201,22 @@ def _stop_worker(process: subprocess.Popen[str]) -> None:
         pass
 
 
+def _read_worker_output(
+    output_path: Path,
+    *,
+    max_output_mb: float,
+) -> dict[str, Any] | None:
+    try:
+        if not output_path.is_file() or output_path.stat().st_size == 0:
+            return None
+        if output_path.stat().st_size > max_output_mb * 1024 * 1024:
+            return None
+        payload = json.loads(output_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
 def _run_worker(
     step_path: Path,
     *,
@@ -290,6 +306,18 @@ def _run_worker(
             _, stderr = process.communicate(timeout=timeout_sec)
         except subprocess.TimeoutExpired:
             _stop_worker(process)
+            partial = _read_worker_output(
+                output_path,
+                max_output_mb=max_output_mb,
+            )
+            if partial and partial.get("available") and partial.get("views"):
+                partial["partial"] = True
+                partial["warnings"] = [
+                    *(partial.get("warnings") or []),
+                    f"Preview renderer timed out after {timeout_sec:g} seconds; "
+                    "returning completed views.",
+                ]
+                return partial
             return unavailable_preview(
                 f"renderer timed out after {timeout_sec:g} seconds."
             )
@@ -311,8 +339,11 @@ def _run_worker(
             return unavailable_preview("renderer produced no output.")
         if output_path.stat().st_size > max_output_mb * 1024 * 1024:
             return unavailable_preview("renderer output exceeded the configured size limit.")
-        payload = json.loads(output_path.read_text(encoding="utf-8"))
-        if not isinstance(payload, dict):
+        payload = _read_worker_output(
+            output_path,
+            max_output_mb=max_output_mb,
+        )
+        if payload is None:
             return unavailable_preview("renderer returned an invalid payload.")
         generated_views = [
             view.get("name")

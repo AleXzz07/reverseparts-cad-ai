@@ -200,6 +200,27 @@ def test_quote_uses_material_laser_profile_for_cut_length():
     assert quote["estimated_internal_cost_eur"]["laser"] == 0.48
 
 
+def test_quote_rejects_zero_laser_cut_speed():
+    cad_data = _cad_data_without_cutting()
+    cad_data["cutting"] = {"total_cut_length_mm": 500.0}
+
+    with pytest.raises(ValueError, match="laser_cut_speed_mm_min"):
+        quote_from_cad(
+            cad_data,
+            material="alluminio",
+            pricing_overrides={"laser_cut_speed_mm_min": 0.0},
+        )
+
+
+def test_quote_rejects_zero_material_density():
+    with pytest.raises(ValueError, match="density_g_cm3"):
+        quote_from_cad(
+            _cad_data_without_cutting(),
+            material="alluminio",
+            material_overrides={"density_g_cm3": 0.0},
+        )
+
+
 def test_quote_uses_bending_fallback_when_bends_count_is_missing():
     cad_data = _cad_data_without_cutting()
     cad_data["bends"]["count"] = None

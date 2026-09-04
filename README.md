@@ -253,7 +253,7 @@ Il backend genera preview PNG del pezzo STEP tramite la tessellazione FreeCAD e 
 
 La modalità preview `clean`, attiva di default e configurabile con `PREVIEW_RENDER_MODE=clean`, usa la hidden-line removal di FreeCAD per mostrare solo i contorni tecnici visibili. Seam, raccordi tangenti, micro-edge e linee proiettate duplicate vengono filtrati, rendendo più leggibili anche aperture formate, collarini e imbutiture nei componenti complessi.
 
-La generazione preview viene eseguita in un subprocess isolato: un crash del renderer o di FreeCAD non interrompe il processo FastAPI. Analisi CAD, preventivo e PDF restano disponibili anche quando la preview viene saltata, non richiesta o supera il timeout.
+La generazione preview viene eseguita in un subprocess isolato e attesa fuori dall'event loop FastAPI: un crash del renderer o di FreeCAD non interrompe il processo API e `/healthz` continua a rispondere durante il rendering. Anche l'analisi CAD bloccante viene eseguita fuori dall'event loop. Analisi CAD, preventivo e PDF restano disponibili quando la preview viene saltata, non richiesta o supera il timeout.
 
 La preview usa fallback progressivi:
 
@@ -261,7 +261,7 @@ La preview usa fallback progressivi:
 - `light`: fallback per pezzi semplici/medi quando la preview completa non riesce, con meno edge secondari.
 - `ultra_light`: viste semplificate a risoluzione ridotta, pensate per pezzi complessi e per evitare timeout.
 
-I pezzi con `complexity_score=high` non partono dalla preview completa: quando `/generate-preview` viene chiamato usano direttamente la modalità `ultra_light`, caricano il file STEP una sola volta e tentano le viste nell'ordine Isometrica, Alto, Frontale, Destra. Il renderer restituisce le viste riuscite se viene raggiunto il timeout totale, senza forzare il completamento di tutte e quattro le immagini. Se una vista fallisce o non fa in tempo a essere generata, le altre restano utilizzabili e il JSON `preview` riporta `partial=true`. Il JSON `preview` include `mode` con `not_generated`, `full`, `light`, `ultra_light` oppure `failed`, più warning leggibili come `Full preview timed out, light preview used`, `Preview total timeout reached; returning generated views.` o `Preview generation failed after all fallback modes`.
+I pezzi con `complexity_score=high` non partono dalla preview completa: quando `/generate-preview` viene chiamato usano direttamente la modalità `ultra_light`, caricano il file STEP una sola volta e tentano le viste nell'ordine Isometrica, Alto, Frontale, Destra. Dopo ogni vista il worker salva atomicamente un checkpoint: se viene raggiunto il timeout totale o il processo deve essere terminato, le immagini già completate vengono comunque restituite. Se una vista fallisce o non fa in tempo a essere generata, le altre restano utilizzabili e il JSON `preview` riporta `partial=true`. Il JSON `preview` include `mode` con `not_generated`, `full`, `light`, `ultra_light` oppure `failed`, più warning leggibili come `Full preview timed out, light preview used`, `Preview total timeout reached; returning generated views.` o `Preview generation failed after all fallback modes`.
 
 Le impostazioni disponibili sono:
 
@@ -359,9 +359,11 @@ Current dataset cases:
 - `tests/dataset/lamiera_piana_test_1/`: flat sheet-metal laser-only part with circular holes and no bending operation.
 - `tests/dataset/staffa_1_piega_test_1/`: simple sheet-metal bracket with two circular holes and one bending operation.
 - `tests/dataset/staffa_u_test_1/`: U-shaped sheet-metal bracket with four circular holes and two bending operations.
-- `tests/dataset/staffa_16_pieghe_stress_test/`: complex sheet-metal stress test without rigid geometric evaluation; it validates robust analysis, complexity warnings, and quote generation.
+- `tests/dataset/staffa_16_pieghe_stress_test/`: complex sheet-metal stress test with count-based ground truth for 8 circular holes, 3 polygonal holes, 1 formed opening, 12 total holes, and 17 bends.
 
-CAD feature tolerances are configurable in `config/analysis_default.json`. The current settings control circular-hole center, diameter, and axis matching plus bend surface pairing. Stress-test folders may omit `expected.json` and `evaluation.json`; the dataset evaluator skips those cases while analysis and quote generation still process them.
+CAD feature tolerances are configurable in `config/analysis_default.json`. The current settings control circular-hole center, diameter, and axis matching plus bend surface pairing. Ground truth may contain exact geometry groups or count-only checks when only validated feature totals are known. The Docker test suite re-runs every STEP dataset through the real CAD analyzer and fails on geometric regressions.
+
+Planar openings are classified primarily from the topology of closed inner wires rather than from dimensions tailored to a specific fixture. Configurable minimum and maximum dimension/perimeter safeguards allow circular holes, slots, and polygonal openings of different sizes while filtering degenerate micro-geometry. Cylindrical-face fallback detection keeps conservative limits to avoid confusing bend radii with circular holes.
 
 Hole analysis separates circular holes, elongated slots, polygonal holes, formed openings, and unknown openings whose shape cannot be classified with sufficient confidence. Formed openings include raised collars, embossed holes, and shaped apertures represented by non-circular inner loops. The analysis and quote report each category plus `total_holes`; the web app and PDF show the complete hole breakdown. Unknown openings generate a verification warning and count as one pierce. The quote uses `total_holes + 1` as the laser pierce count when cut-length data is available.
 

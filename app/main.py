@@ -10,6 +10,7 @@ from fastapi import FastAPI, File, Form, HTTPException, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
 
 from .cad_analyzer import VALID_STEP_SUFFIXES, analyze_step_file, get_freecad_status
 from .model_service import (
@@ -191,7 +192,8 @@ async def _analyze_uploaded_cad(
             },
         )
 
-    result = analyze_step_file(
+    result = await run_in_threadpool(
+        analyze_step_file,
         file_bytes=file_bytes,
         source_file=filename,
         material=material,
@@ -214,7 +216,7 @@ def health() -> HealthResponse:
 
 
 @app.get("/healthz")
-def healthz() -> dict[str, str]:
+async def healthz() -> dict[str, str]:
     return {"status": "ok"}
 
 
@@ -296,7 +298,8 @@ async def viewer_model(
             step_file.write(file_bytes)
             step_path = step_file.name
         return ViewerModelResponse(
-            **generate_safe_viewer_model(
+            **await run_in_threadpool(
+                generate_safe_viewer_model,
                 step_path,
                 complexity_score=complexity_score,
             )
@@ -349,7 +352,8 @@ async def generate_preview(
         with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as step_file:
             step_file.write(file_bytes)
             step_path = step_file.name
-        preview_payload = generate_safe_step_preview(
+        preview_payload = await run_in_threadpool(
+            generate_safe_step_preview,
             step_path,
             complexity_score=effective_complexity,
         )
