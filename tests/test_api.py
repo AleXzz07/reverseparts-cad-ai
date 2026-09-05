@@ -173,6 +173,9 @@ def test_frontend_returns_html():
     assert "renderTechnicalDetails(analysis)" in response.text
     assert "Distanza minima foro-bordo" in response.text
     assert "Baricentro X / Y / Z" in response.text
+    assert "Facce CAD (B-Rep)" in response.text
+    assert "Bordi topologici (B-Rep)" in response.text
+    assert "non equivalgono al numero di lavorazioni o spigoli fisici" in response.text
 
 
 def test_frontend_serves_bundled_three_assets():
@@ -464,6 +467,33 @@ def test_quote_pdf_detail_rows_include_hole_and_bend_measurements():
     assert hole_rows[0][4] == "12.5 mm"
     assert len(bend_rows) == 2
     assert bend_rows[0][3] == "90 deg"
+
+
+def test_quote_pdf_labels_brep_counts_as_topological_data(monkeypatch):
+    analysis = json.loads(STAFFA_ACTUAL_FILE.read_text(encoding="utf-8"))
+    quote = json.loads(STAFFA_QUOTE_FILE.read_text(encoding="utf-8"))
+    analysis["geometry"] = {
+        "solid_count": 1,
+        "face_count": 10,
+        "edge_count": 24,
+        "vertex_count": 16,
+    }
+    recorded_sections = {}
+    original_section = pdf_report._section
+
+    def recording_section(title, section_rows):
+        recorded_sections[title] = dict(section_rows)
+        return original_section(title, section_rows)
+
+    monkeypatch.setattr(pdf_report, "_section", recording_section)
+
+    pdf_report.generate_quote_pdf(analysis, quote)
+
+    technical_rows = recorded_sections["Dettagli tecnici"]
+    assert technical_rows["Facce CAD (B-Rep)"] == 10
+    assert technical_rows["Bordi topologici (B-Rep)"] == 24
+    assert technical_rows["Vertici topologici (B-Rep)"] == 16
+    assert "non lavorazioni o spigoli fisici" in technical_rows["Nota conteggi B-Rep"]
 
 
 def test_quote_pdf_includes_unknown_hole_verification_warning():

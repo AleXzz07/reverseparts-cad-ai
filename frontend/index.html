@@ -575,6 +575,16 @@
     .technical-table th { background: #f3f6f9; color: #52647a; font-size: 11px; }
     .technical-table tbody tr:last-child td { border-bottom: 0; }
     .technical-empty { padding: 12px; color: var(--muted); font-size: 12px; }
+    .technical-note {
+      margin: 11px 0 0;
+      padding: 10px 12px;
+      border-left: 3px solid #9bbdec;
+      border-radius: 0 7px 7px 0;
+      background: #f3f7fd;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.5;
+    }
     .warnings { margin: 0; padding: 0; list-style: none; }
     .warnings li { padding: 9px 0; border-bottom: 1px solid #edf0f2; color: #6c4a13; }
     .badge {
@@ -769,7 +779,10 @@
         <div class="technical-sections">
           <details class="technical-detail" open>
             <summary>Geometria generale</summary>
-            <div class="technical-detail-body"><dl id="geometry-data"></dl></div>
+            <div class="technical-detail-body">
+              <dl id="geometry-data"></dl>
+              <p class="technical-note">I conteggi B-Rep descrivono come il file STEP costruisce matematicamente il modello. Includono pareti dei fori e giunzioni delle superfici curve: non equivalgono al numero di lavorazioni o spigoli fisici.</p>
+            </div>
           </details>
           <details class="technical-detail">
             <summary>Dettaglio fori</summary>
@@ -1245,9 +1258,9 @@
         ["Baricentro X / Y / Z", centerText],
         ["Solidi", geometry.solid_count ?? "-"],
         ["Shell", geometry.shell_count ?? "-"],
-        ["Facce", geometry.face_count ?? "-"],
-        ["Bordi", geometry.edge_count ?? "-"],
-        ["Vertici", geometry.vertex_count ?? "-"]
+        ["Facce CAD (B-Rep)", geometry.face_count ?? "-"],
+        ["Bordi topologici (B-Rep)", geometry.edge_count ?? "-"],
+        ["Vertici topologici (B-Rep)", geometry.vertex_count ?? "-"]
       ]);
 
       const holes = analysis.holes || {};

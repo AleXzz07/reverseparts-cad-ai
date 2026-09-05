@@ -40,6 +40,8 @@ The CAD response also includes a preliminary `cutting` section with outer, inner
 
 The `geometry` section reports the bounding-box center, center of mass when FreeCAD exposes it reliably, plus solid, shell, face, edge, and vertex counts. For compounds, the center of mass also supports a volume-weighted fallback from individual solids; otherwise it remains `null`. Hole groups retain their individual dimensions, center, axis, depth/perimeter and confidence; circular holes also expose the minimum and maximum detected diameter. Bend items include radius, length, axis, center, and the cylindrical angular span as `angle_deg` when FreeCAD exposes a reliable range.
 
+The web app and PDF label face, edge, and vertex totals explicitly as B-Rep/topological counts. They describe how STEP represents the model mathematically, including cylindrical walls and seam edges, and must not be interpreted as physical edge or machining-operation totals.
+
 The `manufacturability` section reports the minimum hole-to-external-edge distance measured between an inner opening wire and the outer wire of the same planar face. Each matched hole receives `edge_distance_mm`. The measurement is best effort, never changes hole classification, and remains `null` with low confidence for openings that cannot be associated safely with a planar face. It is geometric information, not an inferred manufacturing tolerance.
 
 ### `POST /quote`
