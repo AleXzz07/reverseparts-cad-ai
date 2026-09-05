@@ -287,21 +287,21 @@ Le preview usano una cache temporanea basata su SHA256 del file STEP, modalità 
 
 Per debug, il backend registra log preview espliciti con viste tentate, viste generate, viste fallite, path temporaneo delle PNG e viste restituite nel JSON finale. Anche la web app stampa in console il payload `preview`, il numero di viste ricevute e le chiavi renderizzate.
 
-Le viste statiche sono il metodo principale di visualizzazione nella web app e nel PDF, ma vengono generate solo quando l'utente preme "Genera viste statiche". Il PDF include le immagini se sono già state generate; se non sono state richieste, il PDF viene creato comunque e indica "Anteprima pezzo non generata". La vista 3D interattiva/GLB è considerata sperimentale, non fa parte del flusso principale e non viene mostrata dalla web app. `/analyze-and-quote` non genera immagini statiche e non trasporta modelli GLB: il flusso resta centrato su analisi STEP, preventivo interno, preview statiche on-demand e PDF.
+La web app offre sia le viste statiche sia un viewer CAD 3D interattivo con rotazione, zoom, pan e orientamenti rapidi. Entrambe le funzioni restano on-demand: `/analyze-and-quote` non genera immagini e non trasporta modelli GLB. Dal viewer l'utente può catturare fino a quattro angolazioni e usarle nel PDF; la cattura avviene nel browser e il PDF non rigenera il modello né le immagini. Se non sono state selezionate angolazioni 3D, il PDF usa le viste statiche già generate; se non esiste alcuna immagine, funziona comunque e indica "Anteprima pezzo non generata".
 
-L'endpoint sperimentale `POST /viewer-model` può restare disponibile per prove tecniche future, ma è disattivato per default e non è usato dal frontend. Anche l'export STEP-to-GLB è isolato in un subprocess e può fallire senza interrompere analisi o preventivo. Le impostazioni principali sono:
+L'endpoint `POST /viewer-model` genera il GLB solo quando l'utente preme "Carica modello 3D". L'export STEP-to-GLB è isolato in un subprocess e può fallire senza interrompere analisi o preventivo. Le impostazioni principali sono:
 
 ```text
-VIEWER_MODEL_ENABLED=false
+VIEWER_MODEL_ENABLED=true
 VIEWER_MODEL_TIMEOUT_SEC=20
 VIEWER_MODEL_MAX_FILE_SIZE_MB=10
 ```
 
-`VIEWER_MODEL_ENABLED` è `false` per default. Su Render è consigliato lasciarlo disattivato. Se l'endpoint sperimentale viene abilitato e l'export fallisce, preview statiche, analisi CAD, quote, `/health` e PDF continuano a funzionare. I componenti con `complexity_score=high` non generano mai GLB automaticamente.
+`VIEWER_MODEL_ENABLED` è `true` per default, ma il modello continua a essere generato esclusivamente su richiesta. Se l'export fallisce, preview statiche, analisi CAD, quote, `/health` e PDF continuano a funzionare. I componenti con `complexity_score=high` non generano mai GLB automaticamente e usano limiti di tessellazione più conservativi.
 
-`GET /config/defaults` espone anche `preview_enabled`, `preview_on_demand_only`, `viewer_model_enabled`, `preview_max_render_views`, `preview_max_render_views_high_complexity`, `preview_timeout_sec`, `preview_light_timeout_sec`, `preview_ultra_light_timeout_sec`, `preview_high_complexity_timeout_sec`, `preview_high_complexity_total_timeout_sec`, `preview_high_complexity_per_view_timeout_sec`, `preview_total_timeout_sec`, `preview_per_view_timeout_sec` e `viewer_model_timeout_sec`. La web app usa i valori preview per gestire le viste statiche e ignora il viewer 3D nel flusso principale.
+`GET /config/defaults` espone anche `preview_enabled`, `preview_on_demand_only`, `viewer_model_enabled`, `preview_max_render_views`, `preview_max_render_views_high_complexity`, `preview_timeout_sec`, `preview_light_timeout_sec`, `preview_ultra_light_timeout_sec`, `preview_high_complexity_timeout_sec`, `preview_high_complexity_total_timeout_sec`, `preview_high_complexity_per_view_timeout_sec`, `preview_total_timeout_sec`, `preview_per_view_timeout_sec` e `viewer_model_timeout_sec`. La web app usa questi valori per abilitare le funzioni on-demand senza rallentare l'analisi iniziale.
 
-Configurazione Render consigliata con sole preview statiche:
+Configurazione Render consigliata:
 
 ```text
 PREVIEW_ENABLED=true
@@ -316,13 +316,6 @@ PREVIEW_TOTAL_TIMEOUT_SEC=30
 PREVIEW_PER_VIEW_TIMEOUT_SEC=8
 PREVIEW_MAX_RENDER_VIEWS=4
 PREVIEW_MAX_RENDER_VIEWS_HIGH_COMPLEXITY=4
-VIEWER_MODEL_ENABLED=false
-```
-
-Configurazione sperimentale per test tecnici dell'endpoint GLB, fuori dal flusso principale:
-
-```text
-PREVIEW_ENABLED=true
 VIEWER_MODEL_ENABLED=true
 VIEWER_MODEL_TIMEOUT_SEC=20
 VIEWER_MODEL_MAX_FILE_SIZE_MB=10

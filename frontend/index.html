@@ -7,47 +7,119 @@
   <style>
     :root {
       color-scheme: light;
-      --ink: #16202a;
-      --muted: #63707c;
-      --line: #d8dee5;
+      --ink: #142133;
+      --muted: #65758b;
+      --line: #dbe3ec;
       --panel: #ffffff;
-      --soft: #f3f6f8;
-      --accent: #087e8b;
-      --accent-dark: #05616a;
-      --warm: #d97706;
+      --soft: #f4f7fb;
+      --accent: #1769e0;
+      --accent-dark: #0f4fae;
+      --accent-soft: #eaf2ff;
+      --navy: #0d1b2a;
+      --warm: #c96b09;
       --danger: #b42318;
       --ok: #237a57;
+      --shadow: 0 18px 50px rgba(20, 33, 51, .09);
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
       min-width: 320px;
-      background: #eef2f4;
+      background: #f2f5f9;
       color: var(--ink);
       font-family: Inter, "Segoe UI", Arial, sans-serif;
-      font-size: 14px;
+      font-size: 15px;
       letter-spacing: 0;
     }
     header {
-      height: 64px;
+      min-height: 72px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 0 28px;
-      background: #17242b;
+      gap: 24px;
+      padding: 0 32px;
+      background: var(--navy);
       color: white;
-      border-bottom: 4px solid var(--accent);
+      border-bottom: 1px solid rgba(255, 255, 255, .08);
     }
-    .brand { font-size: 20px; font-weight: 750; }
-    .brand small { margin-left: 10px; color: #a9bbc3; font-size: 12px; font-weight: 500; }
-    .header-status {
+    .brand-wrap { display: flex; align-items: center; gap: 12px; min-width: 0; }
+    .brand-mark {
+      width: 38px;
+      height: 38px;
       display: grid;
-      gap: 3px;
-      justify-items: end;
+      place-items: center;
+      flex: 0 0 38px;
+      border: 1px solid rgba(255,255,255,.2);
+      border-radius: 11px;
+      background: linear-gradient(145deg, #2d82f4, #1557bd);
+      box-shadow: 0 8px 24px rgba(23,105,224,.28);
+      font-size: 13px;
+      font-weight: 850;
+      letter-spacing: -.04em;
+    }
+    .brand { display: grid; gap: 2px; font-size: 19px; font-weight: 800; letter-spacing: .01em; }
+    .brand small { color: #9fb0c3; font-size: 12px; font-weight: 500; }
+    .header-status {
+      display: flex;
+      align-items: center;
+      gap: 10px;
       min-width: 0;
       font-size: 12px;
-      color: #b8c8ce;
+      color: #c1ccda;
     }
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 32px;
+      padding: 6px 10px;
+      border: 1px solid rgba(255,255,255,.13);
+      border-radius: 999px;
+      background: rgba(255,255,255,.06);
+      white-space: nowrap;
+    }
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #f4b740;
+      box-shadow: 0 0 0 4px rgba(244,183,64,.12);
+    }
+    .status-dot.ready { background: #43c28b; box-shadow: 0 0 0 4px rgba(67,194,139,.12); }
+    .status-dot.error { background: #f06b65; box-shadow: 0 0 0 4px rgba(240,107,101,.12); }
+    .workflow {
+      width: min(1480px, 100%);
+      margin: 0 auto;
+      padding: 18px 26px 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .workflow-step {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 7px 11px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(255,255,255,.72);
+    }
+    .workflow-step span {
+      width: 20px;
+      height: 20px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: #e8edf3;
+      color: #526278;
+      font-size: 11px;
+    }
+    .workflow-step.active { border-color: #aac9f5; color: var(--accent-dark); background: var(--accent-soft); }
+    .workflow-step.active span { background: var(--accent); color: white; }
+    .workflow-line { width: 22px; height: 1px; background: #cdd7e2; }
     .api-backend {
       max-width: min(560px, 55vw);
       overflow: hidden;
@@ -56,41 +128,53 @@
       white-space: nowrap;
     }
     main {
-      width: min(1440px, 100%);
+      width: min(1480px, 100%);
       margin: 0 auto;
-      padding: 20px 24px 32px;
+      padding: 16px 26px 42px;
       display: grid;
-      grid-template-columns: minmax(360px, 440px) minmax(0, 1fr);
-      gap: 18px;
+      grid-template-columns: minmax(340px, 390px) minmax(0, 1fr);
+      gap: 20px;
+      align-items: start;
     }
     .panel {
       background: var(--panel);
       border: 1px solid var(--line);
-      border-radius: 6px;
+      border-radius: 14px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
     }
+    .setup-panel { position: sticky; top: 16px; }
     .panel-title {
       margin: 0;
-      padding: 14px 16px;
+      padding: 18px 20px 15px;
       border-bottom: 1px solid var(--line);
-      font-size: 15px;
-      font-weight: 700;
+      font-size: 17px;
+      font-weight: 800;
     }
-    .panel-body { padding: 16px; }
+    .panel-title small {
+      display: block;
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 500;
+      line-height: 1.45;
+    }
+    .panel-body { padding: 18px 20px; }
     .stack { display: grid; gap: 14px; }
     .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     label { display: grid; gap: 6px; color: #34424d; font-size: 12px; font-weight: 650; }
     input, select {
       width: 100%;
-      min-height: 38px;
-      border: 1px solid #bdc7cf;
-      border-radius: 4px;
+      min-height: 42px;
+      border: 1px solid #c5d0dc;
+      border-radius: 9px;
       background: white;
       color: var(--ink);
       padding: 8px 10px;
       font: inherit;
     }
-    input:focus, select:focus { outline: 2px solid #8bcbd1; border-color: var(--accent); }
-    input[type="file"] { padding: 6px; background: var(--soft); }
+    input:focus, select:focus { outline: 3px solid rgba(23,105,224,.14); border-color: var(--accent); }
+    input[type="file"] { padding: 7px; background: var(--soft); }
     details { border-top: 1px solid var(--line); }
     summary {
       cursor: pointer;
@@ -191,15 +275,17 @@
     button {
       min-height: 40px;
       border: 1px solid transparent;
-      border-radius: 4px;
+      border-radius: 9px;
       padding: 9px 14px;
       cursor: pointer;
       font: inherit;
       font-weight: 700;
+      transition: border-color .16s ease, background .16s ease, color .16s ease, transform .16s ease;
     }
+    button:not(:disabled):active { transform: translateY(1px); }
     button:disabled { opacity: .5; cursor: not-allowed; }
-    .primary { flex: 1; background: var(--accent); color: white; }
-    .primary:hover { background: var(--accent-dark); }
+    .primary { flex: 1; background: linear-gradient(135deg, #2478eb, #1258c4); color: white; box-shadow: 0 8px 20px rgba(23,105,224,.2); }
+    .primary:hover { background: linear-gradient(135deg, #1e6fdc, #0f4fae); }
     .secondary { background: white; color: var(--ink); border-color: #aeb9c2; }
     .results { display: grid; gap: 18px; align-content: start; }
     .empty {
@@ -301,10 +387,158 @@
       justify-content: center;
       margin-top: 10px;
     }
+    .visual-section { border-bottom: 1px solid var(--line); background: #fbfcfe; }
+    .visual-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+      background: white;
+    }
+    .visual-head h2 { margin: 0; font-size: 14px; }
+    .visual-head p { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
+    .mode-switch {
+      display: inline-flex;
+      gap: 3px;
+      padding: 3px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--soft);
+    }
+    .mode-button {
+      min-height: 32px;
+      padding: 6px 11px;
+      border-radius: 7px;
+      background: transparent;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .mode-button.active { background: white; color: var(--accent-dark); box-shadow: 0 2px 8px rgba(20,33,51,.08); }
+    .visual-pane { padding: 14px 16px 16px; }
+    .viewer-frame {
+      position: relative;
+      width: 100%;
+      min-height: 360px;
+      aspect-ratio: 16 / 9;
+      overflow: hidden;
+      border: 1px solid #ccd7e3;
+      border-radius: 11px;
+      background:
+        linear-gradient(rgba(46,80,118,.045) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(46,80,118,.045) 1px, transparent 1px),
+        #f8fafc;
+      background-size: 28px 28px;
+    }
+    #viewer-canvas { width: 100%; height: 100%; display: block; touch-action: none; }
+    .viewer-empty {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      padding: 28px;
+      text-align: center;
+      pointer-events: none;
+    }
+    .viewer-empty[hidden] { display: none; }
+    .viewer-empty-card { max-width: 390px; }
+    .viewer-empty-icon {
+      width: 52px;
+      height: 52px;
+      margin: 0 auto 13px;
+      display: grid;
+      place-items: center;
+      border: 1px solid #bed3f0;
+      border-radius: 15px;
+      background: var(--accent-soft);
+      color: var(--accent-dark);
+      font-size: 22px;
+      font-weight: 850;
+    }
+    .viewer-empty strong { display: block; margin-bottom: 6px; font-size: 15px; }
+    .viewer-empty span { color: var(--muted); font-size: 13px; line-height: 1.5; }
+    .viewer-toolbar {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      z-index: 3;
+    }
+    .viewer-tool {
+      min-height: 31px;
+      padding: 5px 9px;
+      border: 1px solid rgba(121,143,166,.45);
+      border-radius: 7px;
+      background: rgba(255,255,255,.9);
+      color: #31445a;
+      font-size: 11px;
+      box-shadow: 0 3px 10px rgba(20,33,51,.08);
+      backdrop-filter: blur(8px);
+    }
+    .viewer-tool:hover { border-color: var(--accent); color: var(--accent-dark); }
+    .viewer-help {
+      position: absolute;
+      right: 10px;
+      bottom: 10px;
+      padding: 6px 9px;
+      border-radius: 7px;
+      background: rgba(13,27,42,.82);
+      color: white;
+      font-size: 11px;
+      pointer-events: none;
+    }
+    .viewer-actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: 11px;
+    }
+    .viewer-action-group { display: flex; flex-wrap: wrap; gap: 8px; }
+    .viewer-status { color: var(--muted); font-size: 12px; font-weight: 650; }
+    .pdf-views {
+      margin-top: 13px;
+      padding-top: 13px;
+      border-top: 1px solid var(--line);
+    }
+    .pdf-views-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 9px; }
+    .pdf-views-head strong { font-size: 13px; }
+    .pdf-views-head span { color: var(--muted); font-size: 11px; }
+    .pdf-view-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+    .pdf-view-card { position: relative; overflow: hidden; border: 1px solid var(--line); border-radius: 9px; background: white; }
+    .pdf-view-card img { width: 100%; aspect-ratio: 4 / 3; display: block; object-fit: contain; background: #f8fafc; }
+    .pdf-view-card span { display: block; padding: 6px 30px 6px 8px; color: #405269; font-size: 11px; font-weight: 700; }
+    .pdf-view-remove {
+      position: absolute;
+      right: 5px;
+      bottom: 4px;
+      width: 23px;
+      height: 23px;
+      min-height: 23px;
+      padding: 0;
+      border: 1px solid #d5dde7;
+      border-radius: 6px;
+      background: white;
+      color: var(--danger);
+      font-size: 15px;
+    }
+    .pdf-views-empty {
+      padding: 12px;
+      border: 1px dashed #cbd6e2;
+      border-radius: 9px;
+      color: var(--muted);
+      background: white;
+      text-align: center;
+      font-size: 12px;
+    }
     .summary-strip {
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
       border-bottom: 1px solid var(--line);
+      background: white;
     }
     .metric { padding: 14px 16px; border-right: 1px solid var(--line); }
     .metric:last-child { border-right: 0; }
@@ -331,13 +565,15 @@
     }
     @media (max-width: 920px) {
       main { grid-template-columns: 1fr; padding: 14px; }
-      header { padding: 0 16px; }
-      .brand small { display: none; }
+      header { padding: 0 18px; }
+      .setup-panel { position: static; }
+      .workflow { padding: 14px 14px 0; overflow-x: auto; }
     }
     @media (max-width: 620px) {
-      header { height: auto; min-height: 64px; gap: 12px; padding-top: 10px; padding-bottom: 10px; }
-      .header-status { justify-items: end; text-align: right; }
-      .api-backend { max-width: 48vw; }
+      header { align-items: flex-start; min-height: 64px; gap: 10px; padding-top: 11px; padding-bottom: 11px; }
+      .brand small, .api-backend { display: none; }
+      .header-status { margin-top: 3px; }
+      .status-pill { min-height: 29px; padding: 5px 8px; }
       .grid-2, .parameter-grid, .legend-grid, .data-grid { grid-template-columns: 1fr; }
       .info-tip::after { position: fixed; left: 16px; right: 16px; bottom: 16px; width: auto; transform: translateY(4px); }
       .info-tip:hover::after, .info-tip:focus-visible::after, .info-tip.is-open::after { transform: translateY(0); }
@@ -346,20 +582,39 @@
       .metric:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
       .data-section { border-right: 0; border-bottom: 1px solid var(--line); }
       .preview-thumbnails { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .visual-head, .viewer-actions { align-items: stretch; flex-direction: column; }
+      .mode-switch { width: 100%; }
+      .mode-button { flex: 1; }
+      .viewer-frame { min-height: 300px; aspect-ratio: 4 / 3; }
+      .viewer-toolbar { right: 10px; }
+      .viewer-help { display: none; }
+      .pdf-view-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
   </style>
 </head>
 <body>
   <header>
-    <div class="brand">REVERSEPARTS <small>CAD analysis &amp; internal quote</small></div>
+    <div class="brand-wrap">
+      <div class="brand-mark" aria-hidden="true">RP</div>
+      <div class="brand">REVERSEPARTS <small>Analisi CAD e preventivo tecnico interno</small></div>
+    </div>
     <div class="header-status">
-      <div id="health">Verifica FreeCAD...</div>
-      <div class="api-backend">API backend: <span id="api-backend">relative</span></div>
+      <div class="status-pill"><span class="status-dot" id="health-dot"></span><span id="health">Verifica FreeCAD...</span></div>
+      <div class="api-backend">API: <span id="api-backend">relative</span></div>
     </div>
   </header>
+  <nav class="workflow" aria-label="Flusso di lavoro">
+    <div class="workflow-step active" data-workflow-step="1"><span>1</span>Carica STEP</div>
+    <div class="workflow-line"></div>
+    <div class="workflow-step" data-workflow-step="2"><span>2</span>Analizza</div>
+    <div class="workflow-line"></div>
+    <div class="workflow-step" data-workflow-step="3"><span>3</span>Controlla il 3D</div>
+    <div class="workflow-line"></div>
+    <div class="workflow-step" data-workflow-step="4"><span>4</span>Esporta PDF</div>
+  </nav>
   <main>
-    <section class="panel">
-      <h1 class="panel-title">Nuova analisi</h1>
+    <section class="panel setup-panel">
+      <h1 class="panel-title">Nuova analisi<small>Inserisci i dati essenziali. I parametri economici avanzati restano modificabili sotto.</small></h1>
       <form id="quote-form">
         <div class="panel-body stack">
           <label>File STEP
@@ -409,17 +664,66 @@
         <div><strong>Carica un file STEP per iniziare</strong><br>Analisi geometrica, tempi e costi saranno mostrati qui.</div>
       </div>
       <div id="result-panel" class="panel" hidden>
-        <section class="preview-section">
-          <h2>Anteprima pezzo</h2>
-          <div class="preview-status" id="preview-status">Anteprima non ancora generata</div>
-          <div class="preview-frame">
-            <img id="part-preview" alt="Anteprima isometrica del pezzo STEP" hidden>
-            <div class="preview-fallback" id="preview-fallback">Anteprima non disponibile. Analisi e preventivo generati correttamente.</div>
+        <section class="visual-section">
+          <div class="visual-head">
+            <div>
+              <h2>Controllo visivo del pezzo</h2>
+              <p>Muovi il modello oppure genera le viste tecniche statiche.</p>
+            </div>
+            <div class="mode-switch" role="tablist" aria-label="Tipo di visualizzazione">
+              <button class="mode-button active" id="viewer-tab" type="button" role="tab" aria-selected="true" aria-controls="viewer-pane">Modello 3D</button>
+              <button class="mode-button" id="preview-tab" type="button" role="tab" aria-selected="false" aria-controls="preview-pane">Viste statiche</button>
+            </div>
           </div>
-          <div class="preview-current-label" id="preview-current-label" hidden></div>
-          <div class="preview-thumbnails" id="preview-thumbnails" hidden></div>
-          <div class="preview-actions">
-            <button class="secondary" id="generate-preview-button" type="button" disabled>Genera viste statiche</button>
+          <div class="visual-pane" id="viewer-pane" role="tabpanel" aria-labelledby="viewer-tab">
+            <div class="viewer-frame" id="viewer-frame">
+              <canvas id="viewer-canvas" aria-label="Modello CAD 3D interattivo"></canvas>
+              <div class="viewer-empty" id="viewer-empty">
+                <div class="viewer-empty-card">
+                  <div class="viewer-empty-icon" aria-hidden="true">3D</div>
+                  <strong>Modello 3D pronto su richiesta</strong>
+                  <span>Caricalo dopo l'analisi. Trascina per ruotare, usa la rotella per lo zoom e il tasto destro per spostarlo.</span>
+                </div>
+              </div>
+              <div class="viewer-toolbar" id="viewer-toolbar" hidden>
+                <button class="viewer-tool" type="button" data-viewer-view="isometric">Isometrica</button>
+                <button class="viewer-tool" type="button" data-viewer-view="top">Alto</button>
+                <button class="viewer-tool" type="button" data-viewer-view="front">Frontale</button>
+                <button class="viewer-tool" type="button" data-viewer-view="right">Destra</button>
+                <button class="viewer-tool" type="button" data-viewer-action="fit">Adatta</button>
+              </div>
+              <div class="viewer-help" id="viewer-help" hidden>Ruota: trascina · Zoom: rotella · Pan: tasto destro</div>
+            </div>
+            <div class="viewer-actions">
+              <div class="viewer-action-group">
+                <button class="primary" id="load-viewer-button" type="button" disabled>Carica modello 3D</button>
+                <button class="secondary" id="capture-view-button" type="button" disabled>Aggiungi angolazione al PDF</button>
+              </div>
+              <div class="viewer-status" id="viewer-status">Esegui prima l'analisi CAD.</div>
+            </div>
+            <div class="pdf-views">
+              <div class="pdf-views-head">
+                <strong>Angolazioni scelte per il PDF</strong>
+                <span id="pdf-view-count">0/4</span>
+              </div>
+              <div class="pdf-view-grid" id="pdf-view-grid">
+                <div class="pdf-views-empty" id="pdf-views-empty">Muovi il modello e salva fino a quattro angolazioni. Se non ne scegli nessuna, il PDF userà le viste statiche disponibili.</div>
+              </div>
+            </div>
+          </div>
+          <div class="visual-pane" id="preview-pane" role="tabpanel" aria-labelledby="preview-tab" hidden>
+            <section class="preview-section">
+              <div class="preview-status" id="preview-status">Anteprima non ancora generata</div>
+              <div class="preview-frame">
+                <img id="part-preview" alt="Anteprima isometrica del pezzo STEP" hidden>
+                <div class="preview-fallback" id="preview-fallback">Anteprima non disponibile. Analisi e preventivo generati correttamente.</div>
+              </div>
+              <div class="preview-current-label" id="preview-current-label" hidden></div>
+              <div class="preview-thumbnails" id="preview-thumbnails" hidden></div>
+              <div class="preview-actions">
+                <button class="secondary" id="generate-preview-button" type="button" disabled>Genera viste statiche</button>
+              </div>
+            </section>
           </div>
         </section>
         <div class="summary-strip">
@@ -446,6 +750,9 @@
     </section>
   </main>
   <script src="/app-config.js"></script>
+  <script src="/vendor/three.min.js"></script>
+  <script src="/vendor/GLTFLoader.js"></script>
+  <script src="/vendor/OrbitControls.js"></script>
   <script>
     function apiUrl(path) {
       const base = String(window.REVERSEPARTS_API_BASE_URL || "").replace(/\/+$/, "");
@@ -519,10 +826,270 @@
     let defaults = null;
     let lastResult = null;
     let lastCadFile = null;
+    const maxPdfViews = 4;
+    let pdfCapturedViews = [];
+    const viewerState = {
+      renderer: null,
+      scene: null,
+      camera: null,
+      controls: null,
+      model: null,
+      grid: null,
+      radius: 1,
+      ready: false,
+      resizeObserver: null,
+      animationFrame: null,
+    };
 
     const money = value => value == null ? "-" : `${Number(value).toFixed(2)} EUR`;
     const number = (value, unit = "") => value == null ? "-" : `${Number(value).toFixed(2).replace(/\.00$/, "")}${unit ? " " + unit : ""}`;
     const escapeHtml = value => String(value ?? "-").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+
+    function setWorkflowStep(step) {
+      document.querySelectorAll("[data-workflow-step]").forEach(item => {
+        item.classList.toggle("active", Number(item.dataset.workflowStep) === step);
+      });
+    }
+
+    function showVisualPane(mode) {
+      const showViewer = mode === "viewer";
+      document.getElementById("viewer-pane").hidden = !showViewer;
+      document.getElementById("preview-pane").hidden = showViewer;
+      document.getElementById("viewer-tab").classList.toggle("active", showViewer);
+      document.getElementById("preview-tab").classList.toggle("active", !showViewer);
+      document.getElementById("viewer-tab").setAttribute("aria-selected", String(showViewer));
+      document.getElementById("preview-tab").setAttribute("aria-selected", String(!showViewer));
+      if (showViewer && viewerState.renderer) resizeViewer();
+    }
+
+    function setViewerStatus(message) {
+      document.getElementById("viewer-status").textContent = message;
+    }
+
+    function resizeViewer() {
+      if (!viewerState.renderer || !viewerState.camera) return;
+      const frame = document.getElementById("viewer-frame");
+      const width = Math.max(1, frame.clientWidth);
+      const height = Math.max(1, frame.clientHeight);
+      viewerState.renderer.setSize(width, height, false);
+      viewerState.camera.aspect = width / height;
+      viewerState.camera.updateProjectionMatrix();
+    }
+
+    function ensureViewer() {
+      if (viewerState.renderer) return true;
+      if (!window.THREE || !THREE.GLTFLoader || !THREE.OrbitControls) {
+        setViewerStatus("Componenti 3D non disponibili nel browser.");
+        return false;
+      }
+      const canvas = document.getElementById("viewer-canvas");
+      const renderer = new THREE.WebGLRenderer({
+        canvas,
+        antialias: true,
+        alpha: true,
+        preserveDrawingBuffer: true,
+      });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      renderer.setClearColor(0xf8fafc, 1);
+      if ("outputEncoding" in renderer && THREE.sRGBEncoding) renderer.outputEncoding = THREE.sRGBEncoding;
+      if (THREE.ACESFilmicToneMapping) renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.05;
+
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(34, 1, 0.01, 100000);
+      const controls = new THREE.OrbitControls(camera, canvas);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.08;
+      controls.screenSpacePanning = true;
+      controls.minDistance = 0.01;
+      controls.maxDistance = 100000;
+
+      scene.add(new THREE.HemisphereLight(0xffffff, 0x7d8fa3, 1.45));
+      const keyLight = new THREE.DirectionalLight(0xffffff, 1.2);
+      keyLight.position.set(4, 6, 5);
+      scene.add(keyLight);
+      const fillLight = new THREE.DirectionalLight(0xb9d7ff, 0.72);
+      fillLight.position.set(-5, 2, -4);
+      scene.add(fillLight);
+
+      viewerState.renderer = renderer;
+      viewerState.scene = scene;
+      viewerState.camera = camera;
+      viewerState.controls = controls;
+      resizeViewer();
+      if (window.ResizeObserver) {
+        viewerState.resizeObserver = new ResizeObserver(resizeViewer);
+        viewerState.resizeObserver.observe(document.getElementById("viewer-frame"));
+      } else {
+        window.addEventListener("resize", resizeViewer);
+      }
+      const animate = () => {
+        viewerState.animationFrame = window.requestAnimationFrame(animate);
+        controls.update();
+        renderer.render(scene, camera);
+      };
+      animate();
+      return true;
+    }
+
+    function disposeViewerModel() {
+      if (!viewerState.model || !viewerState.scene) return;
+      viewerState.scene.remove(viewerState.model);
+      viewerState.model.traverse(item => {
+        if (item.geometry) item.geometry.dispose();
+        const materials = Array.isArray(item.material) ? item.material : [item.material];
+        materials.filter(Boolean).forEach(material => material.dispose());
+      });
+      viewerState.model = null;
+      viewerState.ready = false;
+      if (viewerState.grid) {
+        viewerState.scene.remove(viewerState.grid);
+        viewerState.grid.geometry.dispose();
+        if (viewerState.grid.material) viewerState.grid.material.dispose();
+        viewerState.grid = null;
+      }
+    }
+
+    function setViewerView(viewName = "isometric") {
+      if (!viewerState.ready) return;
+      const directions = {
+        isometric: new THREE.Vector3(1, .82, 1),
+        top: new THREE.Vector3(0, 1, .001),
+        front: new THREE.Vector3(0, 0, 1),
+        right: new THREE.Vector3(1, 0, 0),
+      };
+      const direction = (directions[viewName] || directions.isometric).normalize();
+      const fov = THREE.MathUtils.degToRad(viewerState.camera.fov);
+      const distance = Math.max(viewerState.radius * 2.35, viewerState.radius / Math.tan(fov / 2) * 1.18);
+      viewerState.camera.up.set(0, 1, 0);
+      if (viewName === "top") viewerState.camera.up.set(0, 0, -1);
+      viewerState.camera.position.copy(direction.multiplyScalar(distance));
+      viewerState.camera.near = Math.max(viewerState.radius / 1000, 0.001);
+      viewerState.camera.far = Math.max(viewerState.radius * 100, 1000);
+      viewerState.camera.updateProjectionMatrix();
+      viewerState.controls.target.set(0, 0, 0);
+      viewerState.controls.update();
+    }
+
+    function base64ToArrayBuffer(encoded) {
+      const binary = window.atob(encoded);
+      const bytes = new Uint8Array(binary.length);
+      for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+      return bytes.buffer;
+    }
+
+    async function displayViewerModel(payload) {
+      if (!ensureViewer()) throw new Error("Il browser non supporta il viewer 3D.");
+      disposeViewerModel();
+      const loader = new THREE.GLTFLoader();
+      const gltf = await new Promise((resolve, reject) => {
+        if (payload.model_base64) {
+          loader.parse(base64ToArrayBuffer(payload.model_base64), "", resolve, reject);
+        } else if (payload.model_url) {
+          loader.load(payload.model_url, resolve, undefined, reject);
+        } else {
+          reject(new Error("Il server non ha restituito il modello 3D."));
+        }
+      });
+      const model = gltf.scene;
+      const initialBox = new THREE.Box3().setFromObject(model);
+      const center = initialBox.getCenter(new THREE.Vector3());
+      model.position.sub(center);
+      viewerState.scene.add(model);
+      const box = new THREE.Box3().setFromObject(model);
+      const size = box.getSize(new THREE.Vector3());
+      const sphere = box.getBoundingSphere(new THREE.Sphere());
+      viewerState.model = model;
+      viewerState.radius = Math.max(sphere.radius, .01);
+      const gridSize = Math.max(size.x, size.y, size.z, 1) * 4;
+      const grid = new THREE.GridHelper(gridSize, 20, 0x9fb3c8, 0xd8e2ec);
+      grid.position.y = box.min.y - viewerState.radius * .035;
+      grid.material.transparent = true;
+      grid.material.opacity = .48;
+      viewerState.scene.add(grid);
+      viewerState.grid = grid;
+      viewerState.ready = true;
+      setViewerView("isometric");
+      document.getElementById("viewer-empty").hidden = true;
+      document.getElementById("viewer-toolbar").hidden = false;
+      document.getElementById("viewer-help").hidden = false;
+      document.getElementById("capture-view-button").disabled = false;
+      setViewerStatus("Modello 3D caricato. Scegli l'angolazione da salvare nel PDF.");
+    }
+
+    function resetPdfViews() {
+      pdfCapturedViews = [];
+      renderPdfViews();
+    }
+
+    function renderPdfViews() {
+      const grid = document.getElementById("pdf-view-grid");
+      const empty = document.getElementById("pdf-views-empty") || document.createElement("div");
+      empty.id = "pdf-views-empty";
+      empty.className = "pdf-views-empty";
+      empty.textContent = "Muovi il modello e salva fino a quattro angolazioni. Se non ne scegli nessuna, il PDF userà le viste statiche disponibili.";
+      document.getElementById("pdf-view-count").textContent = `${pdfCapturedViews.length}/${maxPdfViews}`;
+      grid.replaceChildren();
+      if (!pdfCapturedViews.length) {
+        grid.append(empty);
+        empty.hidden = false;
+      } else {
+        pdfCapturedViews.forEach((view, index) => {
+          const card = document.createElement("div");
+          const image = document.createElement("img");
+          const label = document.createElement("span");
+          const remove = document.createElement("button");
+          card.className = "pdf-view-card";
+          image.src = `data:image/png;base64,${view.image_png_base64}`;
+          image.alt = view.label;
+          label.textContent = view.label;
+          remove.type = "button";
+          remove.className = "pdf-view-remove";
+          remove.setAttribute("aria-label", `Rimuovi ${view.label}`);
+          remove.textContent = "×";
+          remove.addEventListener("click", () => {
+            pdfCapturedViews.splice(index, 1);
+            pdfCapturedViews = pdfCapturedViews.map((item, itemIndex) => ({
+              ...item,
+              name: `custom-${itemIndex + 1}`,
+              key: `custom-${itemIndex + 1}`,
+              label: `Vista scelta ${itemIndex + 1}`,
+            }));
+            renderPdfViews();
+          });
+          card.append(image, label, remove);
+          grid.append(card);
+        });
+      }
+      document.getElementById("capture-view-button").disabled = !viewerState.ready || pdfCapturedViews.length >= maxPdfViews;
+    }
+
+    function captureViewerForPdf() {
+      if (!viewerState.ready || pdfCapturedViews.length >= maxPdfViews) return;
+      viewerState.renderer.render(viewerState.scene, viewerState.camera);
+      const encoded = viewerState.renderer.domElement.toDataURL("image/png").split(",", 2)[1];
+      const index = pdfCapturedViews.length + 1;
+      pdfCapturedViews.push({
+        name: `custom-${index}`,
+        key: `custom-${index}`,
+        label: `Vista scelta ${index}`,
+        image_png_base64: encoded,
+      });
+      renderPdfViews();
+      setViewerStatus(`Vista ${index} aggiunta al PDF.`);
+    }
+
+    function previewForPdf() {
+      if (!pdfCapturedViews.length) return lastResult?.preview || null;
+      return {
+        image_png_base64: pdfCapturedViews[0].image_png_base64,
+        available: true,
+        mode: "full",
+        partial: pdfCapturedViews.length < maxPdfViews,
+        views: pdfCapturedViews,
+        warnings: [],
+      };
+    }
 
     function buildInputs(group, targetId) {
       const target = document.getElementById(targetId);
@@ -730,6 +1297,12 @@
       renderPreviewGallery,
       showPreviewView,
     };
+    window.REVERSEPARTS_VIEWER_DEBUG = {
+      captureViewerForPdf,
+      previewForPdf,
+      setViewerView,
+      showVisualPane,
+    };
 
     function renderResult(payload) {
       const analysis = payload.analysis;
@@ -750,6 +1323,14 @@
       const totalHoles = features.total_holes ?? holes.total_holes
         ?? (circularHoles + elongatedHoles + polygonalHoles + formedHoles + unknownHoles);
       renderPreviewGallery(preview, analysis.complexity_score);
+      const viewerEnabled = defaults?.viewer_model_enabled !== false;
+      document.getElementById("load-viewer-button").disabled = !viewerEnabled;
+      setViewerStatus(
+        viewerEnabled
+          ? "Modello 3D disponibile su richiesta."
+          : "Vista 3D disabilitata sul server: imposta VIEWER_MODEL_ENABLED=true su Render."
+      );
+      setWorkflowStep(3);
 
       document.getElementById("part-name").textContent = quote.part_name || analysis.part_name || "-";
       document.getElementById("complexity").innerHTML = `<span class="badge">${escapeHtml(analysis.complexity_score)}</span>`;
@@ -808,8 +1389,10 @@
         const healthResponse = await fetchApi("/health");
         const health = await healthResponse.json();
         document.getElementById("health").textContent = health.freecad_available ? "FreeCAD disponibile" : "FreeCAD non disponibile";
+        document.getElementById("health-dot").className = `status-dot ${health.freecad_available ? "ready" : "error"}`;
       } catch (error) {
         document.getElementById("health").textContent = "Stato FreeCAD non verificato";
+        document.getElementById("health-dot").className = "status-dot error";
         console.warn("[REVERSEPARTS] health check failed:", error.message);
       }
     }
@@ -826,6 +1409,7 @@
         const configResponse = await fetchApi("/config/defaults");
         defaults = await configResponse.json();
         loadDefaults();
+        if (lastResult) renderResult(lastResult);
         console.log("[REVERSEPARTS] config loaded successfully");
       } catch (error) {
         setStatus(`Impossibile caricare la configurazione iniziale. ${error.message}`, "error");
@@ -853,11 +1437,57 @@
       event.currentTarget.textContent = isOpen ? "Chiudi legenda" : "Legenda parametri";
     });
     document.getElementById("material").addEventListener("change", () => defaults && loadDefaults());
+    document.getElementById("viewer-tab").addEventListener("click", () => showVisualPane("viewer"));
+    document.getElementById("preview-tab").addEventListener("click", () => showVisualPane("preview"));
+    document.querySelectorAll("[data-viewer-view]").forEach(button => {
+      button.addEventListener("click", () => setViewerView(button.dataset.viewerView));
+    });
+    document.querySelector('[data-viewer-action="fit"]').addEventListener("click", () => setViewerView("isometric"));
+    document.getElementById("capture-view-button").addEventListener("click", captureViewerForPdf);
+
+    document.getElementById("load-viewer-button").addEventListener("click", async () => {
+      if (!lastResult || !lastCadFile) {
+        setStatus("Esegui prima analisi e preventivo.", "error");
+        return;
+      }
+      const button = document.getElementById("load-viewer-button");
+      const formData = new FormData();
+      formData.append("file", lastCadFile);
+      formData.append("complexity_score", lastResult.analysis?.complexity_score || "unknown");
+      button.disabled = true;
+      setViewerStatus("Preparazione del modello 3D in corso...");
+      setStatus("Preparazione del modello 3D in corso...", "loading");
+      try {
+        const response = await fetchApi("/viewer-model", { method: "POST", body: formData });
+        const payload = await response.json();
+        if (!payload.available) {
+          throw new Error(payload.warnings?.[0] || "Modello 3D non disponibile.");
+        }
+        lastResult.viewer_model = payload;
+        await displayViewerModel(payload);
+        button.textContent = "Ricarica modello 3D";
+        clearStatus();
+      } catch (error) {
+        setViewerStatus(error.message || "Caricamento del modello 3D non riuscito.");
+        setStatus(error.message || "Caricamento del modello 3D non riuscito.", "error");
+      } finally {
+        button.disabled = defaults?.viewer_model_enabled === false;
+      }
+    });
+
     document.getElementById("quote-form").addEventListener("submit", async event => {
       event.preventDefault();
       const file = document.getElementById("cad-file").files[0];
       if (!file) return setStatus("Seleziona un file .stp o .step.", "error");
       lastCadFile = file;
+      disposeViewerModel();
+      resetPdfViews();
+      document.getElementById("viewer-empty").hidden = false;
+      document.getElementById("viewer-toolbar").hidden = true;
+      document.getElementById("viewer-help").hidden = true;
+      document.getElementById("capture-view-button").disabled = true;
+      document.getElementById("load-viewer-button").textContent = "Carica modello 3D";
+      setWorkflowStep(2);
 
       const pricingKeys = [...parameterGroups.laser, ...parameterGroups.bending, ...parameterGroups.general].map(item => item[0]);
       const materialKeys = parameterGroups.material.map(item => item[0]);
@@ -941,7 +1571,7 @@
           body: JSON.stringify({
             analysis: lastResult.analysis,
             quote: lastResult.quote,
-            preview: lastResult.preview
+            preview: previewForPdf()
           })
         });
         const blob = await response.blob();
@@ -950,6 +1580,7 @@
         link.download = "reverseparts_preventivo.pdf";
         link.click();
         URL.revokeObjectURL(link.href);
+        setWorkflowStep(4);
         clearStatus();
       } catch (error) {
         setStatus(error.message || "Generazione PDF non riuscita.", "error");

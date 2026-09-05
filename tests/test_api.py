@@ -89,7 +89,7 @@ def test_frontend_returns_html():
     assert '<script src="/app-config.js"></script>' in response.text
     assert "window.REVERSEPARTS_API_BASE_URL" in response.text
     assert 'id="api-backend"' in response.text
-    assert "API backend:" in response.text
+    assert "API:" in response.text
     assert 'fetchApi("/health")' in response.text
     assert 'fetchApi("/config/defaults")' in response.text
     assert 'fetchApi("/analyze-and-quote"' in response.text
@@ -105,14 +105,15 @@ def test_frontend_returns_html():
     assert "Legenda parametri" in response.text
     assert 'class="info-tip"' in response.text
     assert "Densit&agrave; del materiale." in response.text
-    assert "Anteprima pezzo" in response.text
-    assert "Vista 3D interattiva" not in response.text
-    assert 'id="viewer-frame"' not in response.text
-    assert 'data-viewer-action="fit"' not in response.text
-    assert 'data-viewer-view="isometric"' not in response.text
-    assert 'id="load-viewer-button"' not in response.text
-    assert "Carica vista 3D interattiva" not in response.text
-    assert "Vista 3D disabilitata sul server" not in response.text
+    assert "Controllo visivo del pezzo" in response.text
+    assert "Modello CAD 3D interattivo" in response.text
+    assert 'id="viewer-frame"' in response.text
+    assert 'data-viewer-action="fit"' in response.text
+    assert 'data-viewer-view="isometric"' in response.text
+    assert 'id="load-viewer-button"' in response.text
+    assert "Carica modello 3D" in response.text
+    assert "Aggiungi angolazione al PDF" in response.text
+    assert "Angolazioni scelte per il PDF" in response.text
     assert "Le anteprime non sono state generate automaticamente." in response.text
     assert "Genera viste statiche" in response.text
     assert "Generazione viste statiche in corso" in response.text
@@ -126,10 +127,15 @@ def test_frontend_returns_html():
     assert "Anteprima disponibile con viste statiche complete." in response.text
     assert "Anteprima disponibile con una sola vista statica." in response.text
     assert "immagine non leggibile dal browser" in response.text
-    assert 'fetchApi("/viewer-model"' not in response.text
-    assert '<script src="/vendor/three.min.js"></script>' not in response.text
-    assert "dataset.threeReady" not in response.text
-    assert "THREE.OrbitControls" not in response.text
+    assert 'fetchApi("/viewer-model"' in response.text
+    assert '<script src="/vendor/three.min.js"></script>' in response.text
+    assert '<script src="/vendor/GLTFLoader.js"></script>' in response.text
+    assert '<script src="/vendor/OrbitControls.js"></script>' in response.text
+    assert "THREE.OrbitControls" in response.text
+    assert "preserveDrawingBuffer: true" in response.text
+    assert "captureViewerForPdf" in response.text
+    assert "previewForPdf()" in response.text
+    assert "window.REVERSEPARTS_VIEWER_DEBUG" in response.text
     assert 'id="part-preview"' in response.text
     assert 'id="preview-thumbnails"' in response.text
     assert "normalizePreviewViews(preview || {})" in response.text
@@ -528,6 +534,38 @@ def test_quote_pdf_preview_section_uses_all_static_view_labels():
     assert "Destra" in rendered
 
 
+def test_quote_pdf_preview_section_uses_selected_3d_view_labels():
+    image_buffer = BytesIO()
+    Image.new("RGB", (4, 3), (220, 224, 228)).save(image_buffer, format="PNG")
+    preview_png = base64.b64encode(image_buffer.getvalue()).decode("ascii")
+
+    elements = pdf_report._preview_section(
+        {
+            "image_png_base64": preview_png,
+            "available": True,
+            "mode": "full",
+            "partial": True,
+            "views": [
+                {
+                    "name": "custom-1",
+                    "label": "Vista scelta 1",
+                    "image_png_base64": preview_png,
+                },
+                {
+                    "name": "custom-2",
+                    "label": "Vista scelta 2",
+                    "image_png_base64": preview_png,
+                },
+            ],
+            "warnings": [],
+        }
+    )
+
+    rendered = "\n".join(str(element) for element in elements)
+    assert "Vista scelta 1" in rendered
+    assert "Vista scelta 2" in rendered
+
+
 def test_quote_pdf_preview_section_uses_ultra_light_preview_note():
     image_buffer = BytesIO()
     Image.new("RGB", (4, 3), (220, 224, 228)).save(image_buffer, format="PNG")
@@ -668,6 +706,25 @@ def test_analyze_and_quote_staffa_test_1_real_step_file():
     assert payload["viewer_model"]["format"] is None
     assert payload["viewer_model"]["model_base64"] is None
     assert isinstance(payload["viewer_model"]["warnings"], list)
+
+
+def test_viewer_model_lamiera_piana_generates_glb(monkeypatch):
+    _skip_without_freecad_for_real_fixture()
+    monkeypatch.setenv("VIEWER_MODEL_ENABLED", "true")
+
+    with LAMIERA_TEST_FILE.open("rb") as step_file:
+        response = client.post(
+            "/viewer-model",
+            data={"complexity_score": "low"},
+            files={"file": ("lamiera_piana_test_1.stp", step_file, "application/step")},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["available"] is True
+    assert payload["format"] == "glb"
+    assert base64.b64decode(payload["model_base64"]).startswith(b"glTF")
+    assert payload["warnings"] == []
 
 
 def test_generate_preview_lamiera_piana_generates_static_views():

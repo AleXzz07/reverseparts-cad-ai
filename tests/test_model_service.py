@@ -14,6 +14,12 @@ def _settings(**overrides):
     return model_service.ViewerModelSettings(**values)
 
 
+def test_viewer_model_is_enabled_by_default(monkeypatch):
+    monkeypatch.delenv("VIEWER_MODEL_ENABLED", raising=False)
+
+    assert model_service.ViewerModelSettings.from_env().enabled is True
+
+
 def test_viewer_model_can_be_disabled(tmp_path):
     step_path = tmp_path / "part.step"
     step_path.write_text("STEP", encoding="ascii")

@@ -63,7 +63,7 @@ class ViewerModelSettings:
     @classmethod
     def from_env(cls) -> "ViewerModelSettings":
         return cls(
-            enabled=_env_bool("VIEWER_MODEL_ENABLED", False),
+            enabled=_env_bool("VIEWER_MODEL_ENABLED", True),
             timeout_sec=max(1.0, _env_float("VIEWER_MODEL_TIMEOUT_SEC", 20.0)),
             max_file_size_mb=max(
                 0.1,
