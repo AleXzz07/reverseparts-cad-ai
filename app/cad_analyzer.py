@@ -299,6 +299,9 @@ def _detect_circular_holes(shape, parameters: AnalysisParameters) -> tuple[list[
             HoleFeature(
                 diameter_mm=round(diameter, 2),
                 radius_mm=round(radius, 2),
+                perimeter_mm=round(math.pi * diameter, 2),
+                circumference_mm=round(math.pi * diameter, 2),
+                area_mm2=round(math.pi * radius * radius, 2),
                 center=_rounded_vector(center),
                 axis=_rounded_vector(axis),
                 depth_mm=round(depth, 3),
@@ -364,6 +367,12 @@ def _detect_circular_holes(shape, parameters: AnalysisParameters) -> tuple[list[
                 HoleFeature(
                     diameter_mm=round((left["diameter"] + right["diameter"]) / 2.0, 2),
                     radius_mm=round((left["radius"] + right["radius"]) / 2.0, 2),
+                    perimeter_mm=round(math.pi * (left["diameter"] + right["diameter"]) / 2.0, 2),
+                    circumference_mm=round(math.pi * (left["diameter"] + right["diameter"]) / 2.0, 2),
+                    area_mm2=round(
+                        math.pi * ((left["radius"] + right["radius"]) / 2.0) ** 2,
+                        2,
+                    ),
                     center=_rounded_vector(center),
                     axis=_rounded_vector(left["axis"]),
                     depth_mm=round(depth, 3),
@@ -400,6 +409,9 @@ def _detect_circular_holes(shape, parameters: AnalysisParameters) -> tuple[list[
                 HoleFeature(
                     diameter_mm=round(diameter, 2),
                     radius_mm=round(diameter / 2.0, 2),
+                    perimeter_mm=round(math.pi * diameter, 2),
+                    circumference_mm=round(math.pi * diameter, 2),
+                    area_mm2=round(math.pi * (diameter / 2.0) ** 2, 2),
                     center=_rounded_vector(_wire_center(wire)),
                     axis=_rounded_vector(_normalize_vector(surface.Axis)),
                     confidence="high",
@@ -422,6 +434,16 @@ def _wire_center(wire) -> tuple[float, float, float]:
         (float(bbox.YMin) + float(bbox.YMax)) / 2.0,
         (float(bbox.ZMin) + float(bbox.ZMax)) / 2.0,
     )
+
+
+def _planar_wire_area(wire) -> float | None:
+    try:
+        Part = importlib.import_module("Part")
+        return round(float(Part.Face(wire).Area), 3)
+    except Exception:
+        # FreeCAD raises Part.OCCError for wires that cannot form a valid face.
+        # Area is optional metadata, so a failure must not stop CAD analysis.
+        return None
 
 
 def _slot_axis_from_arc_centers(arcs: list) -> tuple[float, float, float]:
@@ -542,14 +564,26 @@ def _detect_elongated_holes(
                 continue
 
             slot_axis = _slot_axis_from_arc_centers(arcs)
+            arc_centers = [_vector_tuple(edge.Curve.Center) for edge in arcs]
+            straight_length = _vector_norm(
+                tuple(left - right for left, right in zip(arc_centers[0], arc_centers[1]))
+            )
+            overall_length = straight_length + width
+            slot_area = straight_length * width + math.pi * (width / 2.0) ** 2
             if _vector_norm(slot_axis) == 0:
                 slot_axis = line_directions[0]
 
             _append_unique_slot(
                 slots,
                 HoleFeature(
+                    # Kept for compatibility with validated historical ground truth.
                     length_mm=round(length, 2),
+                    overall_length_mm=round(overall_length, 2),
+                    straight_length_mm=round(straight_length, 2),
+                    end_radius_mm=round(width / 2.0, 2),
                     width_mm=round(width, 2),
+                    perimeter_mm=round(length, 2),
+                    area_mm2=round(slot_area, 2),
                     center=_rounded_vector(_wire_center(wire)),
                     axis=_rounded_vector(slot_axis),
                     confidence="medium",
@@ -608,6 +642,8 @@ def _detect_polygonal_holes(
                     num_sides=len(edges),
                     max_dimension_mm=round(perimeter, 2),
                     bounding_box_mm=bbox_dimensions,
+                    perimeter_mm=round(perimeter, 2),
+                    area_mm2=_planar_wire_area(wire),
                     center=_rounded_vector(_wire_center(wire)),
                     axis=_rounded_vector(_normalize_vector(surface.Axis)),
                     confidence="medium",
@@ -637,6 +673,8 @@ def _detect_polygonal_holes(
                 num_sides=6,
                 max_dimension_mm=round(float(outer_wire.Length), 2),
                 bounding_box_mm=bbox_dimensions,
+                perimeter_mm=round(float(outer_wire.Length), 2),
+                area_mm2=_planar_wire_area(outer_wire),
                 center=_rounded_vector(_wire_center(outer_wire)),
                 axis=_rounded_vector(_normalize_vector(surface.Axis)),
                 confidence="medium",
@@ -666,6 +704,8 @@ def _detect_formed_holes(
             candidate = HoleFeature(
                 type="raised collar opening",
                 length_mm=round(float(wire.Length), 2),
+                perimeter_mm=round(float(wire.Length), 2),
+                area_mm2=_planar_wire_area(wire),
                 center=_rounded_vector(_wire_center(wire)),
                 axis=_rounded_vector(_normalize_vector(surface.Axis)),
                 confidence="medium",
@@ -800,6 +840,7 @@ def _detect_unknown_holes(
                         z=round(float(bbox.ZLength), 3),
                     ),
                     perimeter_mm=round(perimeter, 2),
+                    area_mm2=_planar_wire_area(wire),
                     center=_rounded_vector(center),
                     axis=_rounded_vector(_normalize_vector(surface.Axis)),
                     confidence="low",
@@ -876,6 +917,74 @@ def _annotate_hole_edge_distances(
     coverage = measured_count / len(features)
     confidence = "high" if coverage >= 0.99 else "medium" if coverage >= 0.5 else "low"
     return min(measured_distances), confidence, measured_count
+
+
+def _annotate_hole_to_hole_distances(
+    shape,
+    features: list[HoleFeature],
+) -> tuple[float | None, str, int]:
+    if len(features) < 2:
+        return None, "low", 0
+
+    measured_pairs: set[tuple[int, int]] = set()
+    mapped_features: set[int] = set()
+    all_distances: list[float] = []
+    for face in shape.Faces:
+        surface = face.Surface
+        if getattr(surface, "TypeId", "") != "Part::GeomPlane":
+            continue
+        face_axis = _normalize_vector(surface.Axis)
+        matched: list[tuple[object, HoleFeature]] = []
+        for wire in list(face.Wires)[1:]:
+            if not wire.isClosed():
+                continue
+            center = _wire_center(wire)
+            candidates = [
+                feature
+                for feature in features
+                if _center_matches_feature(center, feature)
+                and (
+                    feature.axis is None
+                    or _axis_aligned(tuple(feature.axis), face_axis, tolerance=0.95)
+                )
+            ]
+            if not candidates:
+                continue
+            feature = min(
+                candidates,
+                key=lambda item: _vector_norm(
+                    tuple(left - right for left, right in zip(center, item.center or center))
+                ),
+            )
+            matched.append((wire, feature))
+            mapped_features.add(id(feature))
+
+        for left_index, (left_wire, left_feature) in enumerate(matched):
+            for right_wire, right_feature in matched[left_index + 1 :]:
+                if left_feature is right_feature:
+                    continue
+                pair_key = tuple(sorted((id(left_feature), id(right_feature))))
+                try:
+                    distance = float(left_wire.distToShape(right_wire)[0])
+                except (AttributeError, TypeError, ValueError):
+                    continue
+                if not math.isfinite(distance) or distance < 0:
+                    continue
+                rounded_distance = round(distance, 3)
+                all_distances.append(rounded_distance)
+                measured_pairs.add(pair_key)
+                for feature in (left_feature, right_feature):
+                    if (
+                        feature.nearest_hole_distance_mm is None
+                        or rounded_distance < feature.nearest_hole_distance_mm
+                    ):
+                        feature.nearest_hole_distance_mm = rounded_distance
+
+    if not all_distances:
+        return None, "low", 0
+    coverage = len(mapped_features) / len(features)
+    confidence = "high" if coverage >= 0.99 else "medium" if coverage >= 0.5 else "low"
+    return min(all_distances), confidence, len(measured_pairs)
 
 
 def _cylindrical_face_angle_deg(face) -> float | None:
@@ -1345,6 +1454,11 @@ def analyze_step_file(
             response.manufacturability.hole_to_edge_confidence,
             response.manufacturability.measured_holes,
         ) = _annotate_hole_edge_distances(shape, all_hole_features)
+        (
+            response.manufacturability.min_hole_to_hole_mm,
+            response.manufacturability.hole_to_hole_confidence,
+            response.manufacturability.measured_hole_pairs,
+        ) = _annotate_hole_to_hole_distances(shape, all_hole_features)
         if all_hole_features and response.manufacturability.measured_holes < len(all_hole_features):
             response.manufacturability.warnings.append(
                 "Hole-to-edge distance is available only for openings matched to a planar face."
@@ -1379,6 +1493,11 @@ def analyze_step_file(
         else:
             response.bends.count = 0
             response.bends.confidence = "medium"
+
+        if all_hole_features and response.bends.count:
+            response.manufacturability.warnings.append(
+                "Hole-to-bend distance requires a validated flat pattern and is not inferred from the folded STEP model."
+            )
 
         response.complexity_score = _complexity_score(
             shape,

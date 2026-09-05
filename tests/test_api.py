@@ -18,6 +18,7 @@ from app.main import app
 from app.pdf_report import (
     _bend_detail_rows,
     _hole_detail_rows,
+    _hole_group_rows,
     _part_rows,
     _verification_rows,
 )
@@ -176,6 +177,11 @@ def test_frontend_returns_html():
     assert "Facce CAD (B-Rep)" in response.text
     assert "Bordi topologici (B-Rep)" in response.text
     assert "non equivalgono al numero di lavorazioni o spigoli fisici" in response.text
+    assert "Perimetro esterno stimato" in response.text
+    assert "Perimetro aperture interne" in response.text
+    assert "Distanza minima foro-foro" in response.text
+    assert "Raggruppamento fori uguali" in response.text
+    assert "Origine coordinate" in response.text
 
 
 def test_frontend_serves_bundled_three_assets():
@@ -460,11 +466,13 @@ def test_quote_pdf_detail_rows_include_hole_and_bend_measurements():
     analysis["bends"]["items"][0]["angle_deg"] = 90.0
 
     hole_rows = _hole_detail_rows(analysis)
+    hole_groups = _hole_group_rows(analysis)
     bend_rows = _bend_detail_rows(analysis)
 
     assert len(hole_rows) == 8
     assert hole_rows[0][0] == "Circolare 1"
-    assert hole_rows[0][4] == "12.5 mm"
+    assert hole_rows[0][6] == "12.5 mm"
+    assert any(group[0] == 2 and group[1] == "Circolare" for group in hole_groups)
     assert len(bend_rows) == 2
     assert bend_rows[0][3] == "90 deg"
 

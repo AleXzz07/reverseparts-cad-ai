@@ -20,15 +20,21 @@ class HoleFeature(BaseModel):
     max_dimension_mm: float | None = None
     bounding_box_mm: Dimensions | None = None
     perimeter_mm: float | None = None
+    circumference_mm: float | None = None
+    area_mm2: float | None = None
     diameter_mm: float | None = None
     radius_mm: float | None = None
     length_mm: float | None = None
+    overall_length_mm: float | None = None
+    straight_length_mm: float | None = None
+    end_radius_mm: float | None = None
     width_mm: float | None = None
     depth_mm: float | None = None
     center: list[float] | None = None
     axis: list[float] | None = None
     position_mm: Dimensions | None = None
     edge_distance_mm: float | None = None
+    nearest_hole_distance_mm: float | None = None
     confidence: Confidence = "low"
 
 
@@ -87,7 +93,18 @@ class Manufacturability(BaseModel):
     min_hole_to_edge_mm: float | None = None
     hole_to_edge_confidence: Confidence = "low"
     measured_holes: int = 0
+    min_hole_to_hole_mm: float | None = None
+    hole_to_hole_confidence: Confidence = "low"
+    measured_hole_pairs: int = 0
+    min_hole_to_bend_mm: float | None = None
+    hole_to_bend_confidence: Confidence = "low"
     warnings: list[str] = Field(default_factory=list)
+
+
+class CoordinateReference(BaseModel):
+    origin: str = "Original STEP file origin"
+    axes: str = "Original STEP X/Y/Z axes; no automatic reorientation"
+    units: Literal["mm"] = "mm"
 
 
 class CadAnalysisResponse(BaseModel):
@@ -108,6 +125,7 @@ class CadAnalysisResponse(BaseModel):
     cutting: Cutting = Field(default_factory=Cutting)
     geometry: GeometryStatistics = Field(default_factory=GeometryStatistics)
     manufacturability: Manufacturability = Field(default_factory=Manufacturability)
+    coordinate_reference: CoordinateReference = Field(default_factory=CoordinateReference)
     complexity_score: Literal["unknown", "low", "medium", "high"] = "unknown"
     warnings: list[str] = Field(default_factory=list)
 

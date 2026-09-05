@@ -575,6 +575,16 @@
     .technical-table th { background: #f3f6f9; color: #52647a; font-size: 11px; }
     .technical-table tbody tr:last-child td { border-bottom: 0; }
     .technical-empty { padding: 12px; color: var(--muted); font-size: 12px; }
+    .feature-groups { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 10px; }
+    .feature-group {
+      padding: 6px 9px;
+      border: 1px solid #c9d9ee;
+      border-radius: 999px;
+      background: #f3f7fd;
+      color: #294866;
+      font-size: 11px;
+      font-weight: 750;
+    }
     .technical-note {
       margin: 11px 0 0;
       padding: 10px 12px;
@@ -1234,7 +1244,7 @@
     function holeMeasureText(feature, group) {
       if (feature.diameter_mm != null) return `Ø ${number(feature.diameter_mm, "mm")}`;
       if (group === "Asola") {
-        return `L/P ${number(feature.length_mm, "mm")} / W ${number(feature.width_mm, "mm")}`;
+        return `${number(feature.overall_length_mm, "mm")} x ${number(feature.width_mm, "mm")}`;
       }
       if (feature.bounding_box_mm) return dimensionsText(feature.bounding_box_mm);
       if (feature.max_dimension_mm != null) return number(feature.max_dimension_mm, "mm");
@@ -1242,9 +1252,24 @@
       return "-";
     }
 
+    function groupedHoleBadges(groups) {
+      const grouped = new Map();
+      groups.forEach(([group, items]) => items.forEach(feature => {
+        const measure = holeMeasureText(feature, group);
+        const key = `${group}|${measure}`;
+        const current = grouped.get(key) || { group, measure, count: 0 };
+        current.count += 1;
+        grouped.set(key, current);
+      }));
+      return [...grouped.values()].map(item =>
+        `<span class="feature-group">${escapeHtml(`${item.count} × ${item.group} ${item.measure}`)}</span>`
+      ).join("");
+    }
+
     function renderTechnicalDetails(analysis) {
       const geometry = analysis.geometry || {};
       const manufacturability = analysis.manufacturability || {};
+      const coordinateReference = analysis.coordinate_reference || {};
       const center = geometry.center_of_mass_mm;
       const boundingCenter = geometry.bounding_box_center_mm;
       const centerText = center
@@ -1260,7 +1285,10 @@
         ["Shell", geometry.shell_count ?? "-"],
         ["Facce CAD (B-Rep)", geometry.face_count ?? "-"],
         ["Bordi topologici (B-Rep)", geometry.edge_count ?? "-"],
-        ["Vertici topologici (B-Rep)", geometry.vertex_count ?? "-"]
+        ["Vertici topologici (B-Rep)", geometry.vertex_count ?? "-"],
+        ["Origine coordinate", coordinateReference.origin || "Origine originale del file STEP"],
+        ["Assi coordinate", coordinateReference.axes || "Assi X/Y/Z originali STEP"],
+        ["Unità coordinate", coordinateReference.units || "mm"]
       ]);
 
       const holes = analysis.holes || {};
@@ -1275,15 +1303,20 @@
         <tr>
           <td>${escapeHtml(`${group} ${index + 1}`)}</td>
           <td>${escapeHtml(holeMeasureText(feature, group))}</td>
+          <td>${escapeHtml(number(feature.circumference_mm ?? feature.perimeter_mm, "mm"))}</td>
+          <td>${escapeHtml(number(feature.area_mm2, "mm²"))}</td>
           <td>${escapeHtml(vectorText(feature.center, "mm"))}</td>
           <td>${escapeHtml(vectorText(feature.axis))}</td>
           <td>${escapeHtml(number(feature.edge_distance_mm, "mm"))}</td>
+          <td>${escapeHtml(number(feature.nearest_hole_distance_mm, "mm"))}</td>
           <td>${escapeHtml(confidenceText(feature.confidence))}</td>
         </tr>
       `));
       document.getElementById("holes-detail").innerHTML = holeRows.length ? `
+        <div class="technical-empty"><strong>Raggruppamento fori uguali</strong></div>
+        <div class="feature-groups">${groupedHoleBadges(groups)}</div>
         <div class="technical-table-wrap"><table class="technical-table">
-          <thead><tr><th>Foro</th><th>Misura</th><th>Posizione X/Y/Z</th><th>Asse X/Y/Z</th><th>Distanza bordo</th><th>Confidence</th></tr></thead>
+          <thead><tr><th>Foro</th><th>Misura</th><th>Circonferenza/perimetro</th><th>Area</th><th>Posizione X/Y/Z</th><th>Asse X/Y/Z</th><th>Distanza bordo</th><th>Foro più vicino</th><th>Confidence</th></tr></thead>
           <tbody>${holeRows.join("")}</tbody>
         </table></div>
       ` : '<div class="technical-empty">Nessuna apertura rilevata.</div>';
@@ -1311,7 +1344,12 @@
         ["Diametro circolare massimo", number(holes.max_circular_diameter_mm, "mm")],
         ["Distanza minima foro-bordo", number(manufacturability.min_hole_to_edge_mm, "mm")],
         ["Fori con distanza misurata", `${manufacturability.measured_holes ?? 0} / ${holes.total_holes ?? 0}`],
-        ["Confidence foro-bordo", confidenceText(manufacturability.hole_to_edge_confidence)]
+        ["Confidence foro-bordo", confidenceText(manufacturability.hole_to_edge_confidence)],
+        ["Distanza minima foro-foro", number(manufacturability.min_hole_to_hole_mm, "mm")],
+        ["Coppie foro-foro misurate", manufacturability.measured_hole_pairs ?? 0],
+        ["Confidence foro-foro", confidenceText(manufacturability.hole_to_hole_confidence)],
+        ["Distanza minima foro-piega", number(manufacturability.min_hole_to_bend_mm, "mm")],
+        ["Confidence foro-piega", confidenceText(manufacturability.hole_to_bend_confidence)]
       ]);
     }
 
@@ -1500,7 +1538,10 @@
         ["Fori non riconosciuti", unknownHoles],
         ["Fori totali", totalHoles],
         ["Pieghe", features.bends ?? analysis.bends?.count ?? 0],
-        ["Lunghezza taglio", number(analysis.cutting?.total_cut_length_mm, "mm")]
+        ["Perimetro esterno stimato", number(analysis.cutting?.outer_cut_length_mm, "mm")],
+        ["Perimetro aperture interne", number(analysis.cutting?.inner_cut_length_mm, "mm")],
+        ["Lunghezza totale taglio", number(analysis.cutting?.total_cut_length_mm, "mm")],
+        ["Confidence taglio", confidenceText(analysis.cutting?.confidence)]
       ]);
       document.getElementById("quote-data").innerHTML = rows([
         ["Tempo laser", number(times.laser_cutting, "min")],

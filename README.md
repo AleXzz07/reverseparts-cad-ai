@@ -44,6 +44,12 @@ The web app and PDF label face, edge, and vertex totals explicitly as B-Rep/topo
 
 The `manufacturability` section reports the minimum hole-to-external-edge distance measured between an inner opening wire and the outer wire of the same planar face. Each matched hole receives `edge_distance_mm`. The measurement is best effort, never changes hole classification, and remains `null` with low confidence for openings that cannot be associated safely with a planar face. It is geometric information, not an inferred manufacturing tolerance.
 
+Circular holes expose circumference and area in addition to diameter and radius. Slots expose unambiguous `overall_length_mm`, `straight_length_mm`, `width_mm`, `end_radius_mm`, `perimeter_mm`, and `area_mm2`; the historical `length_mm` contour value remains only for dataset/API compatibility. Polygonal, formed, and unknown planar openings expose perimeter and area when FreeCAD can build a reliable planar face.
+
+Same-face planar opening wires are used to calculate the minimum hole-to-hole clearance and each feature's nearest opening distance. Hole-to-bend manufacturing clearance is intentionally left `null` for folded STEP models because a reliable value requires a validated flat pattern; the analyzer returns a warning instead of inferring it from 3D proximity.
+
+The web app and PDF show external cut perimeter, internal-opening perimeter, total cut length, confidence, grouped equal-hole counts, and the original STEP coordinate reference. The original coordinate system is preserved and no automatic X/Y/Z reorientation is implied.
+
 ### `POST /quote`
 
 Input JSON:

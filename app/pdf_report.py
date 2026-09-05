@@ -270,7 +270,7 @@ def _hole_detail_rows(analysis: dict[str, Any]) -> list[list[Any]]:
                 measure = f"Diam. {_value(feature['diameter_mm'], 'mm')}"
             elif feature.get("width_mm") is not None:
                 measure = (
-                    f"L/P {_value(feature.get('length_mm'), 'mm')} / "
+                    f"L {_value(feature.get('overall_length_mm'), 'mm')} / "
                     f"W {_value(feature.get('width_mm'), 'mm')}"
                 )
             elif feature.get("bounding_box_mm"):
@@ -284,13 +284,29 @@ def _hole_detail_rows(analysis: dict[str, Any]) -> list[list[Any]]:
                 [
                     f"{label} {index}",
                     measure,
+                    _value(
+                        feature.get("circumference_mm") or feature.get("perimeter_mm"),
+                        "mm",
+                    ),
+                    _value(feature.get("area_mm2"), "mm2"),
                     _vector(feature.get("center"), "mm"),
                     _vector(feature.get("axis")),
                     _value(feature.get("edge_distance_mm"), "mm"),
+                    _value(feature.get("nearest_hole_distance_mm"), "mm"),
                     feature.get("confidence", "low"),
                 ]
             )
     return rows
+
+
+def _hole_group_rows(analysis: dict[str, Any]) -> list[list[Any]]:
+    detail_rows = _hole_detail_rows(analysis)
+    groups: dict[tuple[str, str], int] = {}
+    for row in detail_rows:
+        type_name = str(row[0]).rsplit(" ", 1)[0]
+        key = (type_name, str(row[1]))
+        groups[key] = groups.get(key, 0) + 1
+    return [[count, type_name, measure] for (type_name, measure), count in groups.items()]
 
 
 def _bend_detail_rows(analysis: dict[str, Any]) -> list[list[Any]]:
@@ -556,6 +572,8 @@ def generate_quote_pdf(
     geometry = analysis.get("geometry", {})
     manufacturability = analysis.get("manufacturability", {})
     holes = analysis.get("holes", {})
+    cutting = analysis.get("cutting", {})
+    coordinate_reference = analysis.get("coordinate_reference", {})
     config_used = quote.get("config_used", {})
     pricing = config_used.get("pricing", {})
 
@@ -595,6 +613,10 @@ def generate_quote_pdf(
                 ("Velocità taglio", _value(laser.get("cut_speed_mm_min"), "mm/min")),
                 ("Pierce count", laser.get("pierce_count")),
                 ("Tempo per piega", _value(bending.get("bending_time_sec_per_bend"), "sec")),
+                ("Perimetro esterno stimato", _value(cutting.get("outer_cut_length_mm"), "mm")),
+                ("Perimetro aperture interne", _value(cutting.get("inner_cut_length_mm"), "mm")),
+                ("Lunghezza totale taglio", _value(cutting.get("total_cut_length_mm"), "mm")),
+                ("Confidence taglio", cutting.get("confidence", "low")),
                 ("Volume", _value(analysis.get("volume_cm3"), "cm3")),
                 ("Superficie", _value(analysis.get("surface_area_cm2"), "cm2")),
                 (
@@ -629,13 +651,26 @@ def generate_quote_pdf(
                 ("Diametro circolare max", _value(holes.get("max_circular_diameter_mm"), "mm")),
                 ("Distanza minima foro-bordo", _value(manufacturability.get("min_hole_to_edge_mm"), "mm")),
                 ("Confidence foro-bordo", manufacturability.get("hole_to_edge_confidence", "low")),
+                ("Distanza minima foro-foro", _value(manufacturability.get("min_hole_to_hole_mm"), "mm")),
+                ("Confidence foro-foro", manufacturability.get("hole_to_hole_confidence", "low")),
+                ("Distanza minima foro-piega", _value(manufacturability.get("min_hole_to_bend_mm"), "mm")),
+                ("Confidence foro-piega", manufacturability.get("hole_to_bend_confidence", "low")),
+                ("Riferimento coordinate", coordinate_reference.get("origin", "Original STEP file origin")),
+                ("Assi coordinate", coordinate_reference.get("axes", "Original STEP X/Y/Z axes")),
             ],
         )
     )
     elements.extend(
         _detail_table(
+            "Raggruppamento fori uguali",
+            ["Quantita", "Tipo", "Misura"],
+            _hole_group_rows(analysis),
+        )
+    )
+    elements.extend(
+        _detail_table(
             "Dettaglio fori",
-            ["Foro", "Misura", "Centro X/Y/Z", "Asse X/Y/Z", "Foro-bordo", "Conf."],
+            ["Foro", "Misura", "Perim.", "Area", "Centro", "Asse", "Bordo", "Altro foro", "Conf."],
             _hole_detail_rows(analysis),
         )
     )
