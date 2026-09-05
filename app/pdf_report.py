@@ -46,6 +46,22 @@ def _dimensions(analysis: dict[str, Any]) -> str:
     return " x ".join(_value(value) for value in values)
 
 
+def _vector(values: Any, unit: str = "") -> str:
+    if not isinstance(values, (list, tuple)) or len(values) < 3:
+        return "-"
+    text = " / ".join(_value(value) for value in values[:3])
+    return f"{text} {unit}".strip()
+
+
+def _xyz_dimensions(values: Any) -> str:
+    if not isinstance(values, dict):
+        return "-"
+    dimensions = [values.get(axis) for axis in ("x", "y", "z")]
+    if any(value is None for value in dimensions):
+        return "-"
+    return f"{_value(dimensions[0])} x {_value(dimensions[1])} x {_value(dimensions[2])} mm"
+
+
 def _part_rows(
     analysis: dict[str, Any],
     quote: dict[str, Any],
@@ -123,9 +139,17 @@ def _verification_rows(
         unknown_holes = holes.get("unknown_holes")
     if unknown_holes is None:
         unknown_holes = len(holes.get("unknown", []) or [])
-    if int(unknown_holes) <= 0:
-        return []
-    return [("Aperture non riconosciute", UNKNOWN_HOLE_WARNING)]
+    rows: list[tuple[str, Any]] = []
+    if int(unknown_holes) > 0:
+        rows.append(("Aperture non riconosciute", UNKNOWN_HOLE_WARNING))
+    rows.extend(
+        (f"Producibilita {index}", warning)
+        for index, warning in enumerate(
+            analysis.get("manufacturability", {}).get("warnings", []) or [],
+            start=1,
+        )
+    )
+    return rows
 
 
 def _section(title: str, rows: list[tuple[str, Any]]) -> list[Any]:
@@ -177,6 +201,111 @@ def _section(title: str, rows: list[tuple[str, Any]]) -> list[Any]:
     return [
         KeepTogether(
             [Paragraph(title, heading_style), table, Spacer(1, 4 * mm)]
+        )
+    ]
+
+
+def _detail_table(title: str, headers: list[str], rows: list[list[Any]]) -> list[Any]:
+    if not rows:
+        return []
+    styles = getSampleStyleSheet()
+    body_style = ParagraphStyle(
+        f"{title}Body",
+        parent=styles["Normal"],
+        fontName="Helvetica",
+        fontSize=7,
+        leading=8,
+    )
+    heading_style = ParagraphStyle(
+        f"{title}Heading",
+        parent=styles["Heading2"],
+        fontName="Helvetica-Bold",
+        fontSize=11,
+        leading=13,
+        spaceBefore=0,
+        spaceAfter=4,
+    )
+    table_data = [
+        [Paragraph(f"<b>{escape(header)}</b>", body_style) for header in headers]
+    ]
+    table_data.extend(
+        [Paragraph(escape(_value(value)), body_style) for value in row]
+        for row in rows
+    )
+    available_width = 170 * mm
+    table = Table(
+        table_data,
+        colWidths=[available_width / len(headers)] * len(headers),
+        repeatRows=1,
+    )
+    table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#EAEFF5")),
+                ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#B8C2CC")),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 3),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+                ("TOPPADDING", (0, 0), (-1, -1), 2.5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 2.5),
+            ]
+        )
+    )
+    return [Paragraph(title, heading_style), table, Spacer(1, 4 * mm)]
+
+
+def _hole_detail_rows(analysis: dict[str, Any]) -> list[list[Any]]:
+    holes = analysis.get("holes", {})
+    groups = (
+        ("Circolare", holes.get("circular", [])),
+        ("Asola", holes.get("elongated", [])),
+        ("Poligonale", holes.get("polygonal", [])),
+        ("Sagomato", holes.get("formed", [])),
+        ("Non riconosciuto", holes.get("unknown", [])),
+    )
+    rows: list[list[Any]] = []
+    for label, features in groups:
+        for index, feature in enumerate(features or [], start=1):
+            if feature.get("diameter_mm") is not None:
+                measure = f"Diam. {_value(feature['diameter_mm'], 'mm')}"
+            elif feature.get("width_mm") is not None:
+                measure = (
+                    f"L/P {_value(feature.get('length_mm'), 'mm')} / "
+                    f"W {_value(feature.get('width_mm'), 'mm')}"
+                )
+            elif feature.get("bounding_box_mm"):
+                measure = _xyz_dimensions(feature["bounding_box_mm"])
+            else:
+                measure = _value(
+                    feature.get("max_dimension_mm") or feature.get("perimeter_mm"),
+                    "mm",
+                )
+            rows.append(
+                [
+                    f"{label} {index}",
+                    measure,
+                    _vector(feature.get("center"), "mm"),
+                    _vector(feature.get("axis")),
+                    _value(feature.get("edge_distance_mm"), "mm"),
+                    feature.get("confidence", "low"),
+                ]
+            )
+    return rows
+
+
+def _bend_detail_rows(analysis: dict[str, Any]) -> list[list[Any]]:
+    return [
+        [
+            index,
+            _value(bend.get("radius_mm"), "mm"),
+            _value(bend.get("length_mm"), "mm"),
+            _value(bend.get("angle_deg"), "deg"),
+            _vector(bend.get("axis")),
+            bend.get("confidence", "low"),
+        ]
+        for index, bend in enumerate(
+            analysis.get("bends", {}).get("items", []) or [],
+            start=1,
         )
     ]
 
@@ -424,6 +553,9 @@ def generate_quote_pdf(
     times = quote.get("estimated_times_min", {})
     laser = quote.get("laser_details", {})
     bending = quote.get("bending_details", {})
+    geometry = analysis.get("geometry", {})
+    manufacturability = analysis.get("manufacturability", {})
+    holes = analysis.get("holes", {})
     config_used = quote.get("config_used", {})
     pricing = config_used.get("pricing", {})
 
@@ -463,7 +595,48 @@ def generate_quote_pdf(
                 ("Velocità taglio", _value(laser.get("cut_speed_mm_min"), "mm/min")),
                 ("Pierce count", laser.get("pierce_count")),
                 ("Tempo per piega", _value(bending.get("bending_time_sec_per_bend"), "sec")),
+                ("Volume", _value(analysis.get("volume_cm3"), "cm3")),
+                ("Superficie", _value(analysis.get("surface_area_cm2"), "cm2")),
+                (
+                    "Centro bounding box X / Y / Z",
+                    _vector(
+                        [
+                            (geometry.get("bounding_box_center_mm") or {}).get(axis)
+                            for axis in ("x", "y", "z")
+                        ],
+                        "mm",
+                    ),
+                ),
+                (
+                    "Baricentro X / Y / Z",
+                    _vector(
+                        [
+                            (geometry.get("center_of_mass_mm") or {}).get(axis)
+                            for axis in ("x", "y", "z")
+                        ],
+                        "mm",
+                    ),
+                ),
+                ("Solidi / facce / bordi", f"{geometry.get('solid_count', '-')} / {geometry.get('face_count', '-')} / {geometry.get('edge_count', '-')}"),
+                ("Diametro circolare min", _value(holes.get("min_circular_diameter_mm"), "mm")),
+                ("Diametro circolare max", _value(holes.get("max_circular_diameter_mm"), "mm")),
+                ("Distanza minima foro-bordo", _value(manufacturability.get("min_hole_to_edge_mm"), "mm")),
+                ("Confidence foro-bordo", manufacturability.get("hole_to_edge_confidence", "low")),
             ],
+        )
+    )
+    elements.extend(
+        _detail_table(
+            "Dettaglio fori",
+            ["Foro", "Misura", "Centro X/Y/Z", "Asse X/Y/Z", "Foro-bordo", "Conf."],
+            _hole_detail_rows(analysis),
+        )
+    )
+    elements.extend(
+        _detail_table(
+            "Dettaglio pieghe",
+            ["#", "Raggio", "Lunghezza", "Angolo", "Asse X/Y/Z", "Conf."],
+            _bend_detail_rows(analysis),
         )
     )
     elements.extend(

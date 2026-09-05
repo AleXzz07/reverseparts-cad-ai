@@ -28,6 +28,7 @@ class HoleFeature(BaseModel):
     center: list[float] | None = None
     axis: list[float] | None = None
     position_mm: Dimensions | None = None
+    edge_distance_mm: float | None = None
     confidence: Confidence = "low"
 
 
@@ -43,6 +44,8 @@ class Holes(BaseModel):
     formed_holes: int = 0
     unknown_holes: int = 0
     total_holes: int = 0
+    min_circular_diameter_mm: float | None = None
+    max_circular_diameter_mm: float | None = None
     confidence: Confidence = "low"
 
 
@@ -50,6 +53,7 @@ class BendFeature(BaseModel):
     type: str = "simple flange"
     radius_mm: float | None = None
     length_mm: float | None = None
+    angle_deg: float | None = None
     axis: list[float] | None = None
     center: list[float] | None = None
     confidence: Confidence = "low"
@@ -69,6 +73,23 @@ class Cutting(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class GeometryStatistics(BaseModel):
+    bounding_box_center_mm: Dimensions | None = None
+    center_of_mass_mm: Dimensions | None = None
+    solid_count: int = 0
+    shell_count: int = 0
+    face_count: int = 0
+    edge_count: int = 0
+    vertex_count: int = 0
+
+
+class Manufacturability(BaseModel):
+    min_hole_to_edge_mm: float | None = None
+    hole_to_edge_confidence: Confidence = "low"
+    measured_holes: int = 0
+    warnings: list[str] = Field(default_factory=list)
+
+
 class CadAnalysisResponse(BaseModel):
     part_name: str = ""
     source_file: str = ""
@@ -85,6 +106,8 @@ class CadAnalysisResponse(BaseModel):
     holes: Holes = Field(default_factory=Holes)
     bends: Bends = Field(default_factory=Bends)
     cutting: Cutting = Field(default_factory=Cutting)
+    geometry: GeometryStatistics = Field(default_factory=GeometryStatistics)
+    manufacturability: Manufacturability = Field(default_factory=Manufacturability)
     complexity_score: Literal["unknown", "low", "medium", "high"] = "unknown"
     warnings: list[str] = Field(default_factory=list)
 

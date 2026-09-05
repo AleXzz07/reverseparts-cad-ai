@@ -552,6 +552,29 @@
     dt, dd { margin: 0; padding: 7px 0; border-bottom: 1px solid #edf0f2; }
     dt { color: var(--muted); }
     dd { font-weight: 700; text-align: right; }
+    .technical-sections { padding: 0 16px 16px; border-top: 1px solid var(--line); }
+    .technical-detail { border-bottom: 1px solid var(--line); }
+    .technical-detail summary {
+      padding: 14px 2px;
+      cursor: pointer;
+      color: #23364d;
+      font-size: 13px;
+      font-weight: 800;
+      list-style-position: inside;
+    }
+    .technical-detail[open] summary { color: var(--accent-dark); }
+    .technical-detail-body { padding: 0 2px 15px; }
+    .technical-table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 9px; }
+    .technical-table { width: 100%; min-width: 720px; border-collapse: collapse; font-size: 12px; }
+    .technical-table th, .technical-table td {
+      padding: 8px 9px;
+      border-bottom: 1px solid #edf0f2;
+      text-align: left;
+      white-space: nowrap;
+    }
+    .technical-table th { background: #f3f6f9; color: #52647a; font-size: 11px; }
+    .technical-table tbody tr:last-child td { border-bottom: 0; }
+    .technical-empty { padding: 12px; color: var(--muted); font-size: 12px; }
     .warnings { margin: 0; padding: 0; list-style: none; }
     .warnings li { padding: 9px 0; border-bottom: 1px solid #edf0f2; color: #6c4a13; }
     .badge {
@@ -589,6 +612,7 @@
       .viewer-toolbar { right: 10px; }
       .viewer-help { display: none; }
       .pdf-view-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .technical-sections { padding-left: 12px; padding-right: 12px; }
     }
   </style>
 </head>
@@ -741,6 +765,24 @@
             <h3>Tempi e costi</h3>
             <dl id="quote-data"></dl>
           </div>
+        </div>
+        <div class="technical-sections">
+          <details class="technical-detail" open>
+            <summary>Geometria generale</summary>
+            <div class="technical-detail-body"><dl id="geometry-data"></dl></div>
+          </details>
+          <details class="technical-detail">
+            <summary>Dettaglio fori</summary>
+            <div class="technical-detail-body" id="holes-detail"></div>
+          </details>
+          <details class="technical-detail">
+            <summary>Dettaglio pieghe</summary>
+            <div class="technical-detail-body" id="bends-detail"></div>
+          </details>
+          <details class="technical-detail">
+            <summary>Controlli di producibilit&agrave;</summary>
+            <div class="technical-detail-body"><dl id="manufacturability-data"></dl></div>
+          </details>
         </div>
       </div>
       <div id="warnings-panel" class="panel" hidden>
@@ -1162,6 +1204,104 @@
       return items.map(([label, value]) => `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd>`).join("");
     }
 
+    function vectorText(values, unit = "") {
+      if (!Array.isArray(values) || values.length < 3) return "-";
+      return values.slice(0, 3).map(value => number(value)).join(" / ") + (unit ? ` ${unit}` : "");
+    }
+
+    function dimensionsText(values) {
+      if (!values || [values.x, values.y, values.z].some(value => value == null)) return "-";
+      return `${number(values.x)} x ${number(values.y)} x ${number(values.z)} mm`;
+    }
+
+    function confidenceText(value) {
+      return ({ high: "Alta", medium: "Media", low: "Bassa" })[value] || "-";
+    }
+
+    function holeMeasureText(feature, group) {
+      if (feature.diameter_mm != null) return `Ø ${number(feature.diameter_mm, "mm")}`;
+      if (group === "Asola") {
+        return `L/P ${number(feature.length_mm, "mm")} / W ${number(feature.width_mm, "mm")}`;
+      }
+      if (feature.bounding_box_mm) return dimensionsText(feature.bounding_box_mm);
+      if (feature.max_dimension_mm != null) return number(feature.max_dimension_mm, "mm");
+      if (feature.perimeter_mm != null) return `P ${number(feature.perimeter_mm, "mm")}`;
+      return "-";
+    }
+
+    function renderTechnicalDetails(analysis) {
+      const geometry = analysis.geometry || {};
+      const manufacturability = analysis.manufacturability || {};
+      const center = geometry.center_of_mass_mm;
+      const boundingCenter = geometry.bounding_box_center_mm;
+      const centerText = center
+        ? `${number(center.x)} / ${number(center.y)} / ${number(center.z)} mm`
+        : "-";
+      document.getElementById("geometry-data").innerHTML = rows([
+        ["Bounding box grezzo", dimensionsText(analysis.raw_bounding_box_mm)],
+        ["Volume", number(analysis.volume_cm3, "cm³")],
+        ["Superficie", number(analysis.surface_area_cm2, "cm²")],
+        ["Centro bounding box X / Y / Z", boundingCenter ? `${number(boundingCenter.x)} / ${number(boundingCenter.y)} / ${number(boundingCenter.z)} mm` : "-"],
+        ["Baricentro X / Y / Z", centerText],
+        ["Solidi", geometry.solid_count ?? "-"],
+        ["Shell", geometry.shell_count ?? "-"],
+        ["Facce", geometry.face_count ?? "-"],
+        ["Bordi", geometry.edge_count ?? "-"],
+        ["Vertici", geometry.vertex_count ?? "-"]
+      ]);
+
+      const holes = analysis.holes || {};
+      const groups = [
+        ["Circolare", holes.circular || []],
+        ["Asola", holes.elongated || []],
+        ["Poligonale", holes.polygonal || []],
+        ["Sagomato/imbutito", holes.formed || []],
+        ["Non riconosciuto", holes.unknown || []]
+      ];
+      const holeRows = groups.flatMap(([group, items]) => items.map((feature, index) => `
+        <tr>
+          <td>${escapeHtml(`${group} ${index + 1}`)}</td>
+          <td>${escapeHtml(holeMeasureText(feature, group))}</td>
+          <td>${escapeHtml(vectorText(feature.center, "mm"))}</td>
+          <td>${escapeHtml(vectorText(feature.axis))}</td>
+          <td>${escapeHtml(number(feature.edge_distance_mm, "mm"))}</td>
+          <td>${escapeHtml(confidenceText(feature.confidence))}</td>
+        </tr>
+      `));
+      document.getElementById("holes-detail").innerHTML = holeRows.length ? `
+        <div class="technical-table-wrap"><table class="technical-table">
+          <thead><tr><th>Foro</th><th>Misura</th><th>Posizione X/Y/Z</th><th>Asse X/Y/Z</th><th>Distanza bordo</th><th>Confidence</th></tr></thead>
+          <tbody>${holeRows.join("")}</tbody>
+        </table></div>
+      ` : '<div class="technical-empty">Nessuna apertura rilevata.</div>';
+
+      const bendRows = (analysis.bends?.items || []).map((bend, index) => `
+        <tr>
+          <td>${index + 1}</td>
+          <td>${escapeHtml(number(bend.radius_mm, "mm"))}</td>
+          <td>${escapeHtml(number(bend.length_mm, "mm"))}</td>
+          <td>${escapeHtml(number(bend.angle_deg, "°"))}</td>
+          <td>${escapeHtml(vectorText(bend.axis))}</td>
+          <td>${escapeHtml(vectorText(bend.center, "mm"))}</td>
+          <td>${escapeHtml(confidenceText(bend.confidence))}</td>
+        </tr>
+      `);
+      document.getElementById("bends-detail").innerHTML = bendRows.length ? `
+        <div class="technical-table-wrap"><table class="technical-table">
+          <thead><tr><th>#</th><th>Raggio</th><th>Lunghezza</th><th>Angolo</th><th>Asse X/Y/Z</th><th>Centro X/Y/Z</th><th>Confidence</th></tr></thead>
+          <tbody>${bendRows.join("")}</tbody>
+        </table></div>
+      ` : '<div class="technical-empty">Nessuna piega rilevata.</div>';
+
+      document.getElementById("manufacturability-data").innerHTML = rows([
+        ["Diametro circolare minimo", number(holes.min_circular_diameter_mm, "mm")],
+        ["Diametro circolare massimo", number(holes.max_circular_diameter_mm, "mm")],
+        ["Distanza minima foro-bordo", number(manufacturability.min_hole_to_edge_mm, "mm")],
+        ["Fori con distanza misurata", `${manufacturability.measured_holes ?? 0} / ${holes.total_holes ?? 0}`],
+        ["Confidence foro-bordo", confidenceText(manufacturability.hole_to_edge_confidence)]
+      ]);
+    }
+
     function showPreviewView(view, button) {
       const previewImage = document.getElementById("part-preview");
       const previewFallback = document.getElementById("preview-fallback");
@@ -1323,6 +1463,7 @@
       const totalHoles = features.total_holes ?? holes.total_holes
         ?? (circularHoles + elongatedHoles + polygonalHoles + formedHoles + unknownHoles);
       renderPreviewGallery(preview, analysis.complexity_score);
+      renderTechnicalDetails(analysis);
       const viewerEnabled = defaults?.viewer_model_enabled !== false;
       document.getElementById("load-viewer-button").disabled = !viewerEnabled;
       setViewerStatus(
@@ -1363,6 +1504,7 @@
       const warnings = [
         ...(analysis.warnings || []),
         ...(analysis.cutting?.warnings || []),
+        ...(analysis.manufacturability?.warnings || []),
         ...(quote.warnings || [])
       ];
       document.getElementById("warnings").innerHTML = warnings.map(item => `<li>${escapeHtml(item)}</li>`).join("");

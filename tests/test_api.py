@@ -15,7 +15,12 @@ from PIL import Image
 import app.main as api
 import app.pdf_report as pdf_report
 from app.main import app
-from app.pdf_report import _part_rows, _verification_rows
+from app.pdf_report import (
+    _bend_detail_rows,
+    _hole_detail_rows,
+    _part_rows,
+    _verification_rows,
+)
 from app.schemas import CadAnalysisResponse
 
 
@@ -161,6 +166,13 @@ def test_frontend_returns_html():
     )
     assert '["Asole",' in response.text
     assert '["Fori non riconosciuti",' in response.text
+    assert 'id="geometry-data"' in response.text
+    assert 'id="holes-detail"' in response.text
+    assert 'id="bends-detail"' in response.text
+    assert 'id="manufacturability-data"' in response.text
+    assert "renderTechnicalDetails(analysis)" in response.text
+    assert "Distanza minima foro-bordo" in response.text
+    assert "Baricentro X / Y / Z" in response.text
 
 
 def test_frontend_serves_bundled_three_assets():
@@ -439,6 +451,21 @@ def test_quote_pdf_part_rows_include_all_hole_categories():
     assert rows["Fori totali"] == 8
 
 
+def test_quote_pdf_detail_rows_include_hole_and_bend_measurements():
+    analysis = json.loads(STAFFA_ACTUAL_FILE.read_text(encoding="utf-8"))
+    analysis["holes"]["circular"][0]["edge_distance_mm"] = 12.5
+    analysis["bends"]["items"][0]["angle_deg"] = 90.0
+
+    hole_rows = _hole_detail_rows(analysis)
+    bend_rows = _bend_detail_rows(analysis)
+
+    assert len(hole_rows) == 8
+    assert hole_rows[0][0] == "Circolare 1"
+    assert hole_rows[0][4] == "12.5 mm"
+    assert len(bend_rows) == 2
+    assert bend_rows[0][3] == "90 deg"
+
+
 def test_quote_pdf_includes_unknown_hole_verification_warning():
     analysis = json.loads(STAFFA_ACTUAL_FILE.read_text(encoding="utf-8"))
     quote = json.loads(STAFFA_QUOTE_FILE.read_text(encoding="utf-8"))
@@ -653,6 +680,21 @@ def test_analyze_cad_staffa_test_1_real_step_file():
     assert raw_bounding_box["x"] is not None
     assert raw_bounding_box["y"] is not None
     assert raw_bounding_box["z"] is not None
+
+    assert payload["geometry"]["solid_count"] >= 1
+    assert payload["geometry"]["face_count"] > 0
+    assert payload["geometry"]["edge_count"] > 0
+    assert payload["geometry"]["bounding_box_center_mm"]["x"] is not None
+    assert "center_of_mass_mm" in payload["geometry"]
+    assert payload["holes"]["min_circular_diameter_mm"] is not None
+    assert payload["holes"]["max_circular_diameter_mm"] is not None
+    assert "min_hole_to_edge_mm" in payload["manufacturability"]
+    assert payload["manufacturability"]["hole_to_edge_confidence"] in {
+        "low",
+        "medium",
+        "high",
+    }
+    assert all("angle_deg" in item for item in payload["bends"]["items"])
 
     assert payload["holes"]["confidence"] in {"medium", "high"}
     assert payload["holes"]["elongated_holes"] == 2

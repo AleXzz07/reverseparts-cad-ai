@@ -136,6 +136,58 @@ def _rounded_vector(vector: tuple[float, float, float], digits: int = 3) -> list
     return [round(component, digits) for component in vector]
 
 
+def _mass_center_components(shape) -> tuple[float, float, float] | None:
+    def components(value) -> tuple[float, float, float] | None:
+        try:
+            if isinstance(value, (list, tuple)) and len(value) >= 3:
+                result = tuple(float(item) for item in value[:3])
+            else:
+                result = tuple(
+                    float(
+                        getattr(value, lower)
+                        if hasattr(value, lower)
+                        else getattr(value, upper)
+                    )
+                    for lower, upper in (("x", "X"), ("y", "Y"), ("z", "Z"))
+                )
+        except (AttributeError, TypeError, ValueError):
+            return None
+        return result if all(math.isfinite(item) for item in result) else None
+
+    def direct_center(item) -> tuple[float, float, float] | None:
+        for attribute in ("CenterOfMass", "CenterOfGravity"):
+            try:
+                value = getattr(item, attribute)
+                value = value() if callable(value) else value
+            except (AttributeError, TypeError, ValueError):
+                continue
+            result = components(value)
+            if result is not None:
+                return result
+        return None
+
+    direct_result = direct_center(shape)
+    if direct_result is not None:
+        return direct_result
+
+    weighted_centers: list[tuple[float, tuple[float, float, float]]] = []
+    for solid in getattr(shape, "Solids", []) or []:
+        center = direct_center(solid)
+        try:
+            volume = float(solid.Volume)
+        except (AttributeError, TypeError, ValueError):
+            continue
+        if center is not None and math.isfinite(volume) and volume > 0:
+            weighted_centers.append((volume, center))
+    total_volume = sum(volume for volume, _ in weighted_centers)
+    if total_volume <= 0:
+        return None
+    return tuple(
+        sum(volume * center[index] for volume, center in weighted_centers) / total_volume
+        for index in range(3)
+    )
+
+
 def _candidate_depth_from_bbox(bbox, axis: tuple[float, float, float]) -> float:
     lengths = (float(bbox.XLength), float(bbox.YLength), float(bbox.ZLength))
     return sum(abs(component) * length for component, length in zip(axis, lengths))
@@ -758,6 +810,88 @@ def _detect_unknown_holes(
     return unknown
 
 
+def _annotate_hole_edge_distances(
+    shape,
+    features: list[HoleFeature],
+) -> tuple[float | None, str, int]:
+    """Measure opening-to-external-edge distances on the same planar face.
+
+    This is deliberately kept separate from hole classification: an unavailable
+    distance must never change a validated hole count or category.
+    """
+    if not features:
+        return None, "low", 0
+
+    measured_feature_ids: set[int] = set()
+    for face in shape.Faces:
+        surface = face.Surface
+        if getattr(surface, "TypeId", "") != "Part::GeomPlane":
+            continue
+        wires = list(face.Wires)
+        if len(wires) < 2:
+            continue
+        outer_wire = wires[0]
+        face_axis = _normalize_vector(surface.Axis)
+
+        for inner_wire in wires[1:]:
+            if not inner_wire.isClosed():
+                continue
+            center = _wire_center(inner_wire)
+            matching_features = [
+                feature
+                for feature in features
+                if _center_matches_feature(center, feature)
+                and (
+                    feature.axis is None
+                    or _axis_aligned(tuple(feature.axis), face_axis, tolerance=0.95)
+                )
+            ]
+            if not matching_features:
+                continue
+            feature = min(
+                matching_features,
+                key=lambda item: _vector_norm(
+                    tuple(left - right for left, right in zip(center, item.center or center))
+                ),
+            )
+            try:
+                distance = float(inner_wire.distToShape(outer_wire)[0])
+            except (AttributeError, TypeError, ValueError):
+                continue
+            if not math.isfinite(distance) or distance < 0:
+                continue
+            rounded_distance = round(distance, 3)
+            if feature.edge_distance_mm is None or rounded_distance < feature.edge_distance_mm:
+                feature.edge_distance_mm = rounded_distance
+            measured_feature_ids.add(id(feature))
+
+    measured_distances = [
+        feature.edge_distance_mm
+        for feature in features
+        if feature.edge_distance_mm is not None
+    ]
+    measured_count = len(measured_feature_ids)
+    if not measured_distances:
+        return None, "low", 0
+    coverage = measured_count / len(features)
+    confidence = "high" if coverage >= 0.99 else "medium" if coverage >= 0.5 else "low"
+    return min(measured_distances), confidence, measured_count
+
+
+def _cylindrical_face_angle_deg(face) -> float | None:
+    """Return the cylindrical angular span when FreeCAD exposes a stable range."""
+    try:
+        parameter_range = tuple(float(value) for value in face.ParameterRange)
+        if len(parameter_range) < 2:
+            return None
+        angle = math.degrees(abs(parameter_range[1] - parameter_range[0]))
+    except (AttributeError, TypeError, ValueError):
+        return None
+    if not math.isfinite(angle) or not 1.0 <= angle <= 180.0:
+        return None
+    return round(angle, 2)
+
+
 def _is_duplicate_bend(candidate: BendFeature, existing: BendFeature) -> bool:
     if candidate.radius_mm is None or existing.radius_mm is None:
         return False
@@ -874,6 +1008,7 @@ def _detect_bends(
                 type="simple flange",
                 radius_mm=round(radius, 2),
                 length_mm=round(length, 2),
+                angle_deg=_cylindrical_face_angle_deg(face),
                 axis=_rounded_vector(axis),
                 center=_rounded_vector(_vector_tuple(surface.Center)),
                 confidence="medium",
@@ -900,6 +1035,7 @@ def _detect_bends(
                     type="simple flange",
                     radius_mm=inner.radius_mm,
                     length_mm=round(max(inner.length_mm or 0.0, outer.length_mm or 0.0), 2),
+                    angle_deg=inner.angle_deg or outer.angle_deg,
                     axis=inner.axis,
                     center=_rounded_vector(center),
                     confidence="high",
@@ -1129,6 +1265,24 @@ def analyze_step_file(
         response.volume_cm3 = _round_or_none(shape.Volume / 1000.0)
         response.surface_area_cm2 = _round_or_none(shape.Area / 100.0)
 
+        response.geometry.solid_count = len(getattr(shape, "Solids", []))
+        response.geometry.shell_count = len(getattr(shape, "Shells", []))
+        response.geometry.face_count = len(getattr(shape, "Faces", []))
+        response.geometry.edge_count = len(getattr(shape, "Edges", []))
+        response.geometry.vertex_count = len(getattr(shape, "Vertexes", []))
+        response.geometry.bounding_box_center_mm = Dimensions(
+            x=_round_or_none((float(bbox.XMin) + float(bbox.XMax)) / 2.0),
+            y=_round_or_none((float(bbox.YMin) + float(bbox.YMax)) / 2.0),
+            z=_round_or_none((float(bbox.ZMin) + float(bbox.ZMax)) / 2.0),
+        )
+        center_of_mass = _mass_center_components(shape)
+        if center_of_mass is not None:
+            response.geometry.center_of_mass_mm = Dimensions(
+                x=_round_or_none(center_of_mass[0]),
+                y=_round_or_none(center_of_mass[1]),
+                z=_round_or_none(center_of_mass[2]),
+            )
+
         if response.volume_cm3 is not None and density_g_cm3 is not None:
             response.estimated_weight_kg = _round_or_none(
                 response.volume_cm3 * density_g_cm3 / 1000.0
@@ -1170,6 +1324,31 @@ def analyze_step_file(
             + response.holes.formed_holes
             + response.holes.unknown_holes
         )
+        circular_diameters = [
+            hole.diameter_mm
+            for hole in response.holes.circular
+            if hole.diameter_mm is not None
+        ]
+        if circular_diameters:
+            response.holes.min_circular_diameter_mm = min(circular_diameters)
+            response.holes.max_circular_diameter_mm = max(circular_diameters)
+
+        all_hole_features = [
+            *response.holes.circular,
+            *response.holes.elongated,
+            *response.holes.polygonal,
+            *response.holes.formed,
+            *response.holes.unknown,
+        ]
+        (
+            response.manufacturability.min_hole_to_edge_mm,
+            response.manufacturability.hole_to_edge_confidence,
+            response.manufacturability.measured_holes,
+        ) = _annotate_hole_edge_distances(shape, all_hole_features)
+        if all_hole_features and response.manufacturability.measured_holes < len(all_hole_features):
+            response.manufacturability.warnings.append(
+                "Hole-to-edge distance is available only for openings matched to a planar face."
+            )
         if len(response.holes.circular) >= 4:
             response.holes.confidence = "medium"
         if len(response.holes.elongated) >= 2:

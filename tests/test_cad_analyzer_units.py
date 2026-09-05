@@ -4,11 +4,15 @@ from types import SimpleNamespace
 import pytest
 
 from app.cad_analyzer import (
+    _annotate_hole_edge_distances,
+    _cylindrical_face_angle_deg,
     _detect_circular_holes,
     _detect_elongated_holes,
     _detect_polygonal_holes,
+    _mass_center_components,
     load_analysis_config,
 )
+from app.schemas import HoleFeature
 
 
 def _vector(x=0.0, y=0.0, z=0.0):
@@ -30,14 +34,20 @@ def _bbox(x_length, y_length, z_length=0.0):
 
 
 class _Wire:
-    def __init__(self, edges, *, length, bbox, closed=True):
+    def __init__(self, edges, *, length, bbox, closed=True, edge_distance=None):
         self.Edges = edges
         self.Length = length
         self.BoundBox = bbox
         self._closed = closed
+        self._edge_distance = edge_distance
 
     def isClosed(self):
         return self._closed
+
+    def distToShape(self, _other):
+        if self._edge_distance is None:
+            raise AttributeError("distance not configured")
+        return self._edge_distance, [], []
 
 
 def _edge(type_id, **curve_values):
@@ -162,3 +172,60 @@ def test_analysis_config_rejects_inverted_opening_limits(tmp_path):
 
     with pytest.raises(ValueError, match="dimension limits"):
         load_analysis_config(config_path)
+
+
+def test_cylindrical_face_angle_uses_parameter_span():
+    face = SimpleNamespace(ParameterRange=(0.0, 1.57079632679, 0.0, 20.0))
+
+    assert _cylindrical_face_angle_deg(face) == 90.0
+
+
+def test_cylindrical_face_angle_rejects_full_cylinder():
+    face = SimpleNamespace(ParameterRange=(0.0, 6.28318530718, 0.0, 20.0))
+
+    assert _cylindrical_face_angle_deg(face) is None
+
+
+def test_hole_to_edge_distance_is_annotated_without_changing_classification():
+    outer_wire = _Wire([], length=100.0, bbox=_bbox(40.0, 20.0))
+    inner_wire = _Wire(
+        [],
+        length=18.0,
+        bbox=_bbox(6.0, 6.0),
+        edge_distance=7.25,
+    )
+    face = SimpleNamespace(
+        Surface=SimpleNamespace(TypeId="Part::GeomPlane", Axis=_vector(z=1.0)),
+        Wires=[outer_wire, inner_wire],
+    )
+    feature = HoleFeature(
+        diameter_mm=6.0,
+        center=[3.0, 3.0, 0.0],
+        axis=[0.0, 0.0, 1.0],
+        confidence="high",
+    )
+
+    minimum, confidence, measured = _annotate_hole_edge_distances(
+        SimpleNamespace(Faces=[face]),
+        [feature],
+    )
+
+    assert minimum == 7.25
+    assert confidence == "high"
+    assert measured == 1
+    assert feature.edge_distance_mm == 7.25
+    assert feature.diameter_mm == 6.0
+
+
+def test_mass_center_falls_back_to_volume_weighted_solid_centers():
+    solid_a = SimpleNamespace(
+        CenterOfMass=SimpleNamespace(X=0.0, Y=2.0, Z=4.0),
+        Volume=1.0,
+    )
+    solid_b = SimpleNamespace(
+        CenterOfMass=SimpleNamespace(X=10.0, Y=4.0, Z=8.0),
+        Volume=3.0,
+    )
+    shape = SimpleNamespace(Solids=[solid_a, solid_b])
+
+    assert _mass_center_components(shape) == (7.5, 3.5, 7.0)
