@@ -182,6 +182,15 @@ def test_frontend_returns_html():
     assert "Distanza minima foro-foro" in response.text
     assert "Raggruppamento fori uguali" in response.text
     assert "Origine coordinate" in response.text
+    assert 'id="flat-pattern-data"' in response.text
+    assert "Sviluppo piano e grezzo" in response.text
+    assert "Dimensioni grezzo sviluppato" in response.text
+    assert "Area lorda grezzo" in response.text
+    assert "Peso grezzo" in response.text
+    assert "applyCadViewerAppearance" in response.text
+    assert "new THREE.EdgesGeometry" in response.text
+    assert "color: 0x718397" in response.text
+    assert "renderer.setClearColor(0xe8edf2, 1)" in response.text
 
 
 def test_frontend_serves_bundled_three_assets():
@@ -504,6 +513,42 @@ def test_quote_pdf_labels_brep_counts_as_topological_data(monkeypatch):
     assert "non lavorazioni o spigoli fisici" in technical_rows["Nota conteggi B-Rep"]
 
 
+def test_quote_pdf_includes_flat_pattern_data(monkeypatch):
+    analysis = json.loads(STAFFA_ACTUAL_FILE.read_text(encoding="utf-8"))
+    quote = json.loads(STAFFA_QUOTE_FILE.read_text(encoding="utf-8"))
+    analysis["flat_pattern"] = {
+        "status": "estimated",
+        "method": "parallel-bend rectangular blank estimate",
+        "blank_dimensions_mm": {"x": 195.85, "y": 50.49},
+        "net_developed_area_mm2": 9244.0,
+        "opening_area_mm2": 643.0,
+        "gross_blank_area_mm2": 9887.0,
+        "outer_perimeter_mm": 491.78,
+        "blank_weight_kg": 0.053,
+        "total_bend_length_mm": 100.0,
+        "total_bend_allowance_mm": 8.8,
+        "k_factor": 0.4,
+        "confidence": "medium",
+        "warnings": ["Verificare lo sviluppo CAD."],
+    }
+    recorded_sections = {}
+    original_section = pdf_report._section
+
+    def recording_section(title, section_rows):
+        recorded_sections[title] = dict(section_rows)
+        return original_section(title, section_rows)
+
+    monkeypatch.setattr(pdf_report, "_section", recording_section)
+
+    pdf_report.generate_quote_pdf(analysis, quote)
+
+    rows = recorded_sections["Sviluppo piano e grezzo"]
+    assert rows["Dimensioni grezzo"] == "195.85 x 50.49 mm"
+    assert rows["Area lorda grezzo"] == "9887 mm2"
+    assert rows["Perimetro esterno sviluppato"] == "491.78 mm"
+    assert rows["Confidence"] == "medium"
+
+
 def test_quote_pdf_includes_unknown_hole_verification_warning():
     analysis = json.loads(STAFFA_ACTUAL_FILE.read_text(encoding="utf-8"))
     quote = json.loads(STAFFA_QUOTE_FILE.read_text(encoding="utf-8"))
@@ -733,6 +778,10 @@ def test_analyze_cad_staffa_test_1_real_step_file():
         "high",
     }
     assert all("angle_deg" in item for item in payload["bends"]["items"])
+    assert payload["flat_pattern"]["available"] is True
+    assert payload["flat_pattern"]["net_developed_area_mm2"] is not None
+    assert payload["flat_pattern"]["status"] in {"partial", "estimated", "exact"}
+    assert payload["flat_pattern"]["confidence"] in {"low", "medium", "high"}
 
     assert payload["holes"]["confidence"] in {"medium", "high"}
     assert payload["holes"]["elongated_holes"] == 2

@@ -407,13 +407,33 @@ def quote_from_cad(
             material_config["laser"]["pierce_time_sec"] = parameters.laser_pierce_time_sec
 
     volume_cm3 = cad_data.get("volume_cm3")
+    flat_pattern = cad_data.get("flat_pattern", {}) or {}
+    gross_blank_area_mm2 = flat_pattern.get("gross_blank_area_mm2")
+    flat_pattern_confidence = flat_pattern.get("confidence", "low")
+    thickness_mm = cad_data.get("detected_thickness_mm") or cad_data.get("declared_thickness_mm")
+    part_weight_kg = None
     if material_config is not None and volume_cm3 is not None:
-        estimated_weight_kg = round(float(volume_cm3) * material_config["density_g_cm3"] / 1000, 3)
+        part_weight_kg = round(float(volume_cm3) * material_config["density_g_cm3"] / 1000, 3)
+    if (
+        material_config is not None
+        and gross_blank_area_mm2 is not None
+        and thickness_mm is not None
+        and flat_pattern_confidence in {"medium", "high"}
+    ):
+        estimated_weight_kg = round(
+            float(gross_blank_area_mm2)
+            * float(thickness_mm)
+            * material_config["density_g_cm3"]
+            / 1_000_000,
+            3,
+        )
+        weight_source = "flat_pattern_gross_blank"
+    elif part_weight_kg is not None:
+        estimated_weight_kg = part_weight_kg
         weight_source = "recalculated_from_volume"
     else:
         estimated_weight_kg = cad_data.get("estimated_weight_kg")
         weight_source = "cad_estimate" if estimated_weight_kg is not None else None
-    thickness_mm = cad_data.get("detected_thickness_mm") or cad_data.get("declared_thickness_mm")
     warnings = [
         "Preventivo preliminare: parametri economici caricati da config e da validare con dati aziendali reali.",
         "Il motore non applica margine e non decide il prezzo finale commerciale.",
@@ -424,6 +444,10 @@ def quote_from_cad(
         warnings.append("Peso stimato non disponibile: costo materiale non calcolabile in modo affidabile.")
     if material_config is not None and volume_cm3 is None:
         warnings.append("Volume CAD non disponibile: peso materiale mantenuto dalla stima CAD originale.")
+    if weight_source == "flat_pattern_gross_blank":
+        warnings.append(
+            "Costo materiale calcolato sul peso del grezzo sviluppato; dimensioni e sfrido richiedono verifica produttiva."
+        )
     if thickness_mm is None:
         warnings.append("Spessore non disponibile: complessita processo meno affidabile.")
     if not bends_count_available:
@@ -503,6 +527,8 @@ def quote_from_cad(
             "density_g_cm3": material_config["density_g_cm3"] if material_config else None,
             "cost_eur_kg": material_config["cost_eur_kg"] if material_config else None,
             "estimated_weight_kg": estimated_weight_kg,
+            "part_weight_kg": part_weight_kg,
+            "blank_weight_kg": estimated_weight_kg if weight_source == "flat_pattern_gross_blank" else None,
             "weight_source": weight_source,
             "thickness_mm": thickness_mm,
         },

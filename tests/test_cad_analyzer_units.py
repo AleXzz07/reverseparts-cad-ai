@@ -10,11 +10,12 @@ from app.cad_analyzer import (
     _detect_circular_holes,
     _detect_elongated_holes,
     _detect_polygonal_holes,
+    _estimate_flat_pattern,
     _mass_center_components,
     _planar_wire_area,
     load_analysis_config,
 )
-from app.schemas import HoleFeature
+from app.schemas import BendFeature, HoleFeature
 
 
 def _vector(x=0.0, y=0.0, z=0.0):
@@ -141,6 +142,87 @@ def test_planar_wire_area_fails_safely_for_an_invalid_wire(monkeypatch):
     )
 
     assert _planar_wire_area(object()) is None
+
+
+def test_flat_pattern_reports_exact_planar_blank():
+    result = _estimate_flat_pattern(
+        shape=SimpleNamespace(Volume=11774.0, BoundBox=_bbox(100.0, 60.0, 2.0)),
+        thickness_mm=2.0,
+        thickness_confidence="high",
+        bends=[],
+        holes=[HoleFeature(area_mm2=113.04)],
+        cutting_outer_perimeter_mm=320.0,
+        density_g_cm3=2.7,
+        parameters=load_analysis_config(),
+    )
+
+    assert result.available is True
+    assert result.status == "exact"
+    assert result.is_estimate is False
+    assert result.blank_dimensions_mm is not None
+    assert result.blank_dimensions_mm.x == 100.0
+    assert result.blank_dimensions_mm.y == 60.0
+    assert result.net_developed_area_mm2 == 5887.0
+    assert result.gross_blank_area_mm2 == 6000.04
+    assert result.outer_perimeter_mm == 320.0
+    assert result.blank_weight_kg == 0.032
+    assert result.confidence == "high"
+
+
+def test_flat_pattern_estimates_simple_parallel_bend_blank():
+    bend_items = [
+        BendFeature(
+            radius_mm=2.0,
+            length_mm=50.0,
+            angle_deg=90.0,
+            axis=[0.0, 1.0, 0.0],
+            confidence="high",
+        )
+        for _ in range(2)
+    ]
+    result = _estimate_flat_pattern(
+        shape=SimpleNamespace(Volume=18488.0, BoundBox=_bbox(102.0, 50.0, 51.0)),
+        thickness_mm=2.0,
+        thickness_confidence="high",
+        bends=bend_items,
+        holes=[HoleFeature(area_mm2=556.0)],
+        cutting_outer_perimeter_mm=284.0,
+        density_g_cm3=2.7,
+        parameters=load_analysis_config(),
+    )
+
+    assert result.status == "estimated"
+    assert result.blank_dimensions_mm is not None
+    assert result.blank_dimensions_mm.x == 196.0
+    assert result.blank_dimensions_mm.y == 50.0
+    assert result.outer_perimeter_mm == 492.0
+    assert result.total_bend_length_mm == 100.0
+    assert result.total_bend_allowance_mm == 8.8
+    assert result.blank_weight_kg == 0.053
+    assert result.confidence == "medium"
+
+
+def test_flat_pattern_keeps_complex_non_parallel_part_partial():
+    result = _estimate_flat_pattern(
+        shape=SimpleNamespace(Volume=20000.0, BoundBox=_bbox(100.0, 80.0, 50.0)),
+        thickness_mm=2.0,
+        thickness_confidence="high",
+        bends=[
+            BendFeature(length_mm=50.0, axis=[1.0, 0.0, 0.0]),
+            BendFeature(length_mm=50.0, axis=[0.0, 1.0, 0.0]),
+        ],
+        holes=[],
+        cutting_outer_perimeter_mm=300.0,
+        density_g_cm3=2.7,
+        parameters=load_analysis_config(),
+    )
+
+    assert result.available is True
+    assert result.status == "partial"
+    assert result.blank_dimensions_mm is None
+    assert result.net_developed_area_mm2 == 10000.0
+    assert result.confidence == "low"
+    assert result.warnings
 
 
 def test_legacy_analysis_config_uses_safe_planar_opening_defaults(tmp_path):

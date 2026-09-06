@@ -106,9 +106,11 @@ def _part_rows(
             or analysis.get("detected_thickness_mm"),
         ),
         (
-            "Peso unitario stimato",
+            "Peso materiale usato nel costo",
             _value(material.get("estimated_weight_kg"), "kg"),
         ),
+        ("Peso netto pezzo", _value(material.get("part_weight_kg"), "kg")),
+        ("Peso grezzo sviluppato", _value(material.get("blank_weight_kg"), "kg")),
         (
             "Lunghezza taglio totale",
             _value(cutting.get("total_cut_length_mm"), "mm"),
@@ -146,6 +148,13 @@ def _verification_rows(
         (f"Producibilita {index}", warning)
         for index, warning in enumerate(
             analysis.get("manufacturability", {}).get("warnings", []) or [],
+            start=1,
+        )
+    )
+    rows.extend(
+        (f"Sviluppo piano {index}", warning)
+        for index, warning in enumerate(
+            analysis.get("flat_pattern", {}).get("warnings", []) or [],
             start=1,
         )
     )
@@ -574,6 +583,7 @@ def generate_quote_pdf(
     holes = analysis.get("holes", {})
     cutting = analysis.get("cutting", {})
     coordinate_reference = analysis.get("coordinate_reference", {})
+    flat_pattern = analysis.get("flat_pattern", {})
     config_used = quote.get("config_used", {})
     pricing = config_used.get("pricing", {})
 
@@ -657,6 +667,39 @@ def generate_quote_pdf(
                 ("Confidence foro-piega", manufacturability.get("hole_to_bend_confidence", "low")),
                 ("Riferimento coordinate", coordinate_reference.get("origin", "Original STEP file origin")),
                 ("Assi coordinate", coordinate_reference.get("axes", "Original STEP X/Y/Z axes")),
+            ],
+        )
+    )
+    flat_dimensions = flat_pattern.get("blank_dimensions_mm") or {}
+    elements.extend(
+        _section(
+            "Sviluppo piano e grezzo",
+            [
+                ("Stato", flat_pattern.get("status", "unavailable")),
+                ("Metodo", flat_pattern.get("method") or "-"),
+                (
+                    "Dimensioni grezzo",
+                    (
+                        f"{_value(flat_dimensions.get('x'))} x "
+                        f"{_value(flat_dimensions.get('y'))} mm"
+                        if flat_dimensions.get("x") is not None
+                        and flat_dimensions.get("y") is not None
+                        else "-"
+                    ),
+                ),
+                ("Area netta sviluppata", _value(flat_pattern.get("net_developed_area_mm2"), "mm2")),
+                ("Area aperture", _value(flat_pattern.get("opening_area_mm2"), "mm2")),
+                ("Area lorda grezzo", _value(flat_pattern.get("gross_blank_area_mm2"), "mm2")),
+                ("Perimetro esterno sviluppato", _value(flat_pattern.get("outer_perimeter_mm"), "mm")),
+                ("Peso grezzo", _value(flat_pattern.get("blank_weight_kg"), "kg")),
+                ("Lunghezza totale pieghe", _value(flat_pattern.get("total_bend_length_mm"), "mm")),
+                ("Sviluppo totale zone di piega", _value(flat_pattern.get("total_bend_allowance_mm"), "mm")),
+                ("Fattore K", flat_pattern.get("k_factor")),
+                ("Confidence", flat_pattern.get("confidence", "low")),
+                (
+                    "Nota",
+                    "Le stime non sostituiscono uno sviluppo CAD validato prima della produzione.",
+                ),
             ],
         )
     )

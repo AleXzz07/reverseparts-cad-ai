@@ -428,7 +428,7 @@
       background:
         linear-gradient(rgba(46,80,118,.045) 1px, transparent 1px),
         linear-gradient(90deg, rgba(46,80,118,.045) 1px, transparent 1px),
-        #f8fafc;
+        #e8edf2;
       background-size: 28px 28px;
     }
     #viewer-canvas { width: 100%; height: 100%; display: block; touch-action: none; }
@@ -802,6 +802,13 @@
             <summary>Dettaglio pieghe</summary>
             <div class="technical-detail-body" id="bends-detail"></div>
           </details>
+          <details class="technical-detail" open>
+            <summary>Sviluppo piano e grezzo</summary>
+            <div class="technical-detail-body">
+              <dl id="flat-pattern-data"></dl>
+              <p class="technical-note">Le dimensioni stimate non sostituiscono uno sviluppo CAD validato. Per geometrie complesse il sistema mostra soltanto i valori calcolabili con sicurezza.</p>
+            </div>
+          </details>
           <details class="technical-detail">
             <summary>Controlli di producibilit&agrave;</summary>
             <div class="technical-detail-body"><dl id="manufacturability-data"></dl></div>
@@ -955,10 +962,10 @@
         preserveDrawingBuffer: true,
       });
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-      renderer.setClearColor(0xf8fafc, 1);
+      renderer.setClearColor(0xe8edf2, 1);
       if ("outputEncoding" in renderer && THREE.sRGBEncoding) renderer.outputEncoding = THREE.sRGBEncoding;
       if (THREE.ACESFilmicToneMapping) renderer.toneMapping = THREE.ACESFilmicToneMapping;
-      renderer.toneMappingExposure = 1.05;
+      renderer.toneMappingExposure = 0.95;
 
       const scene = new THREE.Scene();
       const camera = new THREE.PerspectiveCamera(34, 1, 0.01, 100000);
@@ -969,13 +976,17 @@
       controls.minDistance = 0.01;
       controls.maxDistance = 100000;
 
-      scene.add(new THREE.HemisphereLight(0xffffff, 0x7d8fa3, 1.45));
-      const keyLight = new THREE.DirectionalLight(0xffffff, 1.2);
+      scene.add(new THREE.AmbientLight(0xffffff, 0.42));
+      scene.add(new THREE.HemisphereLight(0xf5f9ff, 0x536273, 1.15));
+      const keyLight = new THREE.DirectionalLight(0xffffff, 2.05);
       keyLight.position.set(4, 6, 5);
       scene.add(keyLight);
-      const fillLight = new THREE.DirectionalLight(0xb9d7ff, 0.72);
+      const fillLight = new THREE.DirectionalLight(0x9fc5eb, 0.9);
       fillLight.position.set(-5, 2, -4);
       scene.add(fillLight);
+      const rimLight = new THREE.DirectionalLight(0xffffff, 0.7);
+      rimLight.position.set(1, -3, -6);
+      scene.add(rimLight);
 
       viewerState.renderer = renderer;
       viewerState.scene = scene;
@@ -1043,6 +1054,35 @@
       return bytes.buffer;
     }
 
+    function applyCadViewerAppearance(model) {
+      const edgeMaterial = new THREE.LineBasicMaterial({
+        color: 0x33475b,
+        transparent: true,
+        opacity: 0.5,
+        depthTest: true,
+      });
+      model.traverse(item => {
+        if (!item.isMesh || !item.geometry) return;
+        const originalMaterials = Array.isArray(item.material) ? item.material : [item.material];
+        originalMaterials.filter(Boolean).forEach(material => material.dispose());
+        item.material = new THREE.MeshStandardMaterial({
+          color: 0x718397,
+          metalness: 0.28,
+          roughness: 0.36,
+          side: THREE.DoubleSide,
+          polygonOffset: true,
+          polygonOffsetFactor: 1,
+          polygonOffsetUnits: 1,
+        });
+        const edges = new THREE.EdgesGeometry(item.geometry, 32);
+        const outline = new THREE.LineSegments(edges, edgeMaterial.clone());
+        outline.name = "cad-edge-overlay";
+        outline.renderOrder = 2;
+        item.add(outline);
+      });
+      edgeMaterial.dispose();
+    }
+
     async function displayViewerModel(payload) {
       if (!ensureViewer()) throw new Error("Il browser non supporta il viewer 3D.");
       disposeViewerModel();
@@ -1057,6 +1097,7 @@
         }
       });
       const model = gltf.scene;
+      applyCadViewerAppearance(model);
       const initialBox = new THREE.Box3().setFromObject(model);
       const center = initialBox.getCenter(new THREE.Vector3());
       model.position.sub(center);
@@ -1067,10 +1108,10 @@
       viewerState.model = model;
       viewerState.radius = Math.max(sphere.radius, .01);
       const gridSize = Math.max(size.x, size.y, size.z, 1) * 4;
-      const grid = new THREE.GridHelper(gridSize, 20, 0x9fb3c8, 0xd8e2ec);
+      const grid = new THREE.GridHelper(gridSize, 20, 0x8296aa, 0xc4ced8);
       grid.position.y = box.min.y - viewerState.radius * .035;
       grid.material.transparent = true;
-      grid.material.opacity = .48;
+      grid.material.opacity = .58;
       viewerState.scene.add(grid);
       viewerState.grid = grid;
       viewerState.ready = true;
@@ -1237,6 +1278,11 @@
       return `${number(values.x)} x ${number(values.y)} x ${number(values.z)} mm`;
     }
 
+    function flatDimensionsText(values) {
+      if (!values || values.x == null || values.y == null) return "-";
+      return `${number(values.x)} x ${number(values.y)} mm`;
+    }
+
     function confidenceText(value) {
       return ({ high: "Alta", medium: "Media", low: "Bassa" })[value] || "-";
     }
@@ -1270,6 +1316,7 @@
       const geometry = analysis.geometry || {};
       const manufacturability = analysis.manufacturability || {};
       const coordinateReference = analysis.coordinate_reference || {};
+      const flatPattern = analysis.flat_pattern || {};
       const center = geometry.center_of_mass_mm;
       const boundingCenter = geometry.bounding_box_center_mm;
       const centerText = center
@@ -1338,6 +1385,27 @@
           <tbody>${bendRows.join("")}</tbody>
         </table></div>
       ` : '<div class="technical-empty">Nessuna piega rilevata.</div>';
+
+      const flatStatus = ({
+        exact: "Disponibile",
+        estimated: "Stimato",
+        partial: "Parziale",
+        unavailable: "Non disponibile"
+      })[flatPattern.status] || "Non disponibile";
+      document.getElementById("flat-pattern-data").innerHTML = rows([
+        ["Stato sviluppo", flatStatus],
+        ["Metodo", flatPattern.method || "-"],
+        ["Dimensioni grezzo", flatDimensionsText(flatPattern.blank_dimensions_mm)],
+        ["Area netta sviluppata", number(flatPattern.net_developed_area_mm2, "mm²")],
+        ["Area aperture", number(flatPattern.opening_area_mm2, "mm²")],
+        ["Area lorda grezzo", number(flatPattern.gross_blank_area_mm2, "mm²")],
+        ["Perimetro esterno sviluppato", number(flatPattern.outer_perimeter_mm, "mm")],
+        ["Peso grezzo", number(flatPattern.blank_weight_kg, "kg")],
+        ["Lunghezza totale pieghe", number(flatPattern.total_bend_length_mm, "mm")],
+        ["Sviluppo totale zone di piega", number(flatPattern.total_bend_allowance_mm, "mm")],
+        ["Fattore K", number(flatPattern.k_factor)],
+        ["Confidence", confidenceText(flatPattern.confidence)]
+      ]);
 
       document.getElementById("manufacturability-data").innerHTML = rows([
         ["Diametro circolare minimo", number(holes.min_circular_diameter_mm, "mm")],
@@ -1530,7 +1598,7 @@
       document.getElementById("total-cost").textContent = money(costs.total);
       document.getElementById("analysis-data").innerHTML = rows([
         ["Dimensioni", `${number(dimensions.x)} x ${number(dimensions.y)} x ${number(dimensions.z)} mm`],
-        ["Peso stimato", number(quote.material?.estimated_weight_kg, "kg")],
+        ["Peso netto pezzo", number(quote.material?.part_weight_kg ?? analysis.estimated_weight_kg, "kg")],
         ["Fori circolari", circularHoles],
         ["Asole", elongatedHoles],
         ["Fori poligonali", polygonalHoles],
@@ -1538,6 +1606,9 @@
         ["Fori non riconosciuti", unknownHoles],
         ["Fori totali", totalHoles],
         ["Pieghe", features.bends ?? analysis.bends?.count ?? 0],
+        ["Dimensioni grezzo sviluppato", flatDimensionsText(analysis.flat_pattern?.blank_dimensions_mm)],
+        ["Area lorda grezzo", number(analysis.flat_pattern?.gross_blank_area_mm2, "mm²")],
+        ["Peso grezzo", number(quote.material?.blank_weight_kg, "kg")],
         ["Perimetro esterno stimato", number(analysis.cutting?.outer_cut_length_mm, "mm")],
         ["Perimetro aperture interne", number(analysis.cutting?.inner_cut_length_mm, "mm")],
         ["Lunghezza totale taglio", number(analysis.cutting?.total_cut_length_mm, "mm")],
@@ -1558,6 +1629,7 @@
       const warnings = [
         ...(analysis.warnings || []),
         ...(analysis.cutting?.warnings || []),
+        ...(analysis.flat_pattern?.warnings || []),
         ...(analysis.manufacturability?.warnings || []),
         ...(quote.warnings || [])
       ];

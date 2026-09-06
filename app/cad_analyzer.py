@@ -8,7 +8,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from .schemas import BendFeature, CadAnalysisResponse, Dimensions, HoleFeature
+from .schemas import BendFeature, CadAnalysisResponse, Dimensions, FlatPattern, HoleFeature
 
 
 VALID_STEP_SUFFIXES = {".stp", ".step"}
@@ -49,6 +49,8 @@ class AnalysisParameters:
     bend_radius_pair_tolerance_mm: float
     bend_axis_angle_tolerance_deg: float
     bend_min_length_mm: float
+    flat_pattern_k_factor: float
+    flat_pattern_max_simple_parallel_bends: int
 
 
 def load_analysis_config(path: Path = DEFAULT_ANALYSIS_CONFIG_PATH) -> AnalysisParameters:
@@ -56,6 +58,7 @@ def load_analysis_config(path: Path = DEFAULT_ANALYSIS_CONFIG_PATH) -> AnalysisP
     hole = data["circular_hole_deduplication"]
     opening = data.get("planar_opening_detection", {})
     bend = data["bend_detection"]
+    flat_pattern = data.get("flat_pattern", {})
     parameters = AnalysisParameters(
         hole_center_tolerance_mm=float(hole["center_tolerance_mm"]),
         hole_diameter_tolerance_mm=float(hole["diameter_tolerance_mm"]),
@@ -68,11 +71,19 @@ def load_analysis_config(path: Path = DEFAULT_ANALYSIS_CONFIG_PATH) -> AnalysisP
         bend_radius_pair_tolerance_mm=float(bend["radius_pair_tolerance_mm"]),
         bend_axis_angle_tolerance_deg=float(bend["axis_angle_tolerance_deg"]),
         bend_min_length_mm=float(bend["min_length_mm"]),
+        flat_pattern_k_factor=float(flat_pattern.get("k_factor", 0.4)),
+        flat_pattern_max_simple_parallel_bends=int(
+            flat_pattern.get("max_simple_parallel_bends", 4)
+        ),
     )
     if not 0 < parameters.opening_min_dimension_mm <= parameters.opening_max_dimension_mm:
         raise ValueError("Invalid planar opening dimension limits in analysis config.")
     if not 0 < parameters.opening_min_perimeter_mm <= parameters.opening_max_perimeter_mm:
         raise ValueError("Invalid planar opening perimeter limits in analysis config.")
+    if not 0 <= parameters.flat_pattern_k_factor <= 1:
+        raise ValueError("Invalid flat-pattern K-factor in analysis config.")
+    if parameters.flat_pattern_max_simple_parallel_bends < 0:
+        raise ValueError("Invalid flat-pattern bend limit in analysis config.")
     return parameters
 
 
@@ -1241,6 +1252,148 @@ def _detect_cutting_lengths(
     return outer_cut_length, inner_cut_length, total_cut_length, confidence, warnings
 
 
+def _estimate_flat_pattern(
+    *,
+    shape,
+    thickness_mm: float | None,
+    thickness_confidence: str,
+    bends: list[BendFeature],
+    holes: list[HoleFeature],
+    cutting_outer_perimeter_mm: float | None,
+    density_g_cm3: float | None,
+    parameters: AnalysisParameters,
+) -> FlatPattern:
+    result = FlatPattern(
+        thickness_mm=thickness_mm,
+        k_factor=parameters.flat_pattern_k_factor,
+    )
+    if thickness_mm is None or thickness_mm <= 0:
+        result.warnings.append(
+            "Sviluppo piano non determinabile: spessore lamiera non disponibile."
+        )
+        return result
+
+    try:
+        volume_mm3 = float(shape.Volume)
+    except (AttributeError, TypeError, ValueError):
+        volume_mm3 = 0.0
+    if not math.isfinite(volume_mm3) or volume_mm3 <= 0:
+        result.warnings.append(
+            "Sviluppo piano non determinabile: volume CAD non disponibile."
+        )
+        return result
+
+    result.available = True
+    result.net_developed_area_mm2 = round(volume_mm3 / thickness_mm, 2)
+    result.status = "partial"
+    result.method = "constant-thickness material-volume estimate"
+
+    if all(hole.area_mm2 is not None for hole in holes):
+        result.opening_area_mm2 = round(
+            sum(float(hole.area_mm2 or 0.0) for hole in holes),
+            2,
+        )
+        result.gross_blank_area_mm2 = round(
+            result.net_developed_area_mm2 + result.opening_area_mm2,
+            2,
+        )
+    else:
+        result.warnings.append(
+            "Area lorda grezzo non disponibile: area di una o più aperture non determinata."
+        )
+
+    bend_lengths = [bend.length_mm for bend in bends if bend.length_mm is not None]
+    if bend_lengths:
+        result.total_bend_length_mm = round(sum(bend_lengths), 2)
+
+    bend_allowances = []
+    for bend in bends:
+        if bend.radius_mm is None or bend.angle_deg is None:
+            bend_allowances = []
+            break
+        bend_allowances.append(
+            math.radians(float(bend.angle_deg))
+            * (float(bend.radius_mm) + parameters.flat_pattern_k_factor * thickness_mm)
+        )
+    if bends and bend_allowances:
+        result.total_bend_allowance_mm = round(sum(bend_allowances), 2)
+
+    if result.gross_blank_area_mm2 is not None and density_g_cm3 is not None:
+        result.blank_weight_kg = round(
+            result.gross_blank_area_mm2 * thickness_mm * density_g_cm3 / 1_000_000,
+            3,
+        )
+
+    bbox = shape.BoundBox
+    bbox_dimensions = [
+        float(bbox.XLength),
+        float(bbox.YLength),
+        float(bbox.ZLength),
+    ]
+    if not bends:
+        thickness_axis = min(
+            range(3),
+            key=lambda index: abs(bbox_dimensions[index] - thickness_mm),
+        )
+        planar_dimensions = [
+            dimension
+            for index, dimension in enumerate(bbox_dimensions)
+            if index != thickness_axis
+        ]
+        if all(dimension > 0 for dimension in planar_dimensions):
+            length, width = sorted(planar_dimensions, reverse=True)
+            result.blank_dimensions_mm = Dimensions(
+                x=round(length, 2),
+                y=round(width, 2),
+            )
+            result.outer_perimeter_mm = (
+                round(float(cutting_outer_perimeter_mm), 2)
+                if cutting_outer_perimeter_mm is not None
+                else None
+            )
+            result.status = "exact"
+            result.is_estimate = False
+            result.method = "planar STEP extents and measured contours"
+            result.confidence = "high" if thickness_confidence == "high" else "medium"
+            return result
+
+    simple_parallel_bends = (
+        0 < len(bends) <= parameters.flat_pattern_max_simple_parallel_bends
+        and len(bend_lengths) == len(bends)
+        and all(bend.axis is not None for bend in bends)
+        and all(
+            _axis_aligned(tuple(bends[0].axis or []), tuple(bend.axis or []), tolerance=0.98)
+            for bend in bends[1:]
+        )
+    )
+    if simple_parallel_bends and result.gross_blank_area_mm2 is not None:
+        min_width = min(float(length) for length in bend_lengths)
+        max_width = max(float(length) for length in bend_lengths)
+        consistent_width = max_width - min_width <= max(1.0, max_width * 0.05)
+        if consistent_width and max_width > 0:
+            width = sum(float(length) for length in bend_lengths) / len(bend_lengths)
+            length = result.gross_blank_area_mm2 / width
+            length, width = sorted((length, width), reverse=True)
+            result.blank_dimensions_mm = Dimensions(
+                x=round(length, 2),
+                y=round(width, 2),
+            )
+            result.outer_perimeter_mm = round(2.0 * (length + width), 2)
+            result.status = "estimated"
+            result.method = "parallel-bend rectangular blank estimate"
+            result.confidence = "medium" if thickness_confidence in {"medium", "high"} else "low"
+            result.warnings.append(
+                "Dimensioni grezzo stimate da area lorda e lunghezza delle pieghe parallele; verificare lo sviluppo CAD prima della produzione."
+            )
+            return result
+
+    result.confidence = "low"
+    result.warnings.append(
+        "Sviluppo piano completo non determinabile con sicurezza per questa geometria; disponibili solo i dati parziali verificabili."
+    )
+    return result
+
+
 def _detect_sheet_thickness(
     shape,
     declared_thickness_mm: float | None = None,
@@ -1526,6 +1679,17 @@ def analyze_step_file(
             response.holes.polygonal,
             response.holes.formed,
             response.holes.unknown,
+        )
+
+        response.flat_pattern = _estimate_flat_pattern(
+            shape=shape,
+            thickness_mm=response.detected_thickness_mm or response.declared_thickness_mm,
+            thickness_confidence=response.thickness_confidence,
+            bends=response.bends.items,
+            holes=all_hole_features,
+            cutting_outer_perimeter_mm=response.cutting.outer_cut_length_mm,
+            density_g_cm3=response.density_g_cm3,
+            parameters=analysis_parameters,
         )
 
         if response.detected_thickness_mm is None:

@@ -115,6 +115,24 @@ def test_quote_from_cad_uses_selected_material():
     assert quote["laser_details"]["pierce_time_sec"] == 0.6
 
 
+def test_quote_uses_gross_flat_blank_weight_when_reliable():
+    cad_data = _cad_data_without_cutting()
+    cad_data["flat_pattern"] = {
+        "status": "estimated",
+        "confidence": "medium",
+        "gross_blank_area_mm2": 10000.0,
+    }
+
+    quote = quote_from_cad(cad_data)
+
+    assert quote["material"]["part_weight_kg"] == 0.05
+    assert quote["material"]["blank_weight_kg"] == 0.054
+    assert quote["material"]["estimated_weight_kg"] == 0.054
+    assert quote["material"]["weight_source"] == "flat_pattern_gross_blank"
+    assert quote["estimated_internal_cost_eur"]["material"] == 0.32
+    assert any("peso del grezzo sviluppato" in warning for warning in quote["warnings"])
+
+
 def test_quote_from_cad_rejects_unknown_material():
     cad_data = _cad_data_without_cutting()
 

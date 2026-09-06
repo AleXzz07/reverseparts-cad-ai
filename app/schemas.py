@@ -107,6 +107,25 @@ class CoordinateReference(BaseModel):
     units: Literal["mm"] = "mm"
 
 
+class FlatPattern(BaseModel):
+    status: Literal["unavailable", "partial", "estimated", "exact"] = "unavailable"
+    available: bool = False
+    method: str | None = None
+    is_estimate: bool = True
+    thickness_mm: float | None = None
+    k_factor: float | None = None
+    net_developed_area_mm2: float | None = None
+    opening_area_mm2: float | None = None
+    gross_blank_area_mm2: float | None = None
+    blank_dimensions_mm: Dimensions | None = None
+    outer_perimeter_mm: float | None = None
+    total_bend_length_mm: float | None = None
+    total_bend_allowance_mm: float | None = None
+    blank_weight_kg: float | None = None
+    confidence: Confidence = "low"
+    warnings: list[str] = Field(default_factory=list)
+
+
 class CadAnalysisResponse(BaseModel):
     part_name: str = ""
     source_file: str = ""
@@ -126,6 +145,7 @@ class CadAnalysisResponse(BaseModel):
     geometry: GeometryStatistics = Field(default_factory=GeometryStatistics)
     manufacturability: Manufacturability = Field(default_factory=Manufacturability)
     coordinate_reference: CoordinateReference = Field(default_factory=CoordinateReference)
+    flat_pattern: FlatPattern = Field(default_factory=FlatPattern)
     complexity_score: Literal["unknown", "low", "medium", "high"] = "unknown"
     warnings: list[str] = Field(default_factory=list)
 

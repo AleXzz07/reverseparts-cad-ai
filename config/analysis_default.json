@@ -15,5 +15,9 @@
     "radius_pair_tolerance_mm": 0.5,
     "axis_angle_tolerance_deg": 5.0,
     "min_length_mm": 2.5
+  },
+  "flat_pattern": {
+    "k_factor": 0.4,
+    "max_simple_parallel_bends": 4
   }
 }

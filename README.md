@@ -50,6 +50,12 @@ Same-face planar opening wires are used to calculate the minimum hole-to-hole cl
 
 The web app and PDF show external cut perimeter, internal-opening perimeter, total cut length, confidence, grouped equal-hole counts, and the original STEP coordinate reference. The original coordinate system is preserved and no automatic X/Y/Z reorientation is implied.
 
+The `flat_pattern` section adds a conservative sheet-metal blank assessment. Net developed area is derived from CAD material volume divided by detected thickness. Gross blank area adds only opening areas measured reliably. Flat parts expose measured planar extents; simple parts with a limited number of parallel bends may expose an estimated rectangular blank envelope using gross area and bend-line length. Complex or non-parallel parts remain `partial`, with dimensions left `null` and explicit warnings. The response also includes blank weight, total bend-line length, bend allowance based on the configured K-factor, method, status, and confidence.
+
+When a gross blank has medium or high confidence, the quote engine calculates material cost from its weight and keeps the finished-part weight separately. Low-confidence or partial developments do not replace the existing volume-based material calculation. This estimate does not include nesting efficiency or sheet-level scrap and must be validated before production.
+
+The interactive viewer applies a darker technical-metal material, stronger multi-directional lighting, a higher-contrast background, and subtle CAD edge overlays. The same WebGL rendering is used for angles captured for the PDF, while model generation remains strictly on demand.
+
 ### `POST /quote`
 
 Input JSON:
