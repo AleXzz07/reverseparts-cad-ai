@@ -82,6 +82,9 @@ def _part_rows(
 
     circular_holes = hole_count("circular_holes", "circular")
     elongated_holes = hole_count("elongated_holes", "elongated")
+    rounded_rectangular_holes = hole_count(
+        "rounded_rectangular_holes", "rounded_rectangular"
+    )
     polygonal_holes = hole_count("polygonal_holes", "polygonal")
     formed_holes = hole_count("formed_holes", "formed")
     unknown_holes = hole_count("unknown_holes", "unknown")
@@ -90,6 +93,7 @@ def _part_rows(
         total_holes = (
             circular_holes
             + elongated_holes
+            + rounded_rectangular_holes
             + polygonal_holes
             + formed_holes
             + unknown_holes
@@ -117,6 +121,7 @@ def _part_rows(
         ),
         ("Fori circolari", circular_holes),
         ("Asole", elongated_holes),
+        ("Aperture rettangolari raccordate", rounded_rectangular_holes),
         ("Fori poligonali", polygonal_holes),
         ("Fori sagomati/imbutiti", formed_holes),
         ("Fori non riconosciuti", unknown_holes),
@@ -268,6 +273,7 @@ def _hole_detail_rows(analysis: dict[str, Any]) -> list[list[Any]]:
     groups = (
         ("Circolare", holes.get("circular", [])),
         ("Asola", holes.get("elongated", [])),
+        ("Rettangolare raccordata", holes.get("rounded_rectangular", [])),
         ("Poligonale", holes.get("polygonal", [])),
         ("Sagomato", holes.get("formed", [])),
         ("Non riconosciuto", holes.get("unknown", [])),
@@ -277,6 +283,12 @@ def _hole_detail_rows(analysis: dict[str, Any]) -> list[list[Any]]:
         for index, feature in enumerate(features or [], start=1):
             if feature.get("diameter_mm") is not None:
                 measure = f"Diam. {_value(feature['diameter_mm'], 'mm')}"
+            elif feature.get("corner_radius_mm") is not None:
+                measure = (
+                    f"L {_value(feature.get('overall_length_mm'), 'mm')} / "
+                    f"W {_value(feature.get('width_mm'), 'mm')} / "
+                    f"R {_value(feature.get('corner_radius_mm'), 'mm')}"
+                )
             elif feature.get("width_mm") is not None:
                 measure = (
                     f"L {_value(feature.get('overall_length_mm'), 'mm')} / "

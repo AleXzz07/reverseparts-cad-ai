@@ -211,7 +211,8 @@
       {
         "type": null,
         "num_sides": 6,
-        "max_dimension_mm": 30.83,
+        "max_dimension_mm": 10.173,
+        "perimeter_mm": 30.83,
         "bounding_box_mm": {
           "x": 8.002,
           "y": 5.291,
@@ -238,7 +239,8 @@
       {
         "type": null,
         "num_sides": 6,
-        "max_dimension_mm": 33.5,
+        "max_dimension_mm": 12.786,
+        "perimeter_mm": 33.5,
         "bounding_box_mm": {
           "x": 8.42,
           "y": 12.786,
@@ -265,7 +267,8 @@
       {
         "type": null,
         "num_sides": 6,
-        "max_dimension_mm": 30.83,
+        "max_dimension_mm": 8.812,
+        "perimeter_mm": 30.83,
         "bounding_box_mm": {
           "x": 8.717,
           "y": 5.443,

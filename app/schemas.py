@@ -28,6 +28,7 @@ class HoleFeature(BaseModel):
     overall_length_mm: float | None = None
     straight_length_mm: float | None = None
     end_radius_mm: float | None = None
+    corner_radius_mm: float | None = None
     width_mm: float | None = None
     depth_mm: float | None = None
     center: list[float] | None = None
@@ -41,11 +42,13 @@ class HoleFeature(BaseModel):
 class Holes(BaseModel):
     circular: list[HoleFeature] = Field(default_factory=list)
     elongated: list[HoleFeature] = Field(default_factory=list)
+    rounded_rectangular: list[HoleFeature] = Field(default_factory=list)
     polygonal: list[HoleFeature] = Field(default_factory=list)
     formed: list[HoleFeature] = Field(default_factory=list)
     unknown: list[HoleFeature] = Field(default_factory=list)
     circular_holes: int = 0
     elongated_holes: int = 0
+    rounded_rectangular_holes: int = 0
     polygonal_holes: int = 0
     formed_holes: int = 0
     unknown_holes: int = 0

@@ -447,6 +447,154 @@ def _wire_center(wire) -> tuple[float, float, float]:
     )
 
 
+def _wires_are_same(left, right) -> bool:
+    if left is right:
+        return True
+    try:
+        return bool(left.isSame(right))
+    except (AttributeError, TypeError, RuntimeError):
+        return False
+
+
+def _face_outer_wire(face):
+    try:
+        outer_wire = face.OuterWire
+        if outer_wire is not None:
+            return outer_wire
+    except (AttributeError, RuntimeError):
+        pass
+    wires = list(getattr(face, "Wires", []) or [])
+    return wires[0] if wires else None
+
+
+def _face_inner_wires(face) -> list:
+    wires = list(getattr(face, "Wires", []) or [])
+    outer_wire = _face_outer_wire(face)
+    if outer_wire is None:
+        return []
+    return [wire for wire in wires if not _wires_are_same(wire, outer_wire)]
+
+
+def _planar_face_reference(face) -> tuple[tuple[float, float, float], float] | None:
+    surface = getattr(face, "Surface", None)
+    if getattr(surface, "TypeId", "") != "Part::GeomPlane":
+        return None
+    try:
+        normal = _normalize_vector(surface.Axis)
+        offset = _plane_offset(normal, _vector_tuple(surface.Position))
+    except (AttributeError, TypeError, ValueError):
+        return None
+    return normal, offset
+
+
+def _parallel_plane_distance(
+    left_normal: tuple[float, float, float],
+    left_offset: float,
+    right_normal: tuple[float, float, float],
+    right_offset: float,
+) -> float:
+    alignment = _dot(left_normal, right_normal)
+    return (
+        abs(left_offset - right_offset)
+        if alignment >= 0
+        else abs(left_offset + right_offset)
+    )
+
+
+def _wire_bbox_dimensions(wire) -> tuple[float, float, float]:
+    bbox = wire.BoundBox
+    return (
+        float(bbox.XLength),
+        float(bbox.YLength),
+        float(bbox.ZLength),
+    )
+
+
+def _matching_opposite_wire(
+    shape,
+    source_face,
+    source_wire,
+    parameters: AnalysisParameters,
+    thickness_mm: float | None,
+) -> bool:
+    """Check that an inner contour is repeated on the opposite sheet skin.
+
+    Bend-transition boundaries can be inner wires on one planar face even though
+    they are not manufacturing openings. Geometric measurements are compared
+    instead of raw edge counts because STEP exporters may split equal curves.
+    """
+    source_reference = _planar_face_reference(source_face)
+    if source_reference is None:
+        return False
+    source_normal, source_offset = source_reference
+    source_center = _wire_center(source_wire)
+    source_perimeter = float(source_wire.Length)
+    source_dimensions = sorted(
+        value for value in _wire_bbox_dimensions(source_wire) if value > 1e-6
+    )
+
+    for other_face in shape.Faces:
+        if other_face is source_face:
+            continue
+        other_reference = _planar_face_reference(other_face)
+        if other_reference is None:
+            continue
+        other_normal, other_offset = other_reference
+        if not _axis_aligned(
+            source_normal,
+            other_normal,
+            tolerance=_axis_tolerance(parameters.hole_axis_angle_tolerance_deg),
+        ):
+            continue
+
+        plane_distance = _parallel_plane_distance(
+            source_normal,
+            source_offset,
+            other_normal,
+            other_offset,
+        )
+        if thickness_mm is not None:
+            thickness_tolerance = max(0.25, thickness_mm * 0.15)
+            if abs(plane_distance - thickness_mm) > thickness_tolerance:
+                continue
+        elif not 0.5 <= plane_distance <= 6.0:
+            continue
+
+        for other_wire in _face_inner_wires(other_face):
+            if not other_wire.isClosed():
+                continue
+            other_perimeter = float(other_wire.Length)
+            perimeter_tolerance = max(0.5, source_perimeter * 0.015)
+            if abs(source_perimeter - other_perimeter) > perimeter_tolerance:
+                continue
+
+            other_dimensions = sorted(
+                value for value in _wire_bbox_dimensions(other_wire) if value > 1e-6
+            )
+            if len(source_dimensions) != len(other_dimensions):
+                continue
+            if any(
+                abs(left - right) > max(0.5, max(left, right) * 0.02)
+                for left, right in zip(source_dimensions, other_dimensions)
+            ):
+                continue
+
+            center_delta = tuple(
+                left - right
+                for left, right in zip(source_center, _wire_center(other_wire))
+            )
+            signed_axial_offset = _dot(center_delta, source_normal)
+            radial_offset = _vector_norm(
+                tuple(
+                    component - signed_axial_offset * axis
+                    for component, axis in zip(center_delta, source_normal)
+                )
+            )
+            if radial_offset <= parameters.hole_center_tolerance_mm:
+                return True
+    return False
+
+
 def _planar_wire_area(wire) -> float | None:
     try:
         Part = importlib.import_module("Part")
@@ -457,11 +605,12 @@ def _planar_wire_area(wire) -> float | None:
         return None
 
 
-def _slot_axis_from_arc_centers(arcs: list) -> tuple[float, float, float]:
-    if len(arcs) != 2:
+def _slot_axis_from_arc_centers(
+    arc_centers: list[tuple[float, float, float]],
+) -> tuple[float, float, float]:
+    if len(arc_centers) != 2:
         return (0.0, 0.0, 0.0)
-    first = _vector_tuple(arcs[0].Curve.Center)
-    second = _vector_tuple(arcs[1].Curve.Center)
+    first, second = arc_centers
     delta = tuple(
         second_value - first_value for first_value, second_value in zip(first, second)
     )
@@ -506,6 +655,162 @@ def _append_unique_slot(slots: list[HoleFeature], candidate: HoleFeature) -> Non
     slots.append(candidate)
 
 
+def _is_duplicate_rounded_rectangle(
+    candidate: HoleFeature,
+    existing: HoleFeature,
+) -> bool:
+    if any(
+        value is None
+        for value in (
+            candidate.overall_length_mm,
+            existing.overall_length_mm,
+            candidate.width_mm,
+            existing.width_mm,
+            candidate.corner_radius_mm,
+            existing.corner_radius_mm,
+            candidate.center,
+            existing.center,
+            candidate.axis,
+            existing.axis,
+        )
+    ):
+        return False
+    return (
+        abs(float(candidate.overall_length_mm) - float(existing.overall_length_mm)) <= 0.5
+        and abs(float(candidate.width_mm) - float(existing.width_mm)) <= 0.5
+        and abs(float(candidate.corner_radius_mm) - float(existing.corner_radius_mm)) <= 0.3
+        and _axis_aligned(tuple(candidate.axis or []), tuple(existing.axis or []), tolerance=0.95)
+        and _vector_norm(
+            tuple(
+                left - right
+                for left, right in zip(candidate.center or [], existing.center or [])
+            )
+        )
+        <= 3.0
+    )
+
+
+def _append_unique_rounded_rectangle(
+    openings: list[HoleFeature],
+    candidate: HoleFeature,
+) -> None:
+    for existing in openings:
+        if _is_duplicate_rounded_rectangle(candidate, existing):
+            existing.center = _rounded_vector(
+                tuple(
+                    (left + right) / 2.0
+                    for left, right in zip(existing.center or [], candidate.center or [])
+                )
+            )
+            existing.confidence = "high"
+            return
+    openings.append(candidate)
+
+
+def _detect_rounded_rectangular_holes(
+    shape,
+    parameters: AnalysisParameters,
+    thickness_mm: float | None = None,
+) -> list[HoleFeature]:
+    openings: list[HoleFeature] = []
+    for face in shape.Faces:
+        surface = face.Surface
+        if getattr(surface, "TypeId", "") != "Part::GeomPlane":
+            continue
+
+        for wire in _face_inner_wires(face):
+            if not wire.isClosed():
+                continue
+            arcs = [edge for edge in wire.Edges if _curve_type(edge) == "Part::GeomCircle"]
+            lines = [edge for edge in wire.Edges if _curve_type(edge) == "Part::GeomLine"]
+            if len(arcs) < 4 or len(lines) != 4 or len(arcs) + len(lines) != len(wire.Edges):
+                continue
+
+            radii = [float(edge.Curve.Radius) for edge in arcs]
+            if max(radii) - min(radii) > parameters.hole_diameter_tolerance_mm / 2.0:
+                continue
+            corner_radius = sum(radii) / len(radii)
+
+            arc_centers: list[tuple[float, float, float]] = []
+            for edge in arcs:
+                center = _vector_tuple(edge.Curve.Center)
+                if not any(
+                    _vector_norm(tuple(a - b for a, b in zip(center, existing)))
+                    <= parameters.hole_center_tolerance_mm
+                    for existing in arc_centers
+                ):
+                    arc_centers.append(center)
+            # Four distinct tangent corner arcs distinguish this feature from a slot.
+            if len(arc_centers) != 4:
+                continue
+
+            directions = [_normalize_vector(edge.Curve.Direction) for edge in lines]
+            first_family = [
+                direction
+                for direction in directions
+                if _axis_aligned(direction, directions[0], tolerance=0.98)
+            ]
+            second_family = [direction for direction in directions if direction not in first_family]
+            if len(first_family) != 2 or len(second_family) != 2:
+                continue
+            if not _axis_aligned(second_family[0], second_family[1], tolerance=0.98):
+                continue
+            if abs(_dot(first_family[0], second_family[0])) > 0.05:
+                continue
+
+            line_lengths = sorted(float(edge.Length) for edge in lines)
+            length_tolerance = max(0.5, line_lengths[-1] * 0.02)
+            if (
+                abs(line_lengths[0] - line_lengths[1]) > length_tolerance
+                or abs(line_lengths[2] - line_lengths[3]) > length_tolerance
+            ):
+                continue
+            short_straight = (line_lengths[0] + line_lengths[1]) / 2.0
+            long_straight = (line_lengths[2] + line_lengths[3]) / 2.0
+            width = short_straight + 2.0 * corner_radius
+            overall_length = long_straight + 2.0 * corner_radius
+            perimeter = float(wire.Length)
+            if not _is_planar_opening_size_valid(
+                dimension_mm=overall_length,
+                perimeter_mm=perimeter,
+                parameters=parameters,
+            ):
+                continue
+            if not _matching_opposite_wire(shape, face, wire, parameters, thickness_mm):
+                continue
+
+            area = _planar_wire_area(wire)
+            if area is None:
+                area = (
+                    overall_length * width
+                    - (4.0 - math.pi) * corner_radius**2
+                )
+            bbox = wire.BoundBox
+            _append_unique_rounded_rectangle(
+                openings,
+                HoleFeature(
+                    type="rounded rectangular opening",
+                    max_dimension_mm=round(overall_length, 3),
+                    bounding_box_mm=Dimensions(
+                        x=round(float(bbox.XLength), 3),
+                        y=round(float(bbox.YLength), 3),
+                        z=round(float(bbox.ZLength), 3),
+                    ),
+                    perimeter_mm=round(perimeter, 2),
+                    area_mm2=round(float(area), 2),
+                    overall_length_mm=round(overall_length, 2),
+                    width_mm=round(width, 2),
+                    corner_radius_mm=round(corner_radius, 2),
+                    center=_rounded_vector(_wire_center(wire)),
+                    axis=_rounded_vector(_normalize_vector(surface.Axis)),
+                    confidence="medium",
+                ),
+            )
+
+    openings.sort(key=lambda opening: opening.center or [])
+    return openings
+
+
 def _is_duplicate_polygon(candidate: HoleFeature, existing: HoleFeature) -> bool:
     if candidate.max_dimension_mm is None or existing.max_dimension_mm is None:
         return False
@@ -541,6 +846,7 @@ def _append_unique_polygon(polygons: list[HoleFeature], candidate: HoleFeature) 
 def _detect_elongated_holes(
     shape,
     parameters: AnalysisParameters,
+    thickness_mm: float | None = None,
 ) -> list[HoleFeature]:
     slots: list[HoleFeature] = []
     for face in shape.Faces:
@@ -548,22 +854,42 @@ def _detect_elongated_holes(
         if getattr(surface, "TypeId", "") != "Part::GeomPlane":
             continue
 
-        for wire_index, wire in enumerate(face.Wires):
-            if wire_index == 0 or not wire.isClosed():
+        for wire in _face_inner_wires(face):
+            if not wire.isClosed():
                 continue
 
             arcs = [edge for edge in wire.Edges if _curve_type(edge) == "Part::GeomCircle"]
             lines = [edge for edge in wire.Edges if _curve_type(edge) == "Part::GeomLine"]
-            if len(arcs) != 2 or len(lines) != 2:
+            if len(arcs) < 2 or len(lines) != 2 or len(arcs) + len(lines) != len(wire.Edges):
                 continue
 
             radii = [float(edge.Curve.Radius) for edge in arcs]
-            if abs(radii[0] - radii[1]) > 0.2:
+            if max(radii) - min(radii) > parameters.hole_diameter_tolerance_mm / 2.0:
+                continue
+
+            arc_centers: list[tuple[float, float, float]] = []
+            for edge in arcs:
+                center = _vector_tuple(edge.Curve.Center)
+                if not any(
+                    _vector_norm(tuple(a - b for a, b in zip(center, existing)))
+                    <= parameters.hole_center_tolerance_mm
+                    for existing in arc_centers
+                ):
+                    arc_centers.append(center)
+            if len(arc_centers) != 2:
                 continue
 
             width = sum(radii) / len(radii) * 2.0
             line_directions = [_normalize_vector(edge.Curve.Direction) for edge in lines]
             if not _axis_aligned(line_directions[0], line_directions[1], tolerance=0.98):
+                continue
+            if not _matching_opposite_wire(
+                shape,
+                face,
+                wire,
+                parameters,
+                thickness_mm,
+            ):
                 continue
 
             length = float(wire.Length)
@@ -574,8 +900,7 @@ def _detect_elongated_holes(
             ):
                 continue
 
-            slot_axis = _slot_axis_from_arc_centers(arcs)
-            arc_centers = [_vector_tuple(edge.Curve.Center) for edge in arcs]
+            slot_axis = _slot_axis_from_arc_centers(arc_centers)
             straight_length = _vector_norm(
                 tuple(left - right for left, right in zip(arc_centers[0], arc_centers[1]))
             )
@@ -608,6 +933,7 @@ def _detect_elongated_holes(
 def _detect_polygonal_holes(
     shape,
     parameters: AnalysisParameters,
+    thickness_mm: float | None = None,
 ) -> list[HoleFeature]:
     polygons: list[HoleFeature] = []
     for face in shape.Faces:
@@ -615,8 +941,8 @@ def _detect_polygonal_holes(
         if getattr(surface, "TypeId", "") != "Part::GeomPlane":
             continue
 
-        for wire_index, wire in enumerate(face.Wires):
-            if wire_index == 0 or not wire.isClosed():
+        for wire in _face_inner_wires(face):
+            if not wire.isClosed():
                 continue
 
             edges = list(wire.Edges)
@@ -646,12 +972,20 @@ def _detect_polygonal_holes(
                 parameters=parameters,
             ):
                 continue
+            if not _matching_opposite_wire(
+                shape,
+                face,
+                wire,
+                parameters,
+                thickness_mm,
+            ):
+                continue
 
             _append_unique_polygon(
                 polygons,
                 HoleFeature(
                     num_sides=len(edges),
-                    max_dimension_mm=round(perimeter, 2),
+                    max_dimension_mm=round(max(nonzero_bbox_dimensions), 3),
                     bounding_box_mm=bbox_dimensions,
                     perimeter_mm=round(perimeter, 2),
                     area_mm2=_planar_wire_area(wire),
@@ -661,7 +995,7 @@ def _detect_polygonal_holes(
                 ),
             )
 
-        outer_wire = face.Wires[0] if face.Wires else None
+        outer_wire = _face_outer_wire(face)
         if outer_wire is None or not outer_wire.isClosed():
             continue
         outer_edges = list(outer_wire.Edges)
@@ -682,7 +1016,14 @@ def _detect_polygonal_holes(
             polygons,
             HoleFeature(
                 num_sides=6,
-                max_dimension_mm=round(float(outer_wire.Length), 2),
+                max_dimension_mm=round(
+                    max(
+                        float(bbox.XLength),
+                        float(bbox.YLength),
+                        float(bbox.ZLength),
+                    ),
+                    3,
+                ),
                 bounding_box_mm=bbox_dimensions,
                 perimeter_mm=round(float(outer_wire.Length), 2),
                 area_mm2=_planar_wire_area(outer_wire),
@@ -807,6 +1148,7 @@ def _detect_unknown_holes(
     shape,
     known_features: list[HoleFeature],
     parameters: AnalysisParameters,
+    thickness_mm: float | None = None,
 ) -> list[HoleFeature]:
     unknown: list[HoleFeature] = []
     for face in shape.Faces:
@@ -814,8 +1156,8 @@ def _detect_unknown_holes(
         if getattr(surface, "TypeId", "") != "Part::GeomPlane":
             continue
 
-        for wire_index, wire in enumerate(face.Wires):
-            if wire_index == 0 or not wire.isClosed():
+        for wire in _face_inner_wires(face):
+            if not wire.isClosed():
                 continue
 
             perimeter = float(wire.Length)
@@ -829,6 +1171,14 @@ def _detect_unknown_holes(
                 dimension_mm=max_dimension,
                 perimeter_mm=perimeter,
                 parameters=parameters,
+            ):
+                continue
+            if not _matching_opposite_wire(
+                shape,
+                face,
+                wire,
+                parameters,
+                thickness_mm,
             ):
                 continue
 
@@ -1193,6 +1543,7 @@ def _detect_cutting_lengths(
     shape,
     circular: list[HoleFeature],
     elongated: list[HoleFeature],
+    rounded_rectangular: list[HoleFeature],
     polygonal: list[HoleFeature],
     formed: list[HoleFeature],
     unknown: list[HoleFeature],
@@ -1206,10 +1557,9 @@ def _detect_cutting_lengths(
         surface = face.Surface
         if getattr(surface, "TypeId", "") != "Part::GeomPlane":
             continue
-        if not face.Wires:
+        outer_wire = _face_outer_wire(face)
+        if outer_wire is None:
             continue
-
-        outer_wire = face.Wires[0]
         if not outer_wire.isClosed():
             continue
         length = float(outer_wire.Length)
@@ -1224,11 +1574,19 @@ def _detect_cutting_lengths(
         if hole.diameter_mm is not None:
             inner_cut_length += math.pi * float(hole.diameter_mm)
     for slot in elongated:
-        if slot.length_mm is not None:
-            inner_cut_length += float(slot.length_mm)
+        slot_perimeter = slot.perimeter_mm or slot.length_mm
+        if slot_perimeter is not None:
+            inner_cut_length += float(slot_perimeter)
+    for opening in rounded_rectangular:
+        if opening.perimeter_mm is not None:
+            inner_cut_length += float(opening.perimeter_mm)
     for polygon in polygonal:
-        if polygon.max_dimension_mm is not None:
-            inner_cut_length += float(polygon.max_dimension_mm)
+        # max_dimension_mm historically contained the wire perimeter. New
+        # analyses use the semantic perimeter_mm field while the fallback keeps
+        # previously stored API payloads readable.
+        polygon_perimeter = polygon.perimeter_mm or polygon.max_dimension_mm
+        if polygon_perimeter is not None:
+            inner_cut_length += float(polygon_perimeter)
     for formed_hole in formed:
         if formed_hole.length_mm is not None:
             inner_cut_length += float(formed_hole.length_mm)
@@ -1414,7 +1772,7 @@ def _detect_sheet_thickness(
             }
         )
 
-    candidates: list[float] = []
+    candidates: list[tuple[float, float]] = []
     for left_index, left in enumerate(planes):
         for right in planes[left_index + 1 :]:
             alignment = _dot(left["normal"], right["normal"])
@@ -1436,19 +1794,51 @@ def _detect_sheet_thickness(
             if area_ratio < 0.85:
                 continue
 
-            candidates.append(round(distance, 2))
+            candidates.append((round(distance, 2), min(left["area"], right["area"])))
 
     if not candidates:
         return None, "low"
 
-    grouped: dict[float, int] = {}
-    for candidate in candidates:
-        grouped[candidate] = grouped.get(candidate, 0) + 1
+    grouped: dict[float, dict[str, float]] = {}
+    for candidate, support_area in candidates:
+        group = grouped.setdefault(candidate, {"count": 0.0, "support_area": 0.0})
+        group["count"] += 1.0
+        group["support_area"] += support_area
 
-    dominant_value, dominant_count = max(
+    ranked = sorted(
         grouped.items(),
-        key=lambda item: (item[1], -item[0]),
+        key=lambda item: (item[1]["support_area"], item[1]["count"]),
+        reverse=True,
     )
+    dominant_value, dominant_evidence = ranked[0]
+    dominant_count = int(dominant_evidence["count"])
+
+    if len(ranked) > 1:
+        second_value, second_evidence = ranked[1]
+        support_ratio = second_evidence["support_area"] / max(
+            dominant_evidence["support_area"],
+            1e-9,
+        )
+        if support_ratio >= 0.95 and abs(dominant_value - second_value) > 0.1:
+            references: list[float] = []
+            if declared_thickness_mm is not None:
+                references.append(float(declared_thickness_mm))
+            try:
+                thin_solid_estimate = 2.0 * float(shape.Volume) / float(shape.Area)
+            except (AttributeError, TypeError, ValueError, ZeroDivisionError):
+                thin_solid_estimate = 0.0
+            if 0.5 <= thin_solid_estimate <= 6.0:
+                references.append(thin_solid_estimate)
+            if not references:
+                return None, "low"
+            reference = references[0]
+            dominant_error = abs(dominant_value - reference)
+            second_error = abs(second_value - reference)
+            if abs(dominant_error - second_error) <= 0.1:
+                return None, "low"
+            if second_error < dominant_error:
+                dominant_value, dominant_evidence = second_value, second_evidence
+                dominant_count = int(dominant_evidence["count"])
     confidence = "medium"
     if dominant_count >= 2:
         confidence = "high"
@@ -1561,27 +1951,46 @@ def analyze_step_file(
             shape,
             analysis_parameters,
         )
-        response.holes.elongated = _detect_elongated_holes(shape, analysis_parameters)
-        response.holes.polygonal = _detect_polygonal_holes(shape, analysis_parameters)
+        response.holes.elongated = _detect_elongated_holes(
+            shape,
+            analysis_parameters,
+            detected_thickness,
+        )
+        response.holes.rounded_rectangular = _detect_rounded_rectangular_holes(
+            shape,
+            analysis_parameters,
+            detected_thickness,
+        )
+        response.holes.polygonal = _detect_polygonal_holes(
+            shape,
+            analysis_parameters,
+            detected_thickness,
+        )
         response.holes.formed = _detect_formed_holes(shape, analysis_parameters)
         response.holes.unknown = _detect_unknown_holes(
             shape,
             [
                 *response.holes.circular,
                 *response.holes.elongated,
+                *response.holes.rounded_rectangular,
                 *response.holes.polygonal,
                 *response.holes.formed,
             ],
             analysis_parameters,
+            detected_thickness,
         )
         response.holes.circular_holes = len(response.holes.circular)
         response.holes.elongated_holes = len(response.holes.elongated)
+        response.holes.rounded_rectangular_holes = len(
+            response.holes.rounded_rectangular
+        )
         response.holes.polygonal_holes = len(response.holes.polygonal)
         response.holes.formed_holes = len(response.holes.formed)
         response.holes.unknown_holes = len(response.holes.unknown)
         response.holes.total_holes = (
             response.holes.circular_holes
             + response.holes.elongated_holes
+            + response.holes.rounded_rectangular_holes
             + response.holes.polygonal_holes
             + response.holes.formed_holes
             + response.holes.unknown_holes
@@ -1598,6 +2007,7 @@ def analyze_step_file(
         all_hole_features = [
             *response.holes.circular,
             *response.holes.elongated,
+            *response.holes.rounded_rectangular,
             *response.holes.polygonal,
             *response.holes.formed,
             *response.holes.unknown,
@@ -1676,6 +2086,7 @@ def analyze_step_file(
             shape,
             response.holes.circular,
             response.holes.elongated,
+            response.holes.rounded_rectangular,
             response.holes.polygonal,
             response.holes.formed,
             response.holes.unknown,

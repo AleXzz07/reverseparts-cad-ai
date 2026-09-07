@@ -16,12 +16,20 @@ LAMIERA_DATASET_CASE = PROJECT_ROOT / "tests" / "dataset" / "lamiera_piana_test_
 STAFFA_1_PIEGA_DATASET_CASE = PROJECT_ROOT / "tests" / "dataset" / "staffa_1_piega_test_1"
 STAFFA_U_DATASET_CASE = PROJECT_ROOT / "tests" / "dataset" / "staffa_u_test_1"
 STAFFA_16_PIEGHE_STRESS_CASE = PROJECT_ROOT / "tests" / "dataset" / "staffa_16_pieghe_stress_test"
+FREECAD_VALIDATION_CASE_NAMES = (
+    "validation_01_staffa_piana",
+    "validation_02_staffa_L_1_piega",
+    "validation_03_staffa_U_2_pieghe",
+    "validation_04_staffa_profilo_irregolare",
+    "validation_05_staffa_2_pieghe_non_parallele",
+)
 DATASET_CASE_NAMES = (
     "lamiera_piana_test_1",
     "staffa_1_piega_test_1",
     "staffa_test_1",
     "staffa_u_test_1",
     "staffa_16_pieghe_stress_test",
+    *FREECAD_VALIDATION_CASE_NAMES,
 )
 
 
@@ -43,6 +51,17 @@ def test_staffa_test_1_dataset_case_exists():
 
     cases = iter_dataset_cases(PROJECT_ROOT / "tests" / "dataset")
     assert DATASET_CASE in cases
+
+
+def test_freecad_validation_dataset_cases_exist():
+    assert (PROJECT_ROOT / "tests" / "dataset" / "freecad_validation_ground_truth.json").exists()
+    for case_name in FREECAD_VALIDATION_CASE_NAMES:
+        case_dir = PROJECT_ROOT / "tests" / "dataset" / case_name
+        assert (case_dir / "input.stp").exists()
+        assert (case_dir / "expected.json").exists()
+        expected = json.loads((case_dir / "expected.json").read_text(encoding="utf-8"))
+        assert expected["material_key"] == "acciaio"
+        assert expected["density_g_cm3"] == 7.85
 
 
 def test_staffa_test_1_dataset_evaluate_and_quote(tmp_path):
@@ -185,3 +204,48 @@ def test_real_cad_analysis_matches_dataset_ground_truth(case_name, tmp_path):
         if check["status"] == "fail"
     }
     assert report["status"] == "pass", failed_checks
+
+    holes = actual["holes"]
+    if case_name == "validation_01_staffa_piana":
+        assert holes["circular_holes"] == 4
+        assert holes["elongated_holes"] == 1
+        assert holes["unknown_holes"] == 0
+        assert holes["total_holes"] == 5
+        slot = holes["elongated"][0]
+        assert slot["overall_length_mm"] == pytest.approx(30.0, abs=0.25)
+        assert slot["width_mm"] == pytest.approx(10.0, abs=0.25)
+        assert slot["perimeter_mm"] == pytest.approx(71.42, abs=0.25)
+
+    if case_name == "validation_04_staffa_profilo_irregolare":
+        assert actual["detected_thickness_mm"] == pytest.approx(2.0, abs=0.1)
+        assert holes["elongated_holes"] == 1
+        assert holes["rounded_rectangular_holes"] == 1
+        assert holes["polygonal_holes"] == 0
+        assert holes["unknown_holes"] == 0
+        slot = holes["elongated"][0]
+        assert slot["overall_length_mm"] == pytest.approx(28.0, abs=0.25)
+        assert slot["width_mm"] == pytest.approx(8.0, abs=0.25)
+        rounded = holes["rounded_rectangular"][0]
+        assert rounded["overall_length_mm"] == pytest.approx(26.0, abs=0.25)
+        assert rounded["width_mm"] == pytest.approx(16.0, abs=0.25)
+        assert rounded["corner_radius_mm"] == pytest.approx(4.0, abs=0.25)
+        assert rounded["perimeter_mm"] == pytest.approx(77.13, abs=0.25)
+        assert actual["flat_pattern"]["net_developed_area_mm2"] == pytest.approx(
+            8237.13,
+            abs=0.1,
+        )
+
+    if case_name == "validation_05_staffa_2_pieghe_non_parallele":
+        assert holes["circular_holes"] == 4
+        assert holes["polygonal"] == []
+        assert holes["unknown"] == []
+        assert holes["total_holes"] == 4
+        measured_inner_perimeter = sum(
+            feature["perimeter_mm"]
+            for group in ("circular", "elongated", "polygonal", "formed", "unknown")
+            for feature in holes[group]
+        )
+        assert actual["cutting"]["inner_cut_length_mm"] == pytest.approx(
+            measured_inner_perimeter,
+            abs=0.1,
+        )

@@ -12,6 +12,8 @@ DIAMETER_TOLERANCE_MM = 0.2
 LENGTH_TOLERANCE_MM = 0.25
 POLYGON_TOLERANCE_MM = 0.25
 THICKNESS_TOLERANCE_MM = 0.1
+BEND_RADIUS_TOLERANCE_MM = 0.25
+BEND_ANGLE_TOLERANCE_DEG = 1.0
 
 
 def _percent_error(actual: float, expected: float) -> float:
@@ -157,12 +159,32 @@ def _elongated_holes_check(actual: dict[str, Any], expected: dict[str, Any]) -> 
         )
     groups = []
     for expected_group in expected_items:
-        length = float(expected_group["length_mm"])
+        length_field = (
+            "overall_length_mm"
+            if expected_group.get("overall_length_mm") is not None
+            else "length_mm"
+        )
+        length = float(expected_group[length_field])
+        width = expected_group.get("width_mm")
         expected_count = int(expected_group["count"])
-        actual_count = _count_near(actual_items, "length_mm", length, LENGTH_TOLERANCE_MM)
+        actual_count = sum(
+            1
+            for item in actual_items
+            if item.get(length_field) is not None
+            and abs(float(item[length_field]) - length) <= LENGTH_TOLERANCE_MM
+            and (
+                width is None
+                or (
+                    item.get("width_mm") is not None
+                    and abs(float(item["width_mm"]) - float(width))
+                    <= LENGTH_TOLERANCE_MM
+                )
+            )
+        )
         groups.append(
             {
-                "length_mm": length,
+                length_field: length,
+                "width_mm": width,
                 "expected_count": expected_count,
                 "actual_count": actual_count,
                 "status": "pass" if actual_count >= expected_count else "fail",
@@ -180,6 +202,69 @@ def _elongated_holes_check(actual: dict[str, Any], expected: dict[str, Any]) -> 
     return _check(
         status,
         "Elongated holes grouped by slot length.",
+        expected_count=expected_count,
+        actual_count=len(actual_items),
+        groups=groups,
+    )
+
+
+def _rounded_rectangular_holes_check(
+    actual: dict[str, Any],
+    expected: dict[str, Any],
+) -> dict[str, Any]:
+    actual_items = actual.get("rounded_rectangular", [])
+    expected_items = expected.get("rounded_rectangular", [])
+    if not expected_items:
+        return _check(
+            "pass" if not actual_items else "fail",
+            "No rounded rectangular openings expected.",
+            expected_count=0,
+            actual_count=len(actual_items),
+        )
+
+    groups = []
+    for expected_group in expected_items:
+        expected_count = int(expected_group["count"])
+        matching = [
+            item
+            for item in actual_items
+            if item.get("overall_length_mm") is not None
+            and item.get("width_mm") is not None
+            and item.get("corner_radius_mm") is not None
+            and abs(
+                float(item["overall_length_mm"])
+                - float(expected_group["overall_length_mm"])
+            )
+            <= LENGTH_TOLERANCE_MM
+            and abs(float(item["width_mm"]) - float(expected_group["width_mm"]))
+            <= LENGTH_TOLERANCE_MM
+            and abs(
+                float(item["corner_radius_mm"])
+                - float(expected_group["corner_radius_mm"])
+            )
+            <= LENGTH_TOLERANCE_MM
+        ]
+        groups.append(
+            {
+                "overall_length_mm": expected_group["overall_length_mm"],
+                "width_mm": expected_group["width_mm"],
+                "corner_radius_mm": expected_group["corner_radius_mm"],
+                "expected_count": expected_count,
+                "actual_count": len(matching),
+                "status": "pass" if len(matching) >= expected_count else "fail",
+            }
+        )
+
+    expected_count = sum(int(group["count"]) for group in expected_items)
+    status = (
+        "pass"
+        if all(group["status"] == "pass" for group in groups)
+        and len(actual_items) == expected_count
+        else "fail"
+    )
+    return _check(
+        status,
+        "Rounded rectangular openings grouped by length, width and corner radius.",
         expected_count=expected_count,
         actual_count=len(actual_items),
         groups=groups,
@@ -278,11 +363,46 @@ def _bends_check(actual: dict[str, Any], expected: dict[str, Any]) -> dict[str, 
         if length_target is not None
         else 0
     )
+    expected_items = expected.get("items", []) or []
+    item_checks = []
+    used_actual_indexes: set[int] = set()
+    for expected_item in expected_items:
+        matching_index = None
+        for index, actual_item in enumerate(items):
+            if index in used_actual_indexes:
+                continue
+            comparisons = (
+                ("radius_mm", BEND_RADIUS_TOLERANCE_MM),
+                ("angle_deg", BEND_ANGLE_TOLERANCE_DEG),
+                ("length_mm", DIMENSION_TOLERANCE_MM),
+            )
+            if all(
+                expected_item.get(field) is None
+                or (
+                    actual_item.get(field) is not None
+                    and abs(float(actual_item[field]) - float(expected_item[field]))
+                    <= tolerance
+                )
+                for field, tolerance in comparisons
+            ):
+                matching_index = index
+                break
+        if matching_index is not None:
+            used_actual_indexes.add(matching_index)
+        item_checks.append(
+            {
+                "expected": expected_item,
+                "actual_index": matching_index,
+                "status": "pass" if matching_index is not None else "fail",
+            }
+        )
+
     status = (
         "pass"
         if actual_count == expected_count
         and confidence in {"medium", "high"}
         and (length_target is None or length_matches >= expected_count)
+        and all(check["status"] == "pass" for check in item_checks)
         else "fail"
     )
     return _check(
@@ -293,6 +413,7 @@ def _bends_check(actual: dict[str, Any], expected: dict[str, Any]) -> dict[str, 
         confidence=confidence,
         length_matches=length_matches,
         expected_length_mm=length_target,
+        items=item_checks,
     )
 
 
@@ -334,9 +455,25 @@ def evaluate_staffa(actual: dict[str, Any], expected: dict[str, Any]) -> dict[st
             "cm2",
         )
     if "estimated_weight_kg" in expected or "part_weight_kg" in expected:
-        checks["weight"] = _weight_check(
-            actual.get("estimated_weight_kg"), expected_weight
-        )
+        expected_density = expected.get("density_g_cm3")
+        actual_density = actual.get("density_g_cm3")
+        if (
+            expected_density is not None
+            and (
+                actual_density is None
+                or abs(float(actual_density) - float(expected_density)) > 0.001
+            )
+        ):
+            checks["weight"] = _check(
+                "warning",
+                "Weight not compared because material density differs from ground truth.",
+                actual_density_g_cm3=actual_density,
+                expected_density_g_cm3=expected_density,
+            )
+        else:
+            checks["weight"] = _weight_check(
+                actual.get("estimated_weight_kg"), expected_weight
+            )
     if "declared_thickness_mm" in expected:
         checks["declared_thickness"] = _numeric_check(
             actual.get("declared_thickness_mm"),
@@ -355,12 +492,17 @@ def evaluate_staffa(actual: dict[str, Any], expected: dict[str, Any]) -> dict[st
         checks["circular_holes"] = _circular_holes_check(actual_holes, expected_holes)
     if "elongated" in expected_holes:
         checks["elongated_holes"] = _elongated_holes_check(actual_holes, expected_holes)
+    if "rounded_rectangular" in expected_holes:
+        checks["rounded_rectangular_geometry"] = _rounded_rectangular_holes_check(
+            actual_holes, expected_holes
+        )
     if "polygonal" in expected_holes:
         checks["polygonal_holes"] = _polygonal_holes_check(actual_holes, expected_holes)
 
     summary_groups = {
         "circular_holes": "circular",
         "elongated_holes": "elongated",
+        "rounded_rectangular_holes": "rounded_rectangular",
         "polygonal_holes": "polygonal",
         "formed_holes": "formed",
         "unknown_holes": "unknown",
@@ -377,6 +519,7 @@ def evaluate_staffa(actual: dict[str, Any], expected: dict[str, Any]) -> dict[st
                     for group in (
                         "circular",
                         "elongated",
+                        "rounded_rectangular",
                         "polygonal",
                         "formed",
                         "unknown",
@@ -410,6 +553,15 @@ def evaluate_staffa(actual: dict[str, Any], expected: dict[str, Any]) -> dict[st
             expected.get("complexity_score"),
             "complexity_score",
         )
+    expected_geometry = expected.get("geometry", {})
+    actual_geometry = actual.get("geometry", {})
+    for field in ("solid_count", "face_count", "edge_count", "vertex_count"):
+        if field in expected_geometry:
+            checks[f"geometry_{field}"] = _exact_check(
+                int(actual_geometry.get(field, -1)),
+                int(expected_geometry[field]),
+                field,
+            )
 
     score_total = _score(checks)
     warnings = [

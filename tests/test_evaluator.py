@@ -108,3 +108,96 @@ def test_evaluator_supports_count_only_complex_ground_truth():
     assert report["checks"]["formed_holes"]["status"] == "pass"
     assert report["checks"]["unknown_holes"]["status"] == "pass"
     assert report["checks"]["total_holes"]["status"] == "pass"
+
+
+def test_evaluator_compares_slot_overall_length_and_width():
+    report = evaluate_staffa(
+        {
+            "holes": {
+                "elongated": [
+                    {
+                        "length_mm": 71.42,
+                        "overall_length_mm": 30.0,
+                        "width_mm": 10.0,
+                    }
+                ]
+            }
+        },
+        {
+            "holes": {
+                "elongated": [
+                    {"overall_length_mm": 30.0, "width_mm": 10.0, "count": 1}
+                ]
+            }
+        },
+    )
+
+    assert report["status"] == "pass"
+    assert report["checks"]["elongated_holes"]["status"] == "pass"
+
+
+def test_evaluator_compares_rounded_rectangle_length_width_and_radius():
+    report = evaluate_staffa(
+        {
+            "holes": {
+                "rounded_rectangular": [
+                    {
+                        "overall_length_mm": 26.0,
+                        "width_mm": 16.0,
+                        "corner_radius_mm": 4.0,
+                    }
+                ]
+            }
+        },
+        {
+            "holes": {
+                "rounded_rectangular": [
+                    {
+                        "overall_length_mm": 26.0,
+                        "width_mm": 16.0,
+                        "corner_radius_mm": 4.0,
+                        "count": 1,
+                    }
+                ]
+            }
+        },
+    )
+
+    assert report["status"] == "pass"
+    assert report["checks"]["rounded_rectangular_geometry"]["status"] == "pass"
+
+
+def test_evaluator_compares_individual_bend_geometry():
+    report = evaluate_staffa(
+        {
+            "bends": {
+                "count": 2,
+                "confidence": "high",
+                "items": [
+                    {"radius_mm": 2.0, "angle_deg": 90.0, "length_mm": 46.0},
+                    {"radius_mm": 2.0, "angle_deg": 90.0, "length_mm": 54.0},
+                ],
+            }
+        },
+        {
+            "bends": {
+                "count": 2,
+                "items": [
+                    {"radius_mm": 2.0, "angle_deg": 90.0, "length_mm": 46.0},
+                    {"radius_mm": 2.0, "angle_deg": 90.0, "length_mm": 54.0},
+                ],
+            }
+        },
+    )
+
+    assert report["status"] == "pass"
+    assert report["checks"]["bends"]["status"] == "pass"
+
+
+def test_evaluator_does_not_compare_weight_when_density_differs():
+    report = evaluate_staffa(
+        {"estimated_weight_kg": 0.05, "density_g_cm3": 2.7},
+        {"estimated_weight_kg": 0.143, "density_g_cm3": 7.85},
+    )
+
+    assert report["checks"]["weight"]["status"] == "warning"

@@ -166,6 +166,7 @@ def test_frontend_returns_html():
         in response.text
     )
     assert '["Asole",' in response.text
+    assert '["Aperture rettangolari raccordate",' in response.text
     assert '["Fori non riconosciuti",' in response.text
     assert 'id="geometry-data"' in response.text
     assert 'id="holes-detail"' in response.text
@@ -463,6 +464,7 @@ def test_quote_pdf_part_rows_include_all_hole_categories():
 
     assert rows["Fori circolari"] == 4
     assert rows["Asole"] == 2
+    assert rows["Aperture rettangolari raccordate"] == 0
     assert rows["Fori poligonali"] == 2
     assert rows["Fori sagomati/imbutiti"] == 0
     assert rows["Fori non riconosciuti"] == 0
@@ -484,6 +486,27 @@ def test_quote_pdf_detail_rows_include_hole_and_bend_measurements():
     assert any(group[0] == 2 and group[1] == "Circolare" for group in hole_groups)
     assert len(bend_rows) == 2
     assert bend_rows[0][3] == "90 deg"
+
+
+def test_quote_pdf_detail_rows_include_rounded_rectangle_dimensions():
+    analysis = json.loads(STAFFA_ACTUAL_FILE.read_text(encoding="utf-8"))
+    analysis["holes"]["rounded_rectangular"] = [
+        {
+            "overall_length_mm": 26.0,
+            "width_mm": 16.0,
+            "corner_radius_mm": 4.0,
+            "perimeter_mm": 77.13,
+            "area_mm2": 402.27,
+            "confidence": "high",
+        }
+    ]
+
+    rows = _hole_detail_rows(analysis)
+    rounded_row = next(row for row in rows if row[0] == "Rettangolare raccordata 1")
+
+    assert rounded_row[1] == "L 26 mm / W 16 mm / R 4 mm"
+    assert rounded_row[2] == "77.13 mm"
+    assert rounded_row[3] == "402.27 mm2"
 
 
 def test_quote_pdf_labels_brep_counts_as_topological_data(monkeypatch):
@@ -1234,7 +1257,8 @@ def test_detect_polygonal_holes_staffa_test_1():
         hole
         for hole in polygonal_holes
         if hole["max_dimension_mm"] is not None
-        and abs(hole["max_dimension_mm"] - 27.71) <= 0.25
+        and abs(hole["max_dimension_mm"] - 9.238) <= 0.25
+        and abs(hole["perimeter_mm"] - 27.71) <= 0.25
     ]
 
     assert len(expected_dimension_holes) >= 2

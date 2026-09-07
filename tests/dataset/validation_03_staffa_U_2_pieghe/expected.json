@@ -1,0 +1,28 @@
+{
+  "display_name": "03 STAFFA U 2 PIEGHE",
+  "material_key": "acciaio",
+  "density_g_cm3": 7.85,
+  "detected_thickness_mm": 2.0,
+  "dimensions_mm": {"x": 90.0, "y": 70.0, "z": 40.0},
+  "volume_cm3": 22.264,
+  "surface_area_cm2": 234.99,
+  "estimated_weight_kg": 0.17477,
+  "holes": {
+    "elongated": [],
+    "polygonal": [],
+    "circular_holes": 6,
+    "elongated_holes": 0,
+    "polygonal_holes": 0,
+    "formed_holes": 0,
+    "unknown_holes": 0,
+    "total_holes": 6
+  },
+  "bends": {
+    "count": 2,
+    "items": [
+      {"radius_mm": 2.0, "angle_deg": 90.0, "length_mm": 70.0},
+      {"radius_mm": 2.0, "angle_deg": 90.0, "length_mm": 70.0}
+    ]
+  },
+  "geometry": {"solid_count": 1, "face_count": 20, "edge_count": 54, "vertex_count": 36}
+}

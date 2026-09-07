@@ -115,7 +115,7 @@
       "message": "Polygonal holes grouped by maximum dimension.",
       "groups": [
         {
-          "max_dimension_mm": 27.71,
+          "max_dimension_mm": 9.238,
           "expected_count": 2,
           "actual_count": 2,
           "status": "pass"

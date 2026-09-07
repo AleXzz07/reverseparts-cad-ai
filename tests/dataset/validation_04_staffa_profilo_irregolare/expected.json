@@ -1,0 +1,30 @@
+{
+  "display_name": "04 STAFFA PROFILO IRREGOLARE",
+  "material_key": "acciaio",
+  "density_g_cm3": 7.85,
+  "detected_thickness_mm": 2.0,
+  "dimensions_mm": {"x": 120.0, "y": 80.0, "z": 2.0},
+  "volume_cm3": 16.474,
+  "surface_area_cm2": 176.143,
+  "estimated_weight_kg": 0.129323,
+  "holes": {
+    "circular": [
+      {"diameter_mm": 6.0, "count": 1},
+      {"diameter_mm": 12.0, "count": 1}
+    ],
+    "elongated": [{"overall_length_mm": 28.0, "width_mm": 8.0, "count": 1}],
+    "rounded_rectangular": [
+      {"overall_length_mm": 26.0, "width_mm": 16.0, "corner_radius_mm": 4.0, "count": 1}
+    ],
+    "polygonal": [],
+    "circular_holes": 2,
+    "elongated_holes": 1,
+    "rounded_rectangular_holes": 1,
+    "polygonal_holes": 0,
+    "formed_holes": 0,
+    "unknown_holes": 0,
+    "total_holes": 4
+  },
+  "bends": {"count": 0},
+  "geometry": {"solid_count": 1, "face_count": 26, "edge_count": 74, "vertex_count": 50}
+}

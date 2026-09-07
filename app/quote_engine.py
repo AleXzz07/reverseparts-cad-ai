@@ -372,12 +372,14 @@ def quote_from_cad(
     quantity = max(int(quantity), 1)
     circular_holes = _feature_count(cad_data, "circular")
     elongated_holes = _feature_count(cad_data, "elongated")
+    rounded_rectangular_holes = _feature_count(cad_data, "rounded_rectangular")
     polygonal_holes = _feature_count(cad_data, "polygonal")
     formed_holes = _feature_count(cad_data, "formed")
     unknown_holes = _feature_count(cad_data, "unknown")
     total_holes = (
         circular_holes
         + elongated_holes
+        + rounded_rectangular_holes
         + polygonal_holes
         + formed_holes
         + unknown_holes
@@ -465,7 +467,7 @@ def quote_from_cad(
     complexity = _complexity(
         circular_holes,
         elongated_holes,
-        polygonal_holes,
+        polygonal_holes + rounded_rectangular_holes,
         formed_holes,
         unknown_holes,
         bends,
@@ -474,7 +476,9 @@ def quote_from_cad(
         quantity=quantity,
         circular_holes=circular_holes,
         elongated_holes=elongated_holes,
-        polygonal_holes=polygonal_holes,
+        # A rounded rectangle uses the existing non-circular opening effort;
+        # P1 intentionally introduces no new economic coefficient.
+        polygonal_holes=polygonal_holes + rounded_rectangular_holes,
         formed_holes=formed_holes,
         unknown_holes=unknown_holes,
         total_holes=total_holes,
@@ -491,7 +495,7 @@ def quote_from_cad(
             quantity=break_quantity,
             circular_holes=circular_holes,
             elongated_holes=elongated_holes,
-            polygonal_holes=polygonal_holes,
+            polygonal_holes=polygonal_holes + rounded_rectangular_holes,
             formed_holes=formed_holes,
             unknown_holes=unknown_holes,
             total_holes=total_holes,
@@ -535,6 +539,7 @@ def quote_from_cad(
         "features_summary": {
             "circular_holes": circular_holes,
             "elongated_holes": elongated_holes,
+            "rounded_rectangular_holes": rounded_rectangular_holes,
             "polygonal_holes": polygonal_holes,
             "formed_holes": formed_holes,
             "unknown_holes": unknown_holes,
@@ -552,6 +557,7 @@ def quote_from_cad(
                 if (
                     circular_holes
                     + elongated_holes
+                    + rounded_rectangular_holes
                     + polygonal_holes
                     + unknown_holes
                     >= 6

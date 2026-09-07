@@ -1292,6 +1292,9 @@
       if (group === "Asola") {
         return `${number(feature.overall_length_mm, "mm")} x ${number(feature.width_mm, "mm")}`;
       }
+      if (group === "Rettangolare raccordata") {
+        return `${number(feature.overall_length_mm, "mm")} x ${number(feature.width_mm, "mm")} · R ${number(feature.corner_radius_mm, "mm")}`;
+      }
       if (feature.bounding_box_mm) return dimensionsText(feature.bounding_box_mm);
       if (feature.max_dimension_mm != null) return number(feature.max_dimension_mm, "mm");
       if (feature.perimeter_mm != null) return `P ${number(feature.perimeter_mm, "mm")}`;
@@ -1342,6 +1345,7 @@
       const groups = [
         ["Circolare", holes.circular || []],
         ["Asola", holes.elongated || []],
+        ["Rettangolare raccordata", holes.rounded_rectangular || []],
         ["Poligonale", holes.polygonal || []],
         ["Sagomato/imbutito", holes.formed || []],
         ["Non riconosciuto", holes.unknown || []]
@@ -1576,11 +1580,12 @@
       const preview = payload.preview || {};
       const circularHoles = features.circular_holes ?? holes.circular_holes ?? holes.circular?.length ?? 0;
       const elongatedHoles = features.elongated_holes ?? holes.elongated_holes ?? holes.elongated?.length ?? 0;
+      const roundedRectangularHoles = features.rounded_rectangular_holes ?? holes.rounded_rectangular_holes ?? holes.rounded_rectangular?.length ?? 0;
       const polygonalHoles = features.polygonal_holes ?? holes.polygonal_holes ?? holes.polygonal?.length ?? 0;
       const formedHoles = features.formed_holes ?? holes.formed_holes ?? holes.formed?.length ?? 0;
       const unknownHoles = features.unknown_holes ?? holes.unknown_holes ?? holes.unknown?.length ?? 0;
       const totalHoles = features.total_holes ?? holes.total_holes
-        ?? (circularHoles + elongatedHoles + polygonalHoles + formedHoles + unknownHoles);
+        ?? (circularHoles + elongatedHoles + roundedRectangularHoles + polygonalHoles + formedHoles + unknownHoles);
       renderPreviewGallery(preview, analysis.complexity_score);
       renderTechnicalDetails(analysis);
       const viewerEnabled = defaults?.viewer_model_enabled !== false;
@@ -1601,6 +1606,7 @@
         ["Peso netto pezzo", number(quote.material?.part_weight_kg ?? analysis.estimated_weight_kg, "kg")],
         ["Fori circolari", circularHoles],
         ["Asole", elongatedHoles],
+        ["Aperture rettangolari raccordate", roundedRectangularHoles],
         ["Fori poligonali", polygonalHoles],
         ["Fori sagomati/imbutiti", formedHoles],
         ["Fori non riconosciuti", unknownHoles],

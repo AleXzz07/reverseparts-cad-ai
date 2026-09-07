@@ -8,8 +8,12 @@ from app.cad_analyzer import (
     _annotate_hole_to_hole_distances,
     _cylindrical_face_angle_deg,
     _detect_circular_holes,
+    _detect_cutting_lengths,
     _detect_elongated_holes,
     _detect_polygonal_holes,
+    _detect_rounded_rectangular_holes,
+    _detect_sheet_thickness,
+    _detect_unknown_holes,
     _estimate_flat_pattern,
     _mass_center_components,
     _planar_wire_area,
@@ -53,19 +57,41 @@ class _Wire:
         return self._edge_distance, [], []
 
 
-def _edge(type_id, **curve_values):
+def _edge(type_id, *, length=None, **curve_values):
+    values = {"Curve": SimpleNamespace(TypeId=type_id, **curve_values)}
+    if length is not None:
+        values["Length"] = length
+    return SimpleNamespace(**values)
+
+
+def _planar_face(inner_wires, *, position=None, axis=None, area=100.0):
+    outer_wire = _Wire([], length=0.0, bbox=_bbox(0.0, 0.0), closed=False)
     return SimpleNamespace(
-        Curve=SimpleNamespace(TypeId=type_id, **curve_values)
+        Surface=SimpleNamespace(
+            TypeId="Part::GeomPlane",
+            Axis=axis or _vector(z=1.0),
+            Position=position or _vector(),
+        ),
+        Wires=[outer_wire, *inner_wires],
+        Area=area,
     )
 
 
 def _planar_shape(inner_wire):
-    outer_wire = _Wire([], length=0.0, bbox=_bbox(0.0, 0.0), closed=False)
-    face = SimpleNamespace(
-        Surface=SimpleNamespace(TypeId="Part::GeomPlane", Axis=_vector(z=1.0)),
-        Wires=[outer_wire, inner_wire],
+    return SimpleNamespace(Faces=[_planar_face([inner_wire])], Edges=[])
+
+
+def _paired_planar_shape(inner_wire, opposite_wire, *, thickness=2.0):
+    return SimpleNamespace(
+        Faces=[
+            _planar_face([inner_wire]),
+            _planar_face(
+                [opposite_wire],
+                position=_vector(z=thickness),
+            ),
+        ],
+        Edges=[],
     )
-    return SimpleNamespace(Faces=[face], Edges=[])
 
 
 def test_large_planar_circular_opening_is_not_limited_to_20_mm():
@@ -86,22 +112,25 @@ def test_large_planar_circular_opening_is_not_limited_to_20_mm():
 
 
 def test_planar_slot_is_not_limited_to_old_45_60_mm_perimeter():
-    arcs = [
-        _edge("Part::GeomCircle", Radius=3.0, Center=_vector()),
-        _edge("Part::GeomCircle", Radius=3.0, Center=_vector(x=30.0)),
-    ]
-    lines = [
-        _edge("Part::GeomLine", Direction=_vector(x=1.0)),
-        _edge("Part::GeomLine", Direction=_vector(x=-1.0)),
-    ]
-    inner_wire = _Wire(
-        [*arcs, *lines],
-        length=100.0,
-        bbox=_bbox(36.0, 6.0),
-    )
+    def slot_wire(z):
+        arcs = [
+            _edge("Part::GeomCircle", Radius=3.0, Center=_vector(z=z)),
+            _edge("Part::GeomCircle", Radius=3.0, Center=_vector(x=30.0, z=z)),
+        ]
+        lines = [
+            _edge("Part::GeomLine", Direction=_vector(x=1.0)),
+            _edge("Part::GeomLine", Direction=_vector(x=-1.0)),
+        ]
+        return _Wire(
+            [*arcs, *lines],
+            length=100.0,
+            bbox=_bbox(36.0, 6.0, z_min=z),
+        )
 
     holes = _detect_elongated_holes(
-        _planar_shape(inner_wire), load_analysis_config()
+        _paired_planar_shape(slot_wire(0.0), slot_wire(2.0)),
+        load_analysis_config(),
+        2.0,
     )
 
     assert len(holes) == 1
@@ -114,20 +143,210 @@ def test_planar_slot_is_not_limited_to_old_45_60_mm_perimeter():
     assert holes[0].width_mm == 6.0
 
 
-def test_planar_polygon_is_not_limited_to_old_20_35_mm_perimeter():
-    inner_wire = _Wire(
-        [_edge("Part::GeomLine") for _ in range(4)],
-        length=80.0,
-        bbox=_bbox(30.0, 10.0),
+def test_planar_slot_accepts_split_semicircle_edges_from_step_export():
+    def slot_wire(z):
+        arcs = [
+            _edge("Part::GeomCircle", Radius=5.0, Center=_vector(x=5.0, z=z)),
+            _edge("Part::GeomCircle", Radius=5.0, Center=_vector(x=25.0, z=z)),
+            _edge("Part::GeomCircle", Radius=5.0, Center=_vector(x=25.0, z=z)),
+        ]
+        lines = [
+            _edge("Part::GeomLine", Direction=_vector(x=1.0)),
+            _edge("Part::GeomLine", Direction=_vector(x=-1.0)),
+        ]
+        return _Wire(
+            [*arcs, *lines],
+            length=71.4159,
+            bbox=_bbox(30.0, 10.0, z_min=z),
+        )
+
+    holes = _detect_elongated_holes(
+        _paired_planar_shape(slot_wire(0.0), slot_wire(2.0)),
+        load_analysis_config(),
+        2.0,
     )
 
+    assert len(holes) == 1
+    assert holes[0].overall_length_mm == 30.0
+    assert holes[0].straight_length_mm == 20.0
+    assert holes[0].width_mm == 10.0
+    assert holes[0].perimeter_mm == 71.42
+
+
+def test_rounded_rectangular_opening_reports_size_radius_perimeter_and_area():
+    def rounded_rectangle_wire(z):
+        arcs = [
+            _edge(
+                "Part::GeomCircle",
+                Radius=4.0,
+                Center=_vector(x=x, y=y, z=z),
+            )
+            for x, y in ((4.0, 4.0), (22.0, 4.0), (22.0, 12.0), (4.0, 12.0))
+        ]
+        lines = [
+            _edge("Part::GeomLine", length=18.0, Direction=_vector(x=1.0)),
+            _edge("Part::GeomLine", length=18.0, Direction=_vector(x=-1.0)),
+            _edge("Part::GeomLine", length=8.0, Direction=_vector(y=1.0)),
+            _edge("Part::GeomLine", length=8.0, Direction=_vector(y=-1.0)),
+        ]
+        return _Wire(
+            [*arcs, *lines],
+            length=77.1327,
+            bbox=_bbox(26.0, 16.0, z_min=z),
+        )
+
+    holes = _detect_rounded_rectangular_holes(
+        _paired_planar_shape(
+            rounded_rectangle_wire(0.0),
+            rounded_rectangle_wire(2.0),
+        ),
+        load_analysis_config(),
+        2.0,
+    )
+
+    assert len(holes) == 1
+    assert holes[0].type == "rounded rectangular opening"
+    assert holes[0].overall_length_mm == 26.0
+    assert holes[0].width_mm == 16.0
+    assert holes[0].corner_radius_mm == 4.0
+    assert holes[0].max_dimension_mm == 26.0
+    assert holes[0].perimeter_mm == 77.13
+    assert holes[0].area_mm2 == 402.27
+    assert holes[0].confidence == "high"
+
+
+def test_slot_is_not_classified_as_rounded_rectangular_opening():
+    def slot_wire(z):
+        return _Wire(
+            [
+                _edge("Part::GeomCircle", Radius=5.0, Center=_vector(x=5.0, z=z)),
+                _edge("Part::GeomCircle", Radius=5.0, Center=_vector(x=25.0, z=z)),
+                _edge("Part::GeomLine", length=20.0, Direction=_vector(x=1.0)),
+                _edge("Part::GeomLine", length=20.0, Direction=_vector(x=-1.0)),
+            ],
+            length=71.4159,
+            bbox=_bbox(30.0, 10.0, z_min=z),
+        )
+
+    assert _detect_rounded_rectangular_holes(
+        _paired_planar_shape(slot_wire(0.0), slot_wire(2.0)),
+        load_analysis_config(),
+        2.0,
+    ) == []
+
+
+def test_planar_polygon_is_not_limited_to_old_20_35_mm_perimeter():
+    def polygon_wire(z):
+        return _Wire(
+            [_edge("Part::GeomLine") for _ in range(4)],
+            length=80.0,
+            bbox=_bbox(30.0, 10.0, z_min=z),
+        )
+
     holes = _detect_polygonal_holes(
-        _planar_shape(inner_wire), load_analysis_config()
+        _paired_planar_shape(polygon_wire(0.0), polygon_wire(2.0)),
+        load_analysis_config(),
+        2.0,
     )
 
     assert len(holes) == 1
     assert holes[0].num_sides == 4
-    assert holes[0].max_dimension_mm == 80.0
+    assert holes[0].max_dimension_mm == 30.0
+    assert holes[0].perimeter_mm == 80.0
+
+
+def test_unpaired_bend_transition_wire_is_not_a_polygonal_hole():
+    bend_transition = _Wire(
+        [_edge("Part::GeomLine") for _ in range(4)],
+        length=114.928,
+        bbox=_bbox(54.0, 3.464),
+    )
+    shape = SimpleNamespace(
+        Faces=[
+            _planar_face([bend_transition]),
+            _planar_face([], position=_vector(z=2.0)),
+        ],
+        Edges=[],
+    )
+
+    holes = _detect_polygonal_holes(shape, load_analysis_config(), 2.0)
+
+    assert holes == []
+    assert _detect_unknown_holes(shape, [], load_analysis_config(), 2.0) == []
+
+
+def test_sheet_thickness_prefers_supported_skin_area_over_smaller_side_gap():
+    shape = SimpleNamespace(
+        Faces=[
+            _planar_face([], position=_vector(z=0.0), area=8000.0),
+            _planar_face([], position=_vector(z=2.0), area=8000.0),
+            _planar_face(
+                [],
+                position=_vector(y=62.0),
+                axis=_vector(y=1.0),
+                area=40.0,
+            ),
+            _planar_face(
+                [],
+                position=_vector(y=63.0),
+                axis=_vector(y=1.0),
+                area=40.0,
+            ),
+        ],
+        Volume=16000.0,
+        Area=17000.0,
+    )
+
+    thickness, confidence = _detect_sheet_thickness(shape)
+
+    assert thickness == 2.0
+    assert confidence == "medium"
+
+
+def test_cutting_length_uses_polygon_perimeter_not_max_dimension():
+    outer_wire = _Wire(
+        [_edge("Part::GeomLine") for _ in range(4)],
+        length=300.0,
+        bbox=_bbox(100.0, 50.0),
+    )
+    shape = SimpleNamespace(Faces=[_planar_face([])], Edges=[])
+    shape.Faces[0].Wires[0] = outer_wire
+
+    _, inner, total, _, _ = _detect_cutting_lengths(
+        shape,
+        circular=[],
+        elongated=[],
+        rounded_rectangular=[],
+        polygonal=[HoleFeature(max_dimension_mm=30.0, perimeter_mm=80.0)],
+        formed=[],
+        unknown=[],
+    )
+
+    assert inner == 80.0
+    assert total == 380.0
+
+
+def test_cutting_length_includes_rounded_rectangular_perimeter():
+    outer_wire = _Wire(
+        [_edge("Part::GeomLine") for _ in range(4)],
+        length=300.0,
+        bbox=_bbox(100.0, 50.0),
+    )
+    shape = SimpleNamespace(Faces=[_planar_face([])], Edges=[])
+    shape.Faces[0].Wires[0] = outer_wire
+
+    _, inner, total, _, _ = _detect_cutting_lengths(
+        shape,
+        circular=[],
+        elongated=[],
+        rounded_rectangular=[HoleFeature(perimeter_mm=77.13)],
+        polygonal=[],
+        formed=[],
+        unknown=[],
+    )
+
+    assert inner == 77.13
+    assert total == 377.13
 
 
 def test_planar_wire_area_fails_safely_for_an_invalid_wire(monkeypatch):

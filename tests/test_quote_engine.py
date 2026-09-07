@@ -32,6 +32,7 @@ def test_quote_from_cad_staffa_test_1():
     assert quote["features_summary"] == {
         "circular_holes": 4,
         "elongated_holes": 2,
+        "rounded_rectangular_holes": 0,
         "polygonal_holes": 2,
         "formed_holes": 0,
         "unknown_holes": 0,
@@ -191,6 +192,25 @@ def test_quote_counts_unknown_holes_and_adds_warning():
         "Some openings were detected but their shape could not be "
         "classified with confidence."
     ) in quote["warnings"]
+
+
+def test_quote_counts_rounded_rectangular_opening_as_one_pierce():
+    cad_data = _cad_data_without_cutting()
+    cad_data["holes"]["rounded_rectangular"] = [
+        {
+            "overall_length_mm": 26.0,
+            "width_mm": 16.0,
+            "corner_radius_mm": 4.0,
+            "perimeter_mm": 77.13,
+        }
+    ]
+    cad_data["cutting"] = {"total_cut_length_mm": 500.0}
+
+    quote = quote_from_cad(cad_data)
+
+    assert quote["features_summary"]["rounded_rectangular_holes"] == 1
+    assert quote["features_summary"]["total_holes"] == 9
+    assert quote["laser_details"]["pierce_count"] == 10
 
 
 def test_quote_uses_material_laser_profile_for_cut_length():

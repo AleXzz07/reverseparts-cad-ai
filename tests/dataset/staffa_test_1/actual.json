@@ -159,7 +159,8 @@
     "polygonal": [
       {
         "num_sides": 6,
-        "max_dimension_mm": 27.71,
+      "max_dimension_mm": 9.238,
+      "perimeter_mm": 27.71,
         "bounding_box_mm": {
           "x": 0.0,
           "y": 9.238,
@@ -185,7 +186,8 @@
       },
       {
         "num_sides": 6,
-        "max_dimension_mm": 27.71,
+      "max_dimension_mm": 9.238,
+      "perimeter_mm": 27.71,
         "bounding_box_mm": {
           "x": 0.0,
           "y": 9.238,

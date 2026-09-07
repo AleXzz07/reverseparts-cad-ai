@@ -1,0 +1,29 @@
+{
+  "display_name": "02 STAFFA L 1 PIEGA",
+  "material_key": "acciaio",
+  "density_g_cm3": 7.85,
+  "detected_thickness_mm": 2.0,
+  "dimensions_mm": {"x": 80.0, "y": 60.0, "z": 50.0},
+  "volume_cm3": 14.847,
+  "surface_area_cm2": 157.576,
+  "estimated_weight_kg": 0.116552,
+  "holes": {
+    "circular": [
+      {"diameter_mm": 8.0, "count": 2},
+      {"diameter_mm": 10.0, "count": 1}
+    ],
+    "elongated": [],
+    "polygonal": [],
+    "circular_holes": 3,
+    "elongated_holes": 0,
+    "polygonal_holes": 0,
+    "formed_holes": 0,
+    "unknown_holes": 0,
+    "total_holes": 3
+  },
+  "bends": {
+    "count": 1,
+    "items": [{"radius_mm": 2.0, "angle_deg": 90.0, "length_mm": 60.0}]
+  },
+  "geometry": {"solid_count": 1, "face_count": 13, "edge_count": 33, "vertex_count": 22}
+}
