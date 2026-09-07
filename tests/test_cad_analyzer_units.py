@@ -112,10 +112,16 @@ def test_large_planar_circular_opening_is_not_limited_to_20_mm():
 
 
 def test_planar_slot_is_not_limited_to_old_45_60_mm_perimeter():
-    def slot_wire(z):
+    def slot_wire(z, *, reverse_orientation=False):
+        arc_centers = [
+            _vector(z=z),
+            _vector(x=30.0, z=z),
+        ]
+        if reverse_orientation:
+            arc_centers.reverse()
         arcs = [
-            _edge("Part::GeomCircle", Radius=3.0, Center=_vector(z=z)),
-            _edge("Part::GeomCircle", Radius=3.0, Center=_vector(x=30.0, z=z)),
+            _edge("Part::GeomCircle", Radius=3.0, Center=center)
+            for center in arc_centers
         ]
         lines = [
             _edge("Part::GeomLine", Direction=_vector(x=1.0)),
@@ -128,7 +134,10 @@ def test_planar_slot_is_not_limited_to_old_45_60_mm_perimeter():
         )
 
     holes = _detect_elongated_holes(
-        _paired_planar_shape(slot_wire(0.0), slot_wire(2.0)),
+        _paired_planar_shape(
+            slot_wire(0.0),
+            slot_wire(2.0, reverse_orientation=True),
+        ),
         load_analysis_config(),
         2.0,
     )
@@ -141,6 +150,9 @@ def test_planar_slot_is_not_limited_to_old_45_60_mm_perimeter():
     assert holes[0].perimeter_mm == 100.0
     assert holes[0].area_mm2 == 208.27
     assert holes[0].width_mm == 6.0
+    assert holes[0].axis == [0.0, 0.0, 1.0]
+    assert holes[0].orientation_axis == [1.0, 0.0, 0.0]
+    assert holes[0].confidence == "high"
 
 
 def test_planar_slot_accepts_split_semicircle_edges_from_step_export():
@@ -526,6 +538,7 @@ def test_hole_to_edge_distance_is_annotated_without_changing_classification():
         diameter_mm=6.0,
         center=[3.0, 3.0, 0.0],
         axis=[0.0, 0.0, 1.0],
+        orientation_axis=[1.0, 0.0, 0.0],
         confidence="high",
     )
 
@@ -574,7 +587,11 @@ def test_hole_to_hole_distance_is_measured_between_planar_opening_wires():
         Wires=[outer_wire, first_wire, second_wire],
     )
     features = [
-        HoleFeature(center=[7.0, 7.0, 0.0], axis=[0.0, 0.0, 1.0]),
+        HoleFeature(
+            center=[7.0, 7.0, 0.0],
+            axis=[0.0, 0.0, 1.0],
+            orientation_axis=[1.0, 0.0, 0.0],
+        ),
         HoleFeature(center=[25.0, 7.0, 0.0], axis=[0.0, 0.0, 1.0]),
     ]
 

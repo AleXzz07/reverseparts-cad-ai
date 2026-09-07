@@ -215,6 +215,24 @@ def test_real_cad_analysis_matches_dataset_ground_truth(case_name, tmp_path):
         assert slot["overall_length_mm"] == pytest.approx(30.0, abs=0.25)
         assert slot["width_mm"] == pytest.approx(10.0, abs=0.25)
         assert slot["perimeter_mm"] == pytest.approx(71.42, abs=0.25)
+        assert slot["axis"] == pytest.approx([0.0, 0.0, 1.0], abs=0.01)
+        assert [abs(value) for value in slot["orientation_axis"]] == pytest.approx(
+            [1.0, 0.0, 0.0], abs=0.01
+        )
+        manufacturability = actual["manufacturability"]
+        assert manufacturability["measured_holes"] == 5
+        assert manufacturability["measured_hole_pairs"] == 10
+        assert manufacturability["hole_to_edge_confidence"] == "high"
+        assert manufacturability["hole_to_hole_confidence"] == "high"
+        assert manufacturability["min_hole_to_hole_mm"] == pytest.approx(
+            34.012, abs=0.05
+        )
+        assert slot["edge_distance_mm"] is not None
+        assert slot["nearest_hole_distance_mm"] is not None
+        assert not any(
+            "Hole-to-edge distance is available only" in warning
+            for warning in manufacturability["warnings"]
+        )
 
     if case_name == "validation_04_staffa_profilo_irregolare":
         assert actual["detected_thickness_mm"] == pytest.approx(2.0, abs=0.1)
@@ -225,11 +243,29 @@ def test_real_cad_analysis_matches_dataset_ground_truth(case_name, tmp_path):
         slot = holes["elongated"][0]
         assert slot["overall_length_mm"] == pytest.approx(28.0, abs=0.25)
         assert slot["width_mm"] == pytest.approx(8.0, abs=0.25)
+        assert slot["axis"] == pytest.approx([0.0, 0.0, 1.0], abs=0.01)
+        assert [abs(value) for value in slot["orientation_axis"]] == pytest.approx(
+            [1.0, 0.0, 0.0], abs=0.01
+        )
         rounded = holes["rounded_rectangular"][0]
         assert rounded["overall_length_mm"] == pytest.approx(26.0, abs=0.25)
         assert rounded["width_mm"] == pytest.approx(16.0, abs=0.25)
         assert rounded["corner_radius_mm"] == pytest.approx(4.0, abs=0.25)
         assert rounded["perimeter_mm"] == pytest.approx(77.13, abs=0.25)
+        manufacturability = actual["manufacturability"]
+        assert manufacturability["measured_holes"] == 4
+        assert manufacturability["measured_hole_pairs"] == 6
+        assert manufacturability["hole_to_edge_confidence"] == "high"
+        assert manufacturability["hole_to_hole_confidence"] == "high"
+        assert manufacturability["min_hole_to_hole_mm"] == pytest.approx(
+            16.0, abs=0.05
+        )
+        assert slot["edge_distance_mm"] is not None
+        assert slot["nearest_hole_distance_mm"] is not None
+        assert not any(
+            "Hole-to-edge distance is available only" in warning
+            for warning in manufacturability["warnings"]
+        )
         assert actual["flat_pattern"]["net_developed_area_mm2"] == pytest.approx(
             8237.13,
             abs=0.1,

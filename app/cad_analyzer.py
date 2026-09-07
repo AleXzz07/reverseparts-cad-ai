@@ -605,7 +605,7 @@ def _planar_wire_area(wire) -> float | None:
         return None
 
 
-def _slot_axis_from_arc_centers(
+def _slot_orientation_axis_from_arc_centers(
     arc_centers: list[tuple[float, float, float]],
 ) -> tuple[float, float, float]:
     if len(arc_centers) != 2:
@@ -630,10 +630,23 @@ def _is_duplicate_slot(candidate: HoleFeature, existing: HoleFeature) -> bool:
     if candidate.axis is None or existing.axis is None:
         return False
 
+    orientation_matches = True
+    if candidate.orientation_axis is not None and existing.orientation_axis is not None:
+        # Slot orientation is axial: [x, y, z] and [-x, -y, -z] describe the
+        # same longitudinal direction and must deduplicate as one opening.
+        orientation_matches = _axis_aligned(
+            tuple(candidate.orientation_axis),
+            tuple(existing.orientation_axis),
+            tolerance=0.95,
+        )
+    elif candidate.orientation_axis is not None or existing.orientation_axis is not None:
+        orientation_matches = False
+
     return (
         abs(candidate.length_mm - existing.length_mm) <= 0.5
         and abs(candidate.width_mm - existing.width_mm) <= 0.3
         and _axis_aligned(tuple(candidate.axis), tuple(existing.axis), tolerance=0.95)
+        and orientation_matches
         and _vector_norm(
             tuple(left - right for left, right in zip(candidate.center, existing.center))
         )
@@ -900,14 +913,14 @@ def _detect_elongated_holes(
             ):
                 continue
 
-            slot_axis = _slot_axis_from_arc_centers(arc_centers)
+            orientation_axis = _slot_orientation_axis_from_arc_centers(arc_centers)
             straight_length = _vector_norm(
                 tuple(left - right for left, right in zip(arc_centers[0], arc_centers[1]))
             )
             overall_length = straight_length + width
             slot_area = straight_length * width + math.pi * (width / 2.0) ** 2
-            if _vector_norm(slot_axis) == 0:
-                slot_axis = line_directions[0]
+            if _vector_norm(orientation_axis) == 0:
+                orientation_axis = line_directions[0]
 
             _append_unique_slot(
                 slots,
@@ -921,7 +934,8 @@ def _detect_elongated_holes(
                     perimeter_mm=round(length, 2),
                     area_mm2=round(slot_area, 2),
                     center=_rounded_vector(_wire_center(wire)),
-                    axis=_rounded_vector(slot_axis),
+                    axis=_rounded_vector(_normalize_vector(surface.Axis)),
+                    orientation_axis=_rounded_vector(orientation_axis),
                     confidence="medium",
                 ),
             )

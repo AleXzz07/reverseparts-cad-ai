@@ -183,6 +183,8 @@ def test_frontend_returns_html():
     assert "Distanza minima foro-foro" in response.text
     assert "Raggruppamento fori uguali" in response.text
     assert "Origine coordinate" in response.text
+    assert "Normale apertura X/Y/Z" in response.text
+    assert "Orientamento asola X/Y/Z" in response.text
     assert 'id="flat-pattern-data"' in response.text
     assert "Sviluppo piano e grezzo" in response.text
     assert "Dimensioni grezzo sviluppato" in response.text
@@ -474,6 +476,8 @@ def test_quote_pdf_part_rows_include_all_hole_categories():
 def test_quote_pdf_detail_rows_include_hole_and_bend_measurements():
     analysis = json.loads(STAFFA_ACTUAL_FILE.read_text(encoding="utf-8"))
     analysis["holes"]["circular"][0]["edge_distance_mm"] = 12.5
+    analysis["holes"]["elongated"][0]["axis"] = [0.0, 0.0, 1.0]
+    analysis["holes"]["elongated"][0]["orientation_axis"] = [1.0, 0.0, 0.0]
     analysis["bends"]["items"][0]["angle_deg"] = 90.0
 
     hole_rows = _hole_detail_rows(analysis)
@@ -482,7 +486,10 @@ def test_quote_pdf_detail_rows_include_hole_and_bend_measurements():
 
     assert len(hole_rows) == 8
     assert hole_rows[0][0] == "Circolare 1"
-    assert hole_rows[0][6] == "12.5 mm"
+    assert hole_rows[0][7] == "12.5 mm"
+    slot_row = next(row for row in hole_rows if row[0] == "Asola 1")
+    assert slot_row[5] == "0 / 0 / 1"
+    assert slot_row[6] == "1 / 0 / 0"
     assert any(group[0] == 2 and group[1] == "Circolare" for group in hole_groups)
     assert len(bend_rows) == 2
     assert bend_rows[0][3] == "90 deg"

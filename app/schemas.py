@@ -33,6 +33,7 @@ class HoleFeature(BaseModel):
     depth_mm: float | None = None
     center: list[float] | None = None
     axis: list[float] | None = None
+    orientation_axis: list[float] | None = None
     position_mm: Dimensions | None = None
     edge_distance_mm: float | None = None
     nearest_hole_distance_mm: float | None = None

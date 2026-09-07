@@ -312,6 +312,7 @@ def _hole_detail_rows(analysis: dict[str, Any]) -> list[list[Any]]:
                     _value(feature.get("area_mm2"), "mm2"),
                     _vector(feature.get("center"), "mm"),
                     _vector(feature.get("axis")),
+                    _vector(feature.get("orientation_axis")),
                     _value(feature.get("edge_distance_mm"), "mm"),
                     _value(feature.get("nearest_hole_distance_mm"), "mm"),
                     feature.get("confidence", "low"),
@@ -725,7 +726,7 @@ def generate_quote_pdf(
     elements.extend(
         _detail_table(
             "Dettaglio fori",
-            ["Foro", "Misura", "Perim.", "Area", "Centro", "Asse", "Bordo", "Altro foro", "Conf."],
+            ["Foro", "Misura", "Perim.", "Area", "Centro", "Normale", "Orient.", "Bordo", "Altro foro", "Conf."],
             _hole_detail_rows(analysis),
         )
     )

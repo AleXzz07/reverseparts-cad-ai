@@ -1358,6 +1358,7 @@
           <td>${escapeHtml(number(feature.area_mm2, "mm²"))}</td>
           <td>${escapeHtml(vectorText(feature.center, "mm"))}</td>
           <td>${escapeHtml(vectorText(feature.axis))}</td>
+          <td>${escapeHtml(vectorText(feature.orientation_axis))}</td>
           <td>${escapeHtml(number(feature.edge_distance_mm, "mm"))}</td>
           <td>${escapeHtml(number(feature.nearest_hole_distance_mm, "mm"))}</td>
           <td>${escapeHtml(confidenceText(feature.confidence))}</td>
@@ -1367,7 +1368,7 @@
         <div class="technical-empty"><strong>Raggruppamento fori uguali</strong></div>
         <div class="feature-groups">${groupedHoleBadges(groups)}</div>
         <div class="technical-table-wrap"><table class="technical-table">
-          <thead><tr><th>Foro</th><th>Misura</th><th>Circonferenza/perimetro</th><th>Area</th><th>Posizione X/Y/Z</th><th>Asse X/Y/Z</th><th>Distanza bordo</th><th>Foro più vicino</th><th>Confidence</th></tr></thead>
+          <thead><tr><th>Foro</th><th>Misura</th><th>Circonferenza/perimetro</th><th>Area</th><th>Posizione X/Y/Z</th><th>Normale apertura X/Y/Z</th><th>Orientamento asola X/Y/Z</th><th>Distanza bordo</th><th>Foro più vicino</th><th>Confidence</th></tr></thead>
           <tbody>${holeRows.join("")}</tbody>
         </table></div>
       ` : '<div class="technical-empty">Nessuna apertura rilevata.</div>';
