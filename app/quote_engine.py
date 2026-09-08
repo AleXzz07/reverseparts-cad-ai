@@ -343,6 +343,53 @@ def _estimate_amounts(
     }
 
 
+def _not_applicable_amounts(reason: str) -> dict[str, Any]:
+    return {
+        "estimated_times_min": {
+            "cad_check": None,
+            "laser_cutting": None,
+            "bending": 0.0,
+            "handling": None,
+            "total": None,
+            "laser_time_source": "not_applicable",
+            "laser_cut_length_mm": None,
+        },
+        "estimated_internal_cost_eur": {
+            "material": None,
+            "laser": None,
+            "bending": 0.0,
+            "cad_check": None,
+            "handling": None,
+            "setup": None,
+            "total": None,
+            "unit_cost": None,
+        },
+        "commercial_guidance": {
+            "minimum_order_value_eur": None,
+            "minimum_order_applied": False,
+            "minimum_billable_price_eur": None,
+            "margin_applied": False,
+            "note": reason,
+        },
+        "laser_details": {
+            "cut_length_mm": None,
+            "material_laser_profile_used": False,
+            "cut_speed_mm_min": None,
+            "pierce_count": None,
+            "pierce_time_sec": None,
+            "laser_time_min_per_piece": None,
+        },
+        "bending_details": {
+            "bends_count": 0,
+            "bending_setup_time_min": 0.0,
+            "bending_time_sec_per_bend": None,
+            "bending_extra_handling_sec_per_piece": 0.0,
+            "bending_time_min_per_piece": 0.0,
+            "bending_time_total_min": 0.0,
+        },
+    }
+
+
 def quote_from_cad(
     cad_data: dict[str, Any],
     *,
@@ -369,6 +416,20 @@ def quote_from_cad(
     )
     if effective_pricing_overrides:
         parameters = replace(parameters, **effective_pricing_overrides)
+    classification = cad_data.get("part_classification", {}) or {}
+    part_category = classification.get("category", "unknown")
+    classification_reason = classification.get("reason") or "Classificazione geometrica non disponibile."
+    quote_not_applicable = part_category == "non_sheet_metal"
+    quote_applicability = {
+        "status": "not_applicable" if quote_not_applicable else (
+            "applicable" if part_category == "sheet_metal" else "requires_review"
+        ),
+        "reason": (
+            "Preventivo lamiera non applicabile: il CAD e classificato come pezzo massivo/non lamiera."
+            if quote_not_applicable
+            else classification_reason
+        ),
+    }
     quantity = max(int(quantity), 1)
     circular_holes = _feature_count(cad_data, "circular")
     elongated_holes = _feature_count(cad_data, "elongated")
@@ -436,17 +497,17 @@ def quote_from_cad(
     else:
         estimated_weight_kg = cad_data.get("estimated_weight_kg")
         weight_source = "cad_estimate" if estimated_weight_kg is not None else None
-    warnings = [
+    warnings = [quote_applicability["reason"]] if quote_not_applicable else [
         "Preventivo preliminare: parametri economici caricati da config e da validare con dati aziendali reali.",
         "Il motore non applica margine e non decide il prezzo finale commerciale.",
     ]
-    if material_config is None:
+    if not quote_not_applicable and material_config is None:
         warnings.append("Materiale non presente in config/materials.json: costo materiale non calcolabile in modo affidabile.")
-    if estimated_weight_kg is None:
+    if not quote_not_applicable and estimated_weight_kg is None:
         warnings.append("Peso stimato non disponibile: costo materiale non calcolabile in modo affidabile.")
-    if material_config is not None and volume_cm3 is None:
+    if not quote_not_applicable and material_config is not None and volume_cm3 is None:
         warnings.append("Volume CAD non disponibile: peso materiale mantenuto dalla stima CAD originale.")
-    if weight_source == "flat_pattern_gross_blank":
+    if not quote_not_applicable and weight_source == "flat_pattern_gross_blank":
         warnings.append(
             "Costo materiale calcolato sul peso del grezzo sviluppato; dimensioni e sfrido richiedono verifica produttiva."
         )
@@ -472,7 +533,7 @@ def quote_from_cad(
         unknown_holes,
         bends,
     )
-    amounts = _estimate_amounts(
+    amounts = _not_applicable_amounts(quote_applicability["reason"]) if quote_not_applicable else _estimate_amounts(
         quantity=quantity,
         circular_holes=circular_holes,
         elongated_holes=elongated_holes,
@@ -490,7 +551,7 @@ def quote_from_cad(
         total_cut_length_mm=total_cut_length_mm,
     )
     quantity_breakdown = []
-    for break_quantity in STANDARD_QUANTITY_BREAKS:
+    for break_quantity in (() if quote_not_applicable else STANDARD_QUANTITY_BREAKS):
         break_amounts = _estimate_amounts(
             quantity=break_quantity,
             circular_holes=circular_holes,
@@ -525,7 +586,9 @@ def quote_from_cad(
     return {
         "part_name": cad_data.get("part_name", ""),
         "quantity": quantity,
-        "process_plan": _process_plan(bends),
+        "process_plan": [] if quote_not_applicable else _process_plan(bends),
+        "quote_applicability": quote_applicability,
+        "part_classification": classification,
         "material": {
             "name": material_name,
             "density_g_cm3": material_config["density_g_cm3"] if material_config else None,
@@ -552,7 +615,7 @@ def quote_from_cad(
                 if cad_data.get("complexity_score") == "high"
                 else complexity
             ),
-            "laser_cutting_complexity": (
+            "laser_cutting_complexity": "not_applicable" if quote_not_applicable else (
                 "medium: profilo lamiera con fori circolari, asole e fori poligonali"
                 if (
                     circular_holes
@@ -564,7 +627,7 @@ def quote_from_cad(
                 )
                 else "low: geometria semplice"
             ),
-            "bending_complexity": (
+            "bending_complexity": "not_applicable" if quote_not_applicable else (
                 "high: molte pieghe rilevate, verifica tecnica richiesta"
                 if bends >= 8
                 else (
@@ -573,7 +636,7 @@ def quote_from_cad(
                     else "low: nessuna piega rilevata"
                 )
             ),
-            "setup_required": True,
+            "setup_required": not quote_not_applicable,
             "laser_time_source": amounts["estimated_times_min"]["laser_time_source"],
         },
         **amounts,

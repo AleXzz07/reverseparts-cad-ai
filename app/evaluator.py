@@ -553,6 +553,13 @@ def evaluate_staffa(actual: dict[str, Any], expected: dict[str, Any]) -> dict[st
             expected.get("complexity_score"),
             "complexity_score",
         )
+    expected_classification = expected.get("part_classification", {})
+    if "category" in expected_classification:
+        checks["part_classification"] = _exact_check(
+            (actual.get("part_classification") or {}).get("category"),
+            expected_classification.get("category"),
+            "part_classification.category",
+        )
     expected_geometry = expected.get("geometry", {})
     actual_geometry = actual.get("geometry", {})
     for field in ("solid_count", "face_count", "edge_count", "vertex_count"):

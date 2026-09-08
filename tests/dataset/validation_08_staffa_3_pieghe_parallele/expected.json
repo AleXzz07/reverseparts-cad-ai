@@ -1,0 +1,22 @@
+{
+  "display_name": "08 STAFFA 3 PIEGHE PARALLELE",
+  "material_key": "acciaio",
+  "density_g_cm3": 7.85,
+  "detected_thickness_mm": 2.0,
+  "part_classification": {"category": "sheet_metal"},
+  "dimensions_mm": {"x": 45.0, "y": 60.0, "z": 35.0},
+  "volume_cm3": 15.748,
+  "surface_area_cm2": 166.991,
+  "estimated_weight_kg": 0.12362,
+  "holes": {
+    "circular_holes": 4,
+    "elongated_holes": 0,
+    "rounded_rectangular_holes": 0,
+    "polygonal_holes": 0,
+    "formed_holes": 0,
+    "unknown_holes": 0,
+    "total_holes": 4
+  },
+  "bends": {"count": 3, "length_mm": 60.0},
+  "geometry": {"solid_count": 1, "face_count": 22, "edge_count": 60, "vertex_count": 40}
+}

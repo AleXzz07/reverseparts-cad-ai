@@ -80,6 +80,40 @@ def test_quote_from_cad_staffa_test_1():
     assert quote["warnings"]
 
 
+def test_non_sheet_metal_blocks_sheet_process_and_costs():
+    cad_data = {
+        "part_name": "10 blocco massivo",
+        "declared_material": "acciaio",
+        "volume_cm3": 45.424,
+        "detected_thickness_mm": None,
+        "part_classification": {
+            "category": "non_sheet_metal",
+            "confidence": "high",
+            "reason": "Solido massivo.",
+        },
+        "holes": {
+            "circular": [{"diameter_mm": 8.0}, {"diameter_mm": 10.0}],
+        },
+        "bends": {"count": 0, "items": []},
+        "cutting": {"total_cut_length_mm": None},
+        "flat_pattern": {"status": "unavailable", "confidence": "low"},
+    }
+
+    quote = quote_from_cad(cad_data, material="acciaio")
+
+    assert quote["quote_applicability"]["status"] == "not_applicable"
+    assert quote["process_plan"] == []
+    assert quote["estimated_times_min"]["laser_cutting"] is None
+    assert quote["estimated_times_min"]["bending"] == 0.0
+    assert quote["estimated_internal_cost_eur"]["laser"] is None
+    assert quote["estimated_internal_cost_eur"]["bending"] == 0.0
+    assert quote["estimated_internal_cost_eur"]["total"] is None
+    assert quote["laser_details"]["pierce_count"] is None
+    assert quote["quantity_breakdown"] == []
+    assert quote["cost_drivers"]["setup_required"] is False
+    assert any("non applicabile" in warning.lower() for warning in quote["warnings"])
+
+
 def test_quote_from_cad_uses_requested_quantity():
     cad_data = _cad_data_without_cutting()
 

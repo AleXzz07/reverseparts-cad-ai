@@ -597,6 +597,8 @@ def generate_quote_pdf(
     cutting = analysis.get("cutting", {})
     coordinate_reference = analysis.get("coordinate_reference", {})
     flat_pattern = analysis.get("flat_pattern", {})
+    classification = analysis.get("part_classification", {}) or {}
+    quote_applicability = quote.get("quote_applicability", {}) or {}
     config_used = quote.get("config_used", {})
     pricing = config_used.get("pricing", {})
 
@@ -610,6 +612,18 @@ def generate_quote_pdf(
         _section(
             "Pezzo",
             _part_rows(analysis, quote),
+        )
+    )
+    elements.extend(
+        _section(
+            "Classificazione e applicabilita preventivo",
+            [
+                ("Classificazione", classification.get("category", "unknown")),
+                ("Confidence", classification.get("confidence", "low")),
+                ("Motivo", classification.get("reason") or "-"),
+                ("Preventivo lamiera", quote_applicability.get("status", "requires_review")),
+                ("Vincolo tecnico", quote_applicability.get("reason") or "-"),
+            ],
         )
     )
     elements.extend(

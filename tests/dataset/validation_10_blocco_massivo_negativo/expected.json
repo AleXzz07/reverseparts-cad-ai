@@ -1,0 +1,25 @@
+{
+  "display_name": "10 BLOCCO MASSIVO NEGATIVO",
+  "material_key": "acciaio",
+  "density_g_cm3": 7.85,
+  "part_classification": {"category": "non_sheet_metal"},
+  "dimensions_mm": {"x": 60.0, "y": 40.0, "z": 20.0},
+  "volume_cm3": 45.424,
+  "surface_area_cm2": 96.734,
+  "estimated_weight_kg": 0.356578,
+  "holes": {
+    "circular": [
+      {"diameter_mm": 8.0, "count": 1},
+      {"diameter_mm": 10.0, "count": 1}
+    ],
+    "circular_holes": 2,
+    "elongated_holes": 0,
+    "rounded_rectangular_holes": 0,
+    "polygonal_holes": 0,
+    "formed_holes": 0,
+    "unknown_holes": 0,
+    "total_holes": 2
+  },
+  "bends": {"count": 0},
+  "geometry": {"solid_count": 1, "face_count": 8, "edge_count": 18, "vertex_count": 12}
+}

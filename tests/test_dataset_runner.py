@@ -8,6 +8,7 @@ import pytest
 from app.cad_analyzer import get_freecad_status
 from app.dataset_runner import analyze_case, evaluate_dataset, iter_dataset_cases, quote_dataset
 from app.evaluator import evaluate_staffa
+from app.quote_engine import quote_from_cad
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -23,6 +24,13 @@ FREECAD_VALIDATION_CASE_NAMES = (
     "validation_04_staffa_profilo_irregolare",
     "validation_05_staffa_2_pieghe_non_parallele",
 )
+FREECAD_VALIDATION_V2_CASE_NAMES = (
+    "validation_06_staffa_piana_t1",
+    "validation_07_staffa_L_t3",
+    "validation_08_staffa_3_pieghe_parallele",
+    "validation_09_staffa_aperture_miste",
+    "validation_10_blocco_massivo_negativo",
+)
 DATASET_CASE_NAMES = (
     "lamiera_piana_test_1",
     "staffa_1_piega_test_1",
@@ -30,6 +38,7 @@ DATASET_CASE_NAMES = (
     "staffa_u_test_1",
     "staffa_16_pieghe_stress_test",
     *FREECAD_VALIDATION_CASE_NAMES,
+    *FREECAD_VALIDATION_V2_CASE_NAMES,
 )
 
 
@@ -56,6 +65,17 @@ def test_staffa_test_1_dataset_case_exists():
 def test_freecad_validation_dataset_cases_exist():
     assert (PROJECT_ROOT / "tests" / "dataset" / "freecad_validation_ground_truth.json").exists()
     for case_name in FREECAD_VALIDATION_CASE_NAMES:
+        case_dir = PROJECT_ROOT / "tests" / "dataset" / case_name
+        assert (case_dir / "input.stp").exists()
+        assert (case_dir / "expected.json").exists()
+        expected = json.loads((case_dir / "expected.json").read_text(encoding="utf-8"))
+        assert expected["material_key"] == "acciaio"
+        assert expected["density_g_cm3"] == 7.85
+
+
+def test_freecad_validation_v2_dataset_cases_exist():
+    assert (PROJECT_ROOT / "tests" / "dataset" / "freecad_validation_ground_truth_v2.json").exists()
+    for case_name in FREECAD_VALIDATION_V2_CASE_NAMES:
         case_dir = PROJECT_ROOT / "tests" / "dataset" / case_name
         assert (case_dir / "input.stp").exists()
         assert (case_dir / "expected.json").exists()
@@ -270,6 +290,30 @@ def test_real_cad_analysis_matches_dataset_ground_truth(case_name, tmp_path):
             8237.13,
             abs=0.1,
         )
+
+    if case_name == "validation_07_staffa_L_t3":
+        assert actual["detected_thickness_mm"] == pytest.approx(3.0, abs=0.1)
+        assert holes["circular_holes"] == 4
+        assert sorted(hole["diameter_mm"] for hole in holes["circular"]) == pytest.approx(
+            [6.0, 8.0, 10.0, 12.0], abs=0.1
+        )
+        assert holes["total_holes"] == 4
+        assert actual["bends"]["count"] == 1
+
+    if case_name == "validation_10_blocco_massivo_negativo":
+        assert actual["detected_thickness_mm"] is None
+        assert actual["part_classification"]["category"] == "non_sheet_metal"
+        assert actual["part_classification"]["confidence"] in {"medium", "high"}
+        assert holes["circular_holes"] == 2
+        assert holes["total_holes"] == 2
+        assert actual["bends"]["count"] == 0
+        assert actual["flat_pattern"]["status"] == "unavailable"
+        assert actual["cutting"]["total_cut_length_mm"] is None
+        quote = quote_from_cad(actual, material="acciaio")
+        assert quote["quote_applicability"]["status"] == "not_applicable"
+        assert quote["process_plan"] == []
+        assert quote["estimated_internal_cost_eur"]["total"] is None
+        assert quote["estimated_internal_cost_eur"]["bending"] == 0.0
 
     if case_name == "validation_05_staffa_2_pieghe_non_parallele":
         assert holes["circular_holes"] == 4

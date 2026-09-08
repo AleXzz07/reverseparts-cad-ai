@@ -201,3 +201,13 @@ def test_evaluator_does_not_compare_weight_when_density_differs():
     )
 
     assert report["checks"]["weight"]["status"] == "warning"
+
+
+def test_evaluator_compares_part_classification():
+    report = evaluate_staffa(
+        {"part_classification": {"category": "non_sheet_metal"}},
+        {"part_classification": {"category": "non_sheet_metal"}},
+    )
+
+    assert report["status"] == "pass"
+    assert report["checks"]["part_classification"]["status"] == "pass"

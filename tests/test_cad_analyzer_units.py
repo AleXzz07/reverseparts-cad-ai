@@ -7,6 +7,8 @@ from app.cad_analyzer import (
     _annotate_hole_edge_distances,
     _annotate_hole_to_hole_distances,
     _cylindrical_face_angle_deg,
+    _classify_part_geometry,
+    _detect_bends,
     _detect_circular_holes,
     _detect_cutting_lengths,
     _detect_elongated_holes,
@@ -92,6 +94,151 @@ def _paired_planar_shape(inner_wire, opposite_wire, *, thickness=2.0):
         ],
         Edges=[],
     )
+
+
+def _circular_wire(radius, z):
+    return _Wire(
+        [_edge("Part::GeomCircle", Radius=radius)],
+        length=2.0 * 3.141592653589793 * radius,
+        bbox=_bbox(radius * 2.0, radius * 2.0, z_min=z),
+    )
+
+
+def _full_cylinder_face(radius, depth, z=0.0, *, surface_center_z=None, edges=None):
+    return SimpleNamespace(
+        Surface=SimpleNamespace(
+            TypeId="Part::GeomCylinder",
+            Radius=radius,
+            Axis=_vector(z=1.0),
+            Center=_vector(
+                x=radius,
+                y=radius,
+                z=z if surface_center_z is None else surface_center_z,
+            ),
+        ),
+        ParameterRange=(0.0, 2.0 * 3.141592653589793, 0.0, depth),
+        BoundBox=_bbox(radius * 2.0, radius * 2.0, depth, z_min=z),
+        Edges=edges or [],
+    )
+
+
+def test_circular_hole_uses_one_full_cylindrical_wall_at_three_mm_thickness():
+    bottom = _circular_wire(3.0, 0.0)
+    top = _circular_wire(3.0, 3.0)
+    shape = SimpleNamespace(
+        Faces=[
+            _planar_face([bottom]),
+            _planar_face([top], position=_vector(z=3.0)),
+            _full_cylinder_face(3.0, 3.0),
+        ],
+        Edges=[],
+    )
+
+    holes, cylindrical_evidence = _detect_circular_holes(
+        shape,
+        load_analysis_config(),
+        detected_thickness_mm=3.0,
+    )
+
+    assert cylindrical_evidence == 1
+    assert len(holes) == 1
+    assert holes[0].diameter_mm == 6.0
+    assert holes[0].depth_mm == 3.0
+
+
+def test_circular_hole_fallback_pairs_opposite_contours_at_three_mm_thickness():
+    shape = _paired_planar_shape(
+        _circular_wire(4.0, 0.0),
+        _circular_wire(4.0, 3.0),
+        thickness=3.0,
+    )
+
+    holes, cylindrical_evidence = _detect_circular_holes(
+        shape,
+        load_analysis_config(),
+        detected_thickness_mm=3.0,
+    )
+
+    assert cylindrical_evidence == 0
+    assert len(holes) == 1
+    assert holes[0].diameter_mm == 8.0
+    assert holes[0].depth_mm == 3.0
+
+
+def test_cylindrical_topology_anchors_opposite_rim_when_surface_origin_is_remote():
+    shared_edge = _edge("Part::GeomCircle", Radius=3.0)
+    shared_edge.isSame = lambda other: other is shared_edge
+    bottom = _Wire(
+        [shared_edge],
+        length=2.0 * 3.141592653589793 * 3.0,
+        bbox=_bbox(6.0, 6.0, z_min=0.0),
+    )
+    top = _circular_wire(3.0, 2.0)
+    shape = SimpleNamespace(
+        Faces=[
+            _planar_face([bottom]),
+            _planar_face([top], position=_vector(z=2.0)),
+            _full_cylinder_face(
+                3.0,
+                2.0,
+                surface_center_z=100.0,
+                edges=[shared_edge],
+            ),
+        ],
+        Edges=[],
+    )
+
+    holes, _ = _detect_circular_holes(
+        shape,
+        load_analysis_config(),
+        detected_thickness_mm=2.0,
+    )
+
+    assert len(holes) == 1
+    assert holes[0].center == pytest.approx([3.0, 3.0, 1.0])
+
+
+def test_distinct_coaxial_holes_are_not_merged_by_axis_alone():
+    faces = []
+    for z in (0.0, 10.0):
+        faces.extend(
+            [
+                _planar_face([_circular_wire(3.0, z)], position=_vector(z=z)),
+                _planar_face([_circular_wire(3.0, z + 3.0)], position=_vector(z=z + 3.0)),
+                _full_cylinder_face(3.0, 3.0, z=z),
+            ]
+        )
+    holes, _ = _detect_circular_holes(
+        SimpleNamespace(Faces=faces, Edges=[]),
+        load_analysis_config(),
+        detected_thickness_mm=3.0,
+    )
+
+    assert len(holes) == 2
+
+
+def test_full_cylindrical_hole_surfaces_are_not_bends():
+    shape = SimpleNamespace(Faces=[_full_cylinder_face(4.0, 20.0)])
+
+    assert _detect_bends(
+        shape,
+        detected_thickness_mm=2.0,
+        parameters=load_analysis_config(),
+        part_category="sheet_metal",
+    ) == []
+
+
+def test_compact_solid_without_sheet_thickness_is_non_sheet_metal():
+    shape = SimpleNamespace(
+        Volume=45423.894,
+        Area=9673.3628,
+        BoundBox=_bbox(60.0, 40.0, 20.0),
+    )
+
+    result = _classify_part_geometry(shape, None, "low")
+
+    assert result.category == "non_sheet_metal"
+    assert result.confidence == "high"
 
 
 def test_large_planar_circular_opening_is_not_limited_to_20_mm():

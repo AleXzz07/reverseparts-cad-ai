@@ -8,7 +8,14 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from .schemas import BendFeature, CadAnalysisResponse, Dimensions, FlatPattern, HoleFeature
+from .schemas import (
+    BendFeature,
+    CadAnalysisResponse,
+    Dimensions,
+    FlatPattern,
+    HoleFeature,
+    PartClassification,
+)
 
 
 VALID_STEP_SUFFIXES = {".stp", ".step"}
@@ -287,8 +294,136 @@ def _is_planar_opening_size_valid(
     )
 
 
-def _detect_circular_holes(shape, parameters: AnalysisParameters) -> tuple[list[HoleFeature], int]:
-    face_candidates: list[HoleFeature] = []
+def _cylindrical_surface_span_deg(face) -> float | None:
+    try:
+        parameter_range = tuple(float(value) for value in face.ParameterRange)
+        if len(parameter_range) < 2:
+            return None
+        angle = math.degrees(abs(parameter_range[1] - parameter_range[0]))
+    except (AttributeError, TypeError, ValueError):
+        return None
+    return angle if math.isfinite(angle) else None
+
+
+def _wire_shares_edge_with_face(wire, face) -> bool:
+    """Use B-Rep adjacency when the STEP importer preserves edge identity."""
+    for wire_edge in getattr(wire, "Edges", []) or []:
+        for face_edge in getattr(face, "Edges", []) or []:
+            try:
+                if wire_edge.isSame(face_edge):
+                    return True
+            except (AttributeError, TypeError, RuntimeError):
+                continue
+    return False
+
+
+def _circular_feature_matches_cylinder(
+    feature: HoleFeature,
+    cylinder: dict,
+    parameters: AnalysisParameters,
+    *,
+    check_axial_bounds: bool = True,
+) -> bool:
+    if feature.diameter_mm is None or feature.center is None or feature.axis is None:
+        return False
+    if abs(feature.diameter_mm - cylinder["diameter"]) > parameters.hole_diameter_tolerance_mm:
+        return False
+    feature_axis = tuple(feature.axis)
+    cylinder_axis = cylinder["axis"]
+    if not _axis_aligned(
+        feature_axis,
+        cylinder_axis,
+        tolerance=_axis_tolerance(parameters.hole_axis_angle_tolerance_deg),
+    ):
+        return False
+    delta = tuple(left - right for left, right in zip(tuple(feature.center), cylinder["center"]))
+    projected = _dot(delta, cylinder_axis)
+    radial = _vector_norm(
+        tuple(component - projected * axis for component, axis in zip(delta, cylinder_axis))
+    )
+    if radial > parameters.hole_center_tolerance_mm:
+        return False
+    if not check_axial_bounds:
+        return True
+    return abs(projected) <= (
+        cylinder["depth"]
+        + parameters.hole_center_tolerance_mm
+        + parameters.hole_diameter_tolerance_mm
+    )
+
+
+def _opposite_circular_contours_match(
+    left: dict,
+    right: dict,
+    thickness_mm: float,
+    parameters: AnalysisParameters,
+) -> bool:
+    """Fallback for STEP files whose cylindrical hole wall is split or absent.
+
+    Coaxiality alone is deliberately insufficient: the contours must lie on
+    opposite parallel skins separated by the detected sheet thickness.
+    """
+    left_feature = left["feature"]
+    right_feature = right["feature"]
+    if (
+        left_feature.diameter_mm is None
+        or right_feature.diameter_mm is None
+        or left_feature.center is None
+        or right_feature.center is None
+        or left_feature.axis is None
+        or right_feature.axis is None
+    ):
+        return False
+    if abs(left_feature.diameter_mm - right_feature.diameter_mm) > parameters.hole_diameter_tolerance_mm:
+        return False
+    left_axis = tuple(left_feature.axis)
+    right_axis = tuple(right_feature.axis)
+    if not _axis_aligned(
+        left_axis,
+        right_axis,
+        tolerance=_axis_tolerance(parameters.hole_axis_angle_tolerance_deg),
+    ):
+        return False
+    center_delta = tuple(
+        left_value - right_value
+        for left_value, right_value in zip(left_feature.center, right_feature.center)
+    )
+    projected = _dot(center_delta, left_axis)
+    radial_offset = _vector_norm(
+        tuple(component - projected * axis for component, axis in zip(center_delta, left_axis))
+    )
+    if radial_offset > parameters.hole_center_tolerance_mm:
+        return False
+    left_reference = _planar_face_reference(left["face"])
+    right_reference = _planar_face_reference(right["face"])
+    if left_reference is None or right_reference is None:
+        return False
+    left_normal, left_offset = left_reference
+    right_normal, right_offset = right_reference
+    if not _axis_aligned(
+        left_normal,
+        right_normal,
+        tolerance=_axis_tolerance(parameters.hole_axis_angle_tolerance_deg),
+    ):
+        return False
+    separation = _parallel_plane_distance(
+        left_normal,
+        left_offset,
+        right_normal,
+        right_offset,
+    )
+    return abs(separation - thickness_mm) <= max(
+        0.25,
+        parameters.hole_diameter_tolerance_mm,
+    )
+
+
+def _detect_circular_holes(
+    shape,
+    parameters: AnalysisParameters,
+    detected_thickness_mm: float | None = None,
+) -> tuple[list[HoleFeature], int]:
+    cylinder_candidates: list[dict] = []
     for face in shape.Faces:
         surface = face.Surface
         if getattr(surface, "TypeId", "") != "Part::GeomCylinder":
@@ -302,98 +437,21 @@ def _detect_circular_holes(shape, parameters: AnalysisParameters) -> tuple[list[
         axis = _normalize_vector(surface.Axis)
         center = _vector_tuple(surface.Center)
         depth = _candidate_depth_from_bbox(face.BoundBox, axis)
-
-        if depth < 1.0 or depth > 6.0:
+        angular_span = _cylindrical_surface_span_deg(face)
+        if depth <= 0.1 or angular_span is None or angular_span < 350.0:
             continue
-
-        face_candidates.append(
-            HoleFeature(
-                diameter_mm=round(diameter, 2),
-                radius_mm=round(radius, 2),
-                perimeter_mm=round(math.pi * diameter, 2),
-                circumference_mm=round(math.pi * diameter, 2),
-                area_mm2=round(math.pi * radius * radius, 2),
-                center=_rounded_vector(center),
-                axis=_rounded_vector(axis),
-                depth_mm=round(depth, 3),
-                confidence="medium",
-            )
-        )
-
-    edge_candidates: list[HoleFeature] = []
-    circular_edges = []
-    for edge in shape.Edges:
-        curve = edge.Curve
-        if getattr(curve, "TypeId", "") != "Part::GeomCircle":
-            continue
-
-        radius = float(curve.Radius)
-        diameter = radius * 2.0
-        if not FALLBACK_CYLINDER_MIN_DIAMETER_MM <= diameter <= FALLBACK_CYLINDER_MAX_DIAMETER_MM:
-            continue
-
-        circular_edges.append(
+        cylinder_candidates.append(
             {
+                "face": face,
                 "radius": radius,
                 "diameter": diameter,
-                "center": _vector_tuple(curve.Center),
-                "axis": _normalize_vector(curve.Axis),
+                "center": center,
+                "axis": axis,
+                "depth": depth,
             }
         )
 
-    used_edge_indexes: set[int] = set()
-    for left_index, left in enumerate(circular_edges):
-        if left_index in used_edge_indexes:
-            continue
-        for right_index in range(left_index + 1, len(circular_edges)):
-            if right_index in used_edge_indexes:
-                continue
-
-            right = circular_edges[right_index]
-            if abs(left["diameter"] - right["diameter"]) > parameters.hole_diameter_tolerance_mm:
-                continue
-            if not _axis_aligned(
-                left["axis"],
-                right["axis"],
-                tolerance=_axis_tolerance(parameters.hole_axis_angle_tolerance_deg),
-            ):
-                continue
-
-            depth = _projected_distance(left["center"], right["center"], left["axis"])
-            if not 1.0 <= depth <= 4.0:
-                continue
-
-            center_offset = tuple(l - r for l, r in zip(left["center"], right["center"]))
-            radial_offset = _vector_norm(
-                tuple(
-                    component - _dot(center_offset, left["axis"]) * axis
-                    for component, axis in zip(center_offset, left["axis"])
-                )
-            )
-            if radial_offset > parameters.hole_center_tolerance_mm:
-                continue
-
-            center = tuple((l + r) / 2.0 for l, r in zip(left["center"], right["center"]))
-            edge_candidates.append(
-                HoleFeature(
-                    diameter_mm=round((left["diameter"] + right["diameter"]) / 2.0, 2),
-                    radius_mm=round((left["radius"] + right["radius"]) / 2.0, 2),
-                    perimeter_mm=round(math.pi * (left["diameter"] + right["diameter"]) / 2.0, 2),
-                    circumference_mm=round(math.pi * (left["diameter"] + right["diameter"]) / 2.0, 2),
-                    area_mm2=round(
-                        math.pi * ((left["radius"] + right["radius"]) / 2.0) ** 2,
-                        2,
-                    ),
-                    center=_rounded_vector(center),
-                    axis=_rounded_vector(left["axis"]),
-                    depth_mm=round(depth, 3),
-                    confidence="high",
-                )
-            )
-            used_edge_indexes.update({left_index, right_index})
-            break
-
-    planar_wire_candidates: list[HoleFeature] = []
+    planar_wire_candidates: list[dict] = []
     for face in shape.Faces:
         surface = face.Surface
         if getattr(surface, "TypeId", "") != "Part::GeomPlane":
@@ -417,7 +475,10 @@ def _detect_circular_holes(shape, parameters: AnalysisParameters) -> tuple[list[
                 continue
 
             planar_wire_candidates.append(
-                HoleFeature(
+                {
+                    "face": face,
+                    "wire": wire,
+                    "feature": HoleFeature(
                     diameter_mm=round(diameter, 2),
                     radius_mm=round(diameter / 2.0, 2),
                     perimeter_mm=round(math.pi * diameter, 2),
@@ -426,16 +487,133 @@ def _detect_circular_holes(shape, parameters: AnalysisParameters) -> tuple[list[
                     center=_rounded_vector(_wire_center(wire)),
                     axis=_rounded_vector(_normalize_vector(surface.Axis)),
                     confidence="high",
-                )
+                    ),
+                }
             )
 
     holes: list[HoleFeature] = []
-    reliable_candidates = planar_wire_candidates or edge_candidates + face_candidates
-    for candidate in reliable_candidates:
-        _append_unique_hole(holes, candidate, parameters)
+    used_planar_indexes: set[int] = set()
+
+    # Primary path: a full cylindrical wall connected to one or both planar
+    # opening contours is the strongest evidence of one physical through-hole.
+    for cylinder in cylinder_candidates:
+        bounded_geometric_matches = [
+            index
+            for index, record in enumerate(planar_wire_candidates)
+            if _circular_feature_matches_cylinder(record["feature"], cylinder, parameters)
+        ]
+        topological_matches = [
+            index
+            for index, record in enumerate(planar_wire_candidates)
+            if _circular_feature_matches_cylinder(
+                record["feature"],
+                cylinder,
+                parameters,
+                check_axial_bounds=False,
+            )
+            if _wire_shares_edge_with_face(
+                planar_wire_candidates[index]["wire"],
+                cylinder["face"],
+            )
+        ]
+        if topological_matches:
+            # OCC's infinite-cylinder origin is not guaranteed to lie at an
+            # end of the bounded face. Anchor the axial check to a real shared
+            # rim, then absorb only the opposite rim within this wall's depth.
+            anchored_geometric_matches = []
+            for index, record in enumerate(planar_wire_candidates):
+                if not _circular_feature_matches_cylinder(
+                    record["feature"],
+                    cylinder,
+                    parameters,
+                    check_axial_bounds=False,
+                ):
+                    continue
+                record_center = tuple(record["feature"].center or [])
+                if any(
+                    _projected_distance(
+                        record_center,
+                        tuple(planar_wire_candidates[anchor]["feature"].center or []),
+                        cylinder["axis"],
+                    )
+                    <= cylinder["depth"]
+                    + parameters.hole_center_tolerance_mm
+                    + parameters.hole_diameter_tolerance_mm
+                    for anchor in topological_matches
+                ):
+                    anchored_geometric_matches.append(index)
+            matches = topological_matches + [
+                index
+                for index in anchored_geometric_matches
+                if index not in topological_matches
+            ]
+        else:
+            matches = bounded_geometric_matches
+        if not matches:
+            continue
+        available_matches = [index for index in matches if index not in used_planar_indexes]
+        if not available_matches:
+            continue
+        centers = [
+            tuple(planar_wire_candidates[index]["feature"].center or cylinder["center"])
+            for index in available_matches
+        ]
+        center = tuple(sum(values) / len(values) for values in zip(*centers))
+        diameter = cylinder["diameter"]
+        radius = cylinder["radius"]
+        holes.append(
+            HoleFeature(
+                diameter_mm=round(diameter, 2),
+                radius_mm=round(radius, 2),
+                perimeter_mm=round(math.pi * diameter, 2),
+                circumference_mm=round(math.pi * diameter, 2),
+                area_mm2=round(math.pi * radius * radius, 2),
+                center=_rounded_vector(center),
+                axis=_rounded_vector(cylinder["axis"]),
+                depth_mm=round(cylinder["depth"], 3),
+                confidence="high",
+            )
+        )
+        used_planar_indexes.update(available_matches)
+
+    # Fallback path: pair only opposite planar contours separated by the
+    # detected sheet thickness. This supports split cylindrical walls while
+    # refusing to merge unrelated coaxial holes.
+    if detected_thickness_mm is not None:
+        for left_index, left in enumerate(planar_wire_candidates):
+            if left_index in used_planar_indexes:
+                continue
+            for right_index in range(left_index + 1, len(planar_wire_candidates)):
+                if right_index in used_planar_indexes:
+                    continue
+                right = planar_wire_candidates[right_index]
+                if not _opposite_circular_contours_match(
+                    left,
+                    right,
+                    detected_thickness_mm,
+                    parameters,
+                ):
+                    continue
+                left_feature = left["feature"]
+                right_feature = right["feature"]
+                center = tuple(
+                    (a + b) / 2.0
+                    for a, b in zip(left_feature.center or [], right_feature.center or [])
+                )
+                merged = left_feature.model_copy(deep=True)
+                merged.center = _rounded_vector(center)
+                merged.depth_mm = round(detected_thickness_mm, 3)
+                merged.confidence = "high"
+                holes.append(merged)
+                used_planar_indexes.update({left_index, right_index})
+                break
+
+    for index, record in enumerate(planar_wire_candidates):
+        if index not in used_planar_indexes:
+            holes.append(record["feature"])
 
     holes.sort(key=lambda hole: (hole.diameter_mm or 0.0, hole.center or []))
-    return holes, len(face_candidates)
+    return holes, len(cylinder_candidates)
 
 
 def _wire_center(wire) -> tuple[float, float, float]:
@@ -1364,12 +1542,8 @@ def _annotate_hole_to_hole_distances(
 
 def _cylindrical_face_angle_deg(face) -> float | None:
     """Return the cylindrical angular span when FreeCAD exposes a stable range."""
-    try:
-        parameter_range = tuple(float(value) for value in face.ParameterRange)
-        if len(parameter_range) < 2:
-            return None
-        angle = math.degrees(abs(parameter_range[1] - parameter_range[0]))
-    except (AttributeError, TypeError, ValueError):
+    angle = _cylindrical_surface_span_deg(face)
+    if angle is None:
         return None
     if not math.isfinite(angle) or not 1.0 <= angle <= 180.0:
         return None
@@ -1467,8 +1641,11 @@ def _detect_bends(
     shape,
     detected_thickness_mm: float | None,
     parameters: AnalysisParameters,
+    part_category: str = "sheet_metal",
 ) -> list[BendFeature]:
-    thickness_reference = detected_thickness_mm or 2.0
+    if detected_thickness_mm is None or part_category != "sheet_metal":
+        return []
+    thickness_reference = detected_thickness_mm
     min_radius = max(1.0, thickness_reference * 0.75)
     max_radius = max(12.0, thickness_reference * 6.0)
     candidates: list[BendFeature] = []
@@ -1486,13 +1663,17 @@ def _detect_bends(
         length = _candidate_depth_from_bbox(face.BoundBox, axis)
         if length < parameters.bend_min_length_mm:
             continue
+        angular_span = _cylindrical_surface_span_deg(face)
+        if angular_span is not None and angular_span >= 350.0:
+            continue
+        angle_deg = _cylindrical_face_angle_deg(face)
 
         candidates.append(
             BendFeature(
                 type="simple flange",
                 radius_mm=round(radius, 2),
                 length_mm=round(length, 2),
-                angle_deg=_cylindrical_face_angle_deg(face),
+                angle_deg=angle_deg,
                 axis=_rounded_vector(axis),
                 center=_rounded_vector(_vector_tuple(surface.Center)),
                 confidence="medium",
@@ -1525,10 +1706,6 @@ def _detect_bends(
                     confidence="high",
                 ),
             )
-
-    if not bends:
-        for candidate in candidates:
-            _append_unique_bend(bends, candidate)
 
     bends.sort(key=lambda bend: bend.center or [])
     return bends
@@ -1862,6 +2039,60 @@ def _detect_sheet_thickness(
     return dominant_value, confidence
 
 
+def _classify_part_geometry(
+    shape,
+    detected_thickness_mm: float | None,
+    thickness_confidence: str,
+) -> PartClassification:
+    """Conservatively distinguish sheet metal from compact massive solids."""
+    if detected_thickness_mm is not None:
+        return PartClassification(
+            category="sheet_metal",
+            confidence=thickness_confidence,
+            reason=(
+                "Coppie di superfici planari parallele confermano uno spessore "
+                f"lamiera costante di {detected_thickness_mm:.2f} mm."
+            ),
+        )
+
+    try:
+        volume = float(shape.Volume)
+        area = float(shape.Area)
+        bbox = shape.BoundBox
+        dimensions = [float(bbox.XLength), float(bbox.YLength), float(bbox.ZLength)]
+        positive_dimensions = [value for value in dimensions if value > 1e-6]
+        thin_solid_estimate = 2.0 * volume / area
+        minimum_dimension = min(positive_dimensions)
+        maximum_dimension = max(positive_dimensions)
+        compactness = minimum_dimension / maximum_dimension
+    except (AttributeError, TypeError, ValueError, ZeroDivisionError):
+        return PartClassification(
+            category="unknown",
+            confidence="low",
+            reason="Dati geometrici insufficienti per distinguere lamiera e pezzo massivo.",
+        )
+
+    if thin_solid_estimate > 6.0 and minimum_dimension > 6.0 and compactness >= 0.15:
+        confidence = "high" if thin_solid_estimate >= 8.0 and minimum_dimension >= 10.0 else "medium"
+        return PartClassification(
+            category="non_sheet_metal",
+            confidence=confidence,
+            reason=(
+                "Nessuno spessore lamiera affidabile; volume/superficie e proporzioni "
+                "del bounding box indicano un solido massivo."
+            ),
+        )
+
+    return PartClassification(
+        category="unknown",
+        confidence="low",
+        reason=(
+            "Spessore lamiera non confermato e geometria non abbastanza compatta "
+            "per una classificazione massiva sicura."
+        ),
+    )
+
+
 def _base_response(
     *,
     source_file: str,
@@ -1960,10 +2191,16 @@ def analyze_step_file(
         )
         response.detected_thickness_mm = detected_thickness
         response.thickness_confidence = thickness_confidence
+        response.part_classification = _classify_part_geometry(
+            shape,
+            detected_thickness,
+            thickness_confidence,
+        )
 
         response.holes.circular, raw_circular_candidate_count = _detect_circular_holes(
             shape,
             analysis_parameters,
+            detected_thickness,
         )
         response.holes.elongated = _detect_elongated_holes(
             shape,
@@ -2058,6 +2295,7 @@ def analyze_step_file(
             shape,
             detected_thickness,
             analysis_parameters,
+            response.part_classification.category,
         )
         if response.bends.items:
             response.bends.count = len(response.bends.items)
@@ -2090,21 +2328,30 @@ def analyze_step_file(
                 "High number of circular features detected: hole deduplication applied"
             )
 
-        (
-            response.cutting.outer_cut_length_mm,
-            response.cutting.inner_cut_length_mm,
-            response.cutting.total_cut_length_mm,
-            response.cutting.confidence,
-            response.cutting.warnings,
-        ) = _detect_cutting_lengths(
-            shape,
-            response.holes.circular,
-            response.holes.elongated,
-            response.holes.rounded_rectangular,
-            response.holes.polygonal,
-            response.holes.formed,
-            response.holes.unknown,
-        )
+        if response.part_classification.category == "non_sheet_metal":
+            response.cutting.confidence = "low"
+            response.cutting.warnings.append(
+                "Taglio laser 2D non applicabile: il modello e classificato come pezzo non lamiera."
+            )
+            response.warnings.append(
+                "Pezzo non lamiera: il normale processo e preventivo di lavorazione lamiera non sono applicabili."
+            )
+        else:
+            (
+                response.cutting.outer_cut_length_mm,
+                response.cutting.inner_cut_length_mm,
+                response.cutting.total_cut_length_mm,
+                response.cutting.confidence,
+                response.cutting.warnings,
+            ) = _detect_cutting_lengths(
+                shape,
+                response.holes.circular,
+                response.holes.elongated,
+                response.holes.rounded_rectangular,
+                response.holes.polygonal,
+                response.holes.formed,
+                response.holes.unknown,
+            )
 
         response.flat_pattern = _estimate_flat_pattern(
             shape=shape,

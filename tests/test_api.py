@@ -98,6 +98,9 @@ def test_frontend_returns_html():
     assert "API:" in response.text
     assert 'fetchApi("/health")' in response.text
     assert 'fetchApi("/config/defaults")' in response.text
+    assert 'id="quote-applicability"' in response.text
+    assert "Confidence classificazione" in response.text
+    assert "Preventivo lamiera non applicabile" in response.text
     assert 'fetchApi("/analyze-and-quote"' in response.text
     assert 'fetchApi("/generate-preview"' in response.text
     assert 'fetchApi("/quote-pdf"' in response.text
@@ -541,6 +544,36 @@ def test_quote_pdf_labels_brep_counts_as_topological_data(monkeypatch):
     assert technical_rows["Bordi topologici (B-Rep)"] == 24
     assert technical_rows["Vertici topologici (B-Rep)"] == 16
     assert "non lavorazioni o spigoli fisici" in technical_rows["Nota conteggi B-Rep"]
+
+
+def test_quote_pdf_reports_part_classification_and_quote_applicability(monkeypatch):
+    analysis = json.loads(STAFFA_ACTUAL_FILE.read_text(encoding="utf-8"))
+    quote = json.loads(STAFFA_QUOTE_FILE.read_text(encoding="utf-8"))
+    analysis["part_classification"] = {
+        "category": "non_sheet_metal",
+        "confidence": "high",
+        "reason": "Solido massivo.",
+    }
+    quote["quote_applicability"] = {
+        "status": "not_applicable",
+        "reason": "Preventivo lamiera non applicabile.",
+    }
+    recorded_sections = {}
+    original_section = pdf_report._section
+
+    def recording_section(title, section_rows):
+        recorded_sections[title] = dict(section_rows)
+        return original_section(title, section_rows)
+
+    monkeypatch.setattr(pdf_report, "_section", recording_section)
+
+    pdf_report.generate_quote_pdf(analysis, quote)
+
+    rows = recorded_sections["Classificazione e applicabilita preventivo"]
+    assert rows["Classificazione"] == "non_sheet_metal"
+    assert rows["Confidence"] == "high"
+    assert rows["Motivo"] == "Solido massivo."
+    assert rows["Preventivo lamiera"] == "not_applicable"
 
 
 def test_quote_pdf_includes_flat_pattern_data(monkeypatch):

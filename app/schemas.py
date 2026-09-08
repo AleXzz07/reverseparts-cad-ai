@@ -130,6 +130,12 @@ class FlatPattern(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class PartClassification(BaseModel):
+    category: Literal["sheet_metal", "non_sheet_metal", "unknown"] = "unknown"
+    confidence: Confidence = "low"
+    reason: str = "Geometric classification is not available."
+
+
 class CadAnalysisResponse(BaseModel):
     part_name: str = ""
     source_file: str = ""
@@ -149,6 +155,7 @@ class CadAnalysisResponse(BaseModel):
     geometry: GeometryStatistics = Field(default_factory=GeometryStatistics)
     manufacturability: Manufacturability = Field(default_factory=Manufacturability)
     coordinate_reference: CoordinateReference = Field(default_factory=CoordinateReference)
+    part_classification: PartClassification = Field(default_factory=PartClassification)
     flat_pattern: FlatPattern = Field(default_factory=FlatPattern)
     complexity_score: Literal["unknown", "low", "medium", "high"] = "unknown"
     warnings: list[str] = Field(default_factory=list)

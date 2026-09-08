@@ -540,6 +540,17 @@
       border-bottom: 1px solid var(--line);
       background: white;
     }
+    .quote-applicability {
+      margin: 14px 16px 0;
+      padding: 12px 14px;
+      border: 1px solid #efb4aa;
+      border-left: 4px solid var(--danger);
+      border-radius: 8px;
+      background: #fff4f1;
+      color: #7b2d22;
+      font-weight: 750;
+      line-height: 1.45;
+    }
     .metric { padding: 14px 16px; border-right: 1px solid var(--line); }
     .metric:last-child { border-right: 0; }
     .metric span { display: block; color: var(--muted); font-size: 11px; margin-bottom: 5px; }
@@ -776,6 +787,7 @@
           <div class="metric"><span>Confidence quote</span><strong id="confidence">-</strong></div>
           <div class="metric"><span>Costo interno</span><strong id="total-cost">-</strong></div>
         </div>
+        <div class="quote-applicability" id="quote-applicability" hidden></div>
         <div class="data-grid">
           <div class="data-section">
             <h3>Analisi CAD</h3>
@@ -1317,6 +1329,7 @@
 
     function renderTechnicalDetails(analysis) {
       const geometry = analysis.geometry || {};
+      const classification = analysis.part_classification || {};
       const manufacturability = analysis.manufacturability || {};
       const coordinateReference = analysis.coordinate_reference || {};
       const flatPattern = analysis.flat_pattern || {};
@@ -1326,6 +1339,9 @@
         ? `${number(center.x)} / ${number(center.y)} / ${number(center.z)} mm`
         : "-";
       document.getElementById("geometry-data").innerHTML = rows([
+        ["Classificazione pezzo", classification.category || "unknown"],
+        ["Confidence classificazione", confidenceText(classification.confidence)],
+        ["Motivo classificazione", classification.reason || "-"],
         ["Bounding box grezzo", dimensionsText(analysis.raw_bounding_box_mm)],
         ["Volume", number(analysis.volume_cm3, "cm³")],
         ["Superficie", number(analysis.surface_area_cm2, "cm²")],
@@ -1579,6 +1595,8 @@
       const bending = quote.bending_details || {};
       const guidance = quote.commercial_guidance || {};
       const preview = payload.preview || {};
+      const classification = analysis.part_classification || {};
+      const applicability = quote.quote_applicability || {};
       const circularHoles = features.circular_holes ?? holes.circular_holes ?? holes.circular?.length ?? 0;
       const elongatedHoles = features.elongated_holes ?? holes.elongated_holes ?? holes.elongated?.length ?? 0;
       const roundedRectangularHoles = features.rounded_rectangular_holes ?? holes.rounded_rectangular_holes ?? holes.rounded_rectangular?.length ?? 0;
@@ -1601,8 +1619,18 @@
       document.getElementById("part-name").textContent = quote.part_name || analysis.part_name || "-";
       document.getElementById("complexity").innerHTML = `<span class="badge">${escapeHtml(analysis.complexity_score)}</span>`;
       document.getElementById("confidence").innerHTML = `<span class="badge">${escapeHtml(quote.confidence)}</span>`;
-      document.getElementById("total-cost").textContent = money(costs.total);
+      document.getElementById("total-cost").textContent = applicability.status === "not_applicable"
+        ? "Non applicabile"
+        : money(costs.total);
+      const applicabilityBanner = document.getElementById("quote-applicability");
+      applicabilityBanner.hidden = applicability.status !== "not_applicable";
+      applicabilityBanner.textContent = applicability.status === "not_applicable"
+        ? (applicability.reason || "Preventivo lamiera non applicabile a questo pezzo.")
+        : "";
       document.getElementById("analysis-data").innerHTML = rows([
+        ["Classificazione", classification.category || "unknown"],
+        ["Confidence classificazione", confidenceText(classification.confidence)],
+        ["Motivo classificazione", classification.reason || "-"],
         ["Dimensioni", `${number(dimensions.x)} x ${number(dimensions.y)} x ${number(dimensions.z)} mm`],
         ["Peso netto pezzo", number(quote.material?.part_weight_kg ?? analysis.estimated_weight_kg, "kg")],
         ["Fori circolari", circularHoles],
