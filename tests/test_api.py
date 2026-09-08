@@ -468,12 +468,41 @@ def test_quote_pdf_part_rows_include_all_hole_categories():
     rows = dict(_part_rows(analysis, quote))
 
     assert rows["Fori circolari"] == 4
+    assert rows["Fori svasati (inclusi nei circolari)"] == 0
     assert rows["Asole"] == 2
     assert rows["Aperture rettangolari raccordate"] == 0
     assert rows["Fori poligonali"] == 2
     assert rows["Fori sagomati/imbutiti"] == 0
     assert rows["Fori non riconosciuti"] == 0
     assert rows["Fori totali"] == 8
+    assert rows["Aperture fisiche totali"] == 8
+
+
+def test_quote_pdf_reports_countersink_without_adding_an_opening():
+    analysis = json.loads(STAFFA_ACTUAL_FILE.read_text(encoding="utf-8"))
+    quote = json.loads(STAFFA_QUOTE_FILE.read_text(encoding="utf-8"))
+    analysis["holes"]["circular"][0].update(
+        {
+            "type": "countersunk",
+            "through_diameter_mm": 6.0,
+            "countersink_major_diameter_mm": 12.0,
+            "countersink_depth_mm": 2.0,
+        }
+    )
+    analysis["holes"]["countersunk_holes"] = 1
+    analysis["holes"]["physical_openings_total"] = 8
+    quote["features_summary"]["countersunk_holes"] = 1
+    quote["features_summary"]["physical_openings_total"] = 8
+
+    part_rows = dict(_part_rows(analysis, quote))
+    detail_rows = _hole_detail_rows(analysis)
+    countersunk_row = next(row for row in detail_rows if row[0] == "Svasato 1")
+
+    assert part_rows["Fori svasati (inclusi nei circolari)"] == 1
+    assert part_rows["Aperture fisiche totali"] == 8
+    assert countersunk_row[1] == (
+        "Diam. passante 6 mm / Diam. svasatura 12 mm / prof. 2 mm"
+    )
 
 
 def test_quote_pdf_detail_rows_include_hole_and_bend_measurements():

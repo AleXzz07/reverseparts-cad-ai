@@ -147,6 +147,56 @@ def _circular_holes_check(actual: dict[str, Any], expected: dict[str, Any]) -> d
     )
 
 
+def _countersunk_holes_check(
+    actual: dict[str, Any], expected: dict[str, Any]
+) -> dict[str, Any]:
+    actual_items = [
+        item
+        for item in actual.get("circular", [])
+        if item.get("type") == "countersunk"
+    ]
+    expected_items = expected.get("countersunk", [])
+    groups = []
+    for expected_item in expected_items:
+        expected_count = int(expected_item.get("count", 1))
+        matches = [
+            item
+            for item in actual_items
+            if all(
+                item.get(field) is not None
+                and abs(float(item[field]) - float(expected_item[field]))
+                <= LENGTH_TOLERANCE_MM
+                for field in (
+                    "through_diameter_mm",
+                    "countersink_major_diameter_mm",
+                    "countersink_depth_mm",
+                )
+            )
+        ]
+        groups.append(
+            {
+                "expected": expected_item,
+                "expected_count": expected_count,
+                "actual_count": len(matches),
+                "status": "pass" if len(matches) >= expected_count else "fail",
+            }
+        )
+    expected_count = sum(int(item.get("count", 1)) for item in expected_items)
+    status = (
+        "pass"
+        if all(group["status"] == "pass" for group in groups)
+        and len(actual_items) == expected_count
+        else "fail"
+    )
+    return _check(
+        status,
+        "Countersinks matched to physical through-holes.",
+        expected_count=expected_count,
+        actual_count=len(actual_items),
+        groups=groups,
+    )
+
+
 def _elongated_holes_check(actual: dict[str, Any], expected: dict[str, Any]) -> dict[str, Any]:
     actual_items = actual.get("elongated", [])
     expected_items = expected.get("elongated", [])
@@ -490,6 +540,10 @@ def evaluate_staffa(actual: dict[str, Any], expected: dict[str, Any]) -> dict[st
         )
     if "circular" in expected_holes:
         checks["circular_holes"] = _circular_holes_check(actual_holes, expected_holes)
+    if "countersunk" in expected_holes:
+        checks["countersunk_geometry"] = _countersunk_holes_check(
+            actual_holes, expected_holes
+        )
     if "elongated" in expected_holes:
         checks["elongated_holes"] = _elongated_holes_check(actual_holes, expected_holes)
     if "rounded_rectangular" in expected_holes:
@@ -501,18 +555,22 @@ def evaluate_staffa(actual: dict[str, Any], expected: dict[str, Any]) -> dict[st
 
     summary_groups = {
         "circular_holes": "circular",
+        "countersunk_holes": "circular",
         "elongated_holes": "elongated",
         "rounded_rectangular_holes": "rounded_rectangular",
         "polygonal_holes": "polygonal",
         "formed_holes": "formed",
         "unknown_holes": "unknown",
         "total_holes": "all",
+        "physical_openings_total": "all",
     }
     for summary_key, group_key in summary_groups.items():
         if summary_key not in expected_holes:
             continue
-        if summary_key == "total_holes":
-            actual_count = actual_holes.get("total_holes")
+        if summary_key in {"total_holes", "physical_openings_total"}:
+            actual_count = actual_holes.get(summary_key)
+            if actual_count is None and summary_key == "physical_openings_total":
+                actual_count = actual_holes.get("total_holes")
             if actual_count is None:
                 actual_count = sum(
                     len(actual_holes.get(group, []) or [])
@@ -559,6 +617,13 @@ def evaluate_staffa(actual: dict[str, Any], expected: dict[str, Any]) -> dict[st
             (actual.get("part_classification") or {}).get("category"),
             expected_classification.get("category"),
             "part_classification.category",
+        )
+    expected_flat_pattern = expected.get("flat_pattern", {})
+    if "status" in expected_flat_pattern:
+        checks["flat_pattern_status"] = _exact_check(
+            (actual.get("flat_pattern") or {}).get("status"),
+            expected_flat_pattern.get("status"),
+            "flat_pattern.status",
         )
     expected_geometry = expected.get("geometry", {})
     actual_geometry = actual.get("geometry", {})

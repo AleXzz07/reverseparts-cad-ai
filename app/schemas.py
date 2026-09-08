@@ -23,6 +23,9 @@ class HoleFeature(BaseModel):
     circumference_mm: float | None = None
     area_mm2: float | None = None
     diameter_mm: float | None = None
+    through_diameter_mm: float | None = None
+    countersink_major_diameter_mm: float | None = None
+    countersink_depth_mm: float | None = None
     radius_mm: float | None = None
     length_mm: float | None = None
     overall_length_mm: float | None = None
@@ -48,12 +51,14 @@ class Holes(BaseModel):
     formed: list[HoleFeature] = Field(default_factory=list)
     unknown: list[HoleFeature] = Field(default_factory=list)
     circular_holes: int = 0
+    countersunk_holes: int = 0
     elongated_holes: int = 0
     rounded_rectangular_holes: int = 0
     polygonal_holes: int = 0
     formed_holes: int = 0
     unknown_holes: int = 0
     total_holes: int = 0
+    physical_openings_total: int = 0
     min_circular_diameter_mm: float | None = None
     max_circular_diameter_mm: float | None = None
     confidence: Confidence = "low"
@@ -131,7 +136,12 @@ class FlatPattern(BaseModel):
 
 
 class PartClassification(BaseModel):
-    category: Literal["sheet_metal", "non_sheet_metal", "unknown"] = "unknown"
+    category: Literal[
+        "sheet_metal",
+        "non_sheet_metal",
+        "multi_solid",
+        "unknown",
+    ] = "unknown"
     confidence: Confidence = "low"
     reason: str = "Geometric classification is not available."
 

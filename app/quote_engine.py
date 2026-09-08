@@ -419,15 +419,19 @@ def quote_from_cad(
     classification = cad_data.get("part_classification", {}) or {}
     part_category = classification.get("category", "unknown")
     classification_reason = classification.get("reason") or "Classificazione geometrica non disponibile."
-    quote_not_applicable = part_category == "non_sheet_metal"
+    quote_not_applicable = part_category in {"non_sheet_metal", "multi_solid"}
     quote_applicability = {
         "status": "not_applicable" if quote_not_applicable else (
             "applicable" if part_category == "sheet_metal" else "requires_review"
         ),
         "reason": (
-            "Preventivo lamiera non applicabile: il CAD e classificato come pezzo massivo/non lamiera."
-            if quote_not_applicable
-            else classification_reason
+            "Preventivo lamiera non applicabile: lo STEP contiene piu solidi/componenti; analizzarli singolarmente."
+            if part_category == "multi_solid"
+            else (
+                "Preventivo lamiera non applicabile: il CAD e classificato come pezzo massivo/non lamiera."
+                if quote_not_applicable
+                else classification_reason
+            )
         ),
     }
     quantity = max(int(quantity), 1)
@@ -437,13 +441,26 @@ def quote_from_cad(
     polygonal_holes = _feature_count(cad_data, "polygonal")
     formed_holes = _feature_count(cad_data, "formed")
     unknown_holes = _feature_count(cad_data, "unknown")
-    total_holes = (
-        circular_holes
-        + elongated_holes
-        + rounded_rectangular_holes
-        + polygonal_holes
-        + formed_holes
-        + unknown_holes
+    countersunk_holes = int(
+        (cad_data.get("holes", {}) or {}).get(
+            "countersunk_holes",
+            sum(
+                1
+                for feature in (cad_data.get("holes", {}) or {}).get("circular", [])
+                if feature.get("type") == "countersunk"
+            ),
+        )
+    )
+    total_holes = int(
+        (cad_data.get("holes", {}) or {}).get("physical_openings_total")
+        or (
+            circular_holes
+            + elongated_holes
+            + rounded_rectangular_holes
+            + polygonal_holes
+            + formed_holes
+            + unknown_holes
+        )
     )
     bends = _bend_count(cad_data)
     bends_count_available = _bend_count_is_declared(cad_data)
@@ -601,12 +618,14 @@ def quote_from_cad(
         },
         "features_summary": {
             "circular_holes": circular_holes,
+            "countersunk_holes": countersunk_holes,
             "elongated_holes": elongated_holes,
             "rounded_rectangular_holes": rounded_rectangular_holes,
             "polygonal_holes": polygonal_holes,
             "formed_holes": formed_holes,
             "unknown_holes": unknown_holes,
             "total_holes": total_holes,
+            "physical_openings_total": total_holes,
             "bends": bends,
         },
         "cost_drivers": {

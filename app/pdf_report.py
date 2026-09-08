@@ -81,6 +81,13 @@ def _part_rows(
         return int(value)
 
     circular_holes = hole_count("circular_holes", "circular")
+    countersunk_holes = hole_count("countersunk_holes", "circular")
+    if "countersunk_holes" not in features and "countersunk_holes" not in holes:
+        countersunk_holes = sum(
+            1
+            for feature in holes.get("circular", []) or []
+            if feature.get("type") == "countersunk"
+        )
     elongated_holes = hole_count("elongated_holes", "elongated")
     rounded_rectangular_holes = hole_count(
         "rounded_rectangular_holes", "rounded_rectangular"
@@ -90,7 +97,7 @@ def _part_rows(
     unknown_holes = hole_count("unknown_holes", "unknown")
     total_holes = features.get("total_holes")
     if total_holes is None:
-        total_holes = (
+        total_holes = holes.get("physical_openings_total") or (
             circular_holes
             + elongated_holes
             + rounded_rectangular_holes
@@ -120,12 +127,14 @@ def _part_rows(
             _value(cutting.get("total_cut_length_mm"), "mm"),
         ),
         ("Fori circolari", circular_holes),
+        ("Fori svasati (inclusi nei circolari)", countersunk_holes),
         ("Asole", elongated_holes),
         ("Aperture rettangolari raccordate", rounded_rectangular_holes),
         ("Fori poligonali", polygonal_holes),
         ("Fori sagomati/imbutiti", formed_holes),
         ("Fori non riconosciuti", unknown_holes),
         ("Fori totali", total_holes),
+        ("Aperture fisiche totali", total_holes),
         (
             "Numero pieghe",
             bends.get("count")
@@ -281,7 +290,14 @@ def _hole_detail_rows(analysis: dict[str, Any]) -> list[list[Any]]:
     rows: list[list[Any]] = []
     for label, features in groups:
         for index, feature in enumerate(features or [], start=1):
-            if feature.get("diameter_mm") is not None:
+            row_label = "Svasato" if feature.get("type") == "countersunk" else label
+            if feature.get("type") == "countersunk":
+                measure = (
+                    f"Diam. passante {_value(feature.get('through_diameter_mm') or feature.get('diameter_mm'), 'mm')} / "
+                    f"Diam. svasatura {_value(feature.get('countersink_major_diameter_mm'), 'mm')} / "
+                    f"prof. {_value(feature.get('countersink_depth_mm'), 'mm')}"
+                )
+            elif feature.get("diameter_mm") is not None:
                 measure = f"Diam. {_value(feature['diameter_mm'], 'mm')}"
             elif feature.get("corner_radius_mm") is not None:
                 measure = (
@@ -303,7 +319,7 @@ def _hole_detail_rows(analysis: dict[str, Any]) -> list[list[Any]]:
                 )
             rows.append(
                 [
-                    f"{label} {index}",
+                    f"{row_label} {index}",
                     measure,
                     _value(
                         feature.get("circumference_mm") or feature.get("perimeter_mm"),

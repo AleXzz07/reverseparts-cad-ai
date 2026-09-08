@@ -616,6 +616,164 @@ def _detect_circular_holes(
     return holes, len(cylinder_candidates)
 
 
+def _circular_edge_geometry(edge) -> tuple[float, tuple[float, float, float]] | None:
+    curve = getattr(edge, "Curve", None)
+    if getattr(curve, "TypeId", "") != "Part::GeomCircle":
+        return None
+    try:
+        radius = float(curve.Radius)
+        center = _vector_tuple(curve.Center)
+    except (AttributeError, TypeError, ValueError):
+        return None
+    if radius <= 0 or not math.isfinite(radius) or not all(
+        math.isfinite(value) for value in center
+    ):
+        return None
+    return radius, center
+
+
+def _countersink_candidates(shape) -> list[dict]:
+    candidates: list[dict] = []
+    cylinder_faces = [
+        face
+        for face in shape.Faces
+        if getattr(getattr(face, "Surface", None), "TypeId", "")
+        == "Part::GeomCylinder"
+    ]
+    for face in shape.Faces:
+        surface = getattr(face, "Surface", None)
+        if getattr(surface, "TypeId", "") != "Part::GeomCone":
+            continue
+        angular_span = _cylindrical_surface_span_deg(face)
+        if angular_span is None or angular_span < 350.0:
+            continue
+        try:
+            axis = _normalize_vector(surface.Axis)
+        except (AttributeError, TypeError, ValueError):
+            continue
+
+        circles = [
+            geometry
+            for edge in getattr(face, "Edges", []) or []
+            if (geometry := _circular_edge_geometry(edge)) is not None
+        ]
+        distinct: list[tuple[float, tuple[float, float, float]]] = []
+        for radius, center in sorted(circles, key=lambda item: item[0]):
+            if not any(abs(radius - known_radius) <= 0.01 for known_radius, _ in distinct):
+                distinct.append((radius, center))
+        if len(distinct) < 2:
+            continue
+        minor_radius, minor_center = distinct[0]
+        major_radius, major_center = distinct[-1]
+        depth = _projected_distance(minor_center, major_center, axis)
+        if major_radius <= minor_radius or depth <= 0.01:
+            continue
+
+        topology_supported = any(
+            _wire_shares_edge_with_face(
+                SimpleWireProxy(getattr(face, "Edges", []) or []),
+                cylinder_face,
+            )
+            and abs(float(cylinder_face.Surface.Radius) - minor_radius) <= 0.1
+            and _axis_aligned(
+                axis,
+                _normalize_vector(cylinder_face.Surface.Axis),
+                tolerance=0.98,
+            )
+            for cylinder_face in cylinder_faces
+        )
+        candidates.append(
+            {
+                "face": face,
+                "axis": axis,
+                "minor_radius": minor_radius,
+                "major_radius": major_radius,
+                "minor_center": minor_center,
+                "major_center": major_center,
+                "depth": depth,
+                "topology_supported": topology_supported,
+            }
+        )
+    return candidates
+
+
+class SimpleWireProxy:
+    """Minimal edge container used by the B-Rep adjacency helper."""
+
+    def __init__(self, edges) -> None:
+        self.Edges = edges
+
+
+def _annotate_countersunk_holes(
+    shape,
+    holes: list[HoleFeature],
+    parameters: AnalysisParameters,
+    thickness_mm: float | None,
+) -> int:
+    """Attach conical countersink geometry to an existing through-hole.
+
+    A countersink is metadata on one physical circular opening. The legacy
+    diameter/area/perimeter fields deliberately remain the through profile so
+    downstream 2D cutting calculations do not count the conical removal.
+    """
+    annotated = 0
+    used_hole_ids: set[int] = set()
+    for candidate in _countersink_candidates(shape):
+        if (
+            not candidate["topology_supported"]
+            and (
+                thickness_mm is None
+                or candidate["depth"]
+                > thickness_mm + parameters.hole_diameter_tolerance_mm
+            )
+        ):
+            continue
+        matching: list[HoleFeature] = []
+        for hole in holes:
+            if id(hole) in used_hole_ids:
+                continue
+            if hole.diameter_mm is None or hole.center is None or hole.axis is None:
+                continue
+            if abs(hole.diameter_mm / 2.0 - candidate["minor_radius"]) > (
+                parameters.hole_diameter_tolerance_mm / 2.0
+            ):
+                continue
+            hole_axis = tuple(hole.axis)
+            if not _axis_aligned(
+                hole_axis,
+                candidate["axis"],
+                tolerance=_axis_tolerance(parameters.hole_axis_angle_tolerance_deg),
+            ):
+                continue
+            delta = tuple(
+                left - right
+                for left, right in zip(candidate["minor_center"], tuple(hole.center))
+            )
+            projected = _dot(delta, hole_axis)
+            radial_offset = _vector_norm(
+                tuple(
+                    component - projected * axis_component
+                    for component, axis_component in zip(delta, hole_axis)
+                )
+            )
+            if radial_offset <= parameters.hole_center_tolerance_mm:
+                matching.append(hole)
+        if len(matching) != 1:
+            continue
+        hole = matching[0]
+        through_diameter = float(hole.diameter_mm or 0.0)
+        hole.type = "countersunk"
+        hole.through_diameter_mm = round(through_diameter, 2)
+        hole.countersink_major_diameter_mm = round(
+            2.0 * candidate["major_radius"], 2
+        )
+        hole.countersink_depth_mm = round(candidate["depth"], 3)
+        hole.confidence = "high" if candidate["topology_supported"] else "medium"
+        used_hole_ids.add(id(hole))
+        annotated += 1
+    return annotated
+
+
 def _wire_center(wire) -> tuple[float, float, float]:
     bbox = wire.BoundBox
     return (
@@ -1336,6 +1494,117 @@ def _append_unique_unknown(
     unknown.append(candidate)
 
 
+def _wire_circular_diameter(wire) -> float | None:
+    edges = list(getattr(wire, "Edges", []) or [])
+    if not edges:
+        return None
+    radii = []
+    for edge in edges:
+        geometry = _circular_edge_geometry(edge)
+        if geometry is None:
+            return None
+        radii.append(geometry[0])
+    if max(radii) - min(radii) > 0.1:
+        return None
+    return 2.0 * sum(radii) / len(radii)
+
+
+def _feature_profile_diameters(feature: HoleFeature) -> list[float]:
+    values = [feature.diameter_mm]
+    if feature.type == "countersunk":
+        values.extend(
+            [
+                feature.through_diameter_mm,
+                feature.countersink_major_diameter_mm,
+            ]
+        )
+    return [float(value) for value in values if value is not None]
+
+
+def _wire_matches_feature_profile(
+    wire,
+    feature: HoleFeature,
+    face_axis: tuple[float, float, float],
+) -> bool:
+    if feature.center is None:
+        return False
+    if feature.axis is not None and not _axis_aligned(
+        tuple(feature.axis), face_axis, tolerance=0.95
+    ):
+        return False
+    center = _wire_center(wire)
+    axis = tuple(feature.axis) if feature.axis is not None else face_axis
+    delta = tuple(left - right for left, right in zip(center, tuple(feature.center)))
+    projected = _dot(delta, axis)
+    radial_offset = _vector_norm(
+        tuple(
+            component - projected * axis_component
+            for component, axis_component in zip(delta, axis)
+        )
+    )
+    if radial_offset > 3.0:
+        return False
+    wire_diameter = _wire_circular_diameter(wire)
+    feature_diameters = _feature_profile_diameters(feature)
+    if wire_diameter is not None and feature_diameters:
+        return any(abs(wire_diameter - value) <= 0.25 for value in feature_diameters)
+    return _center_matches_feature(center, feature)
+
+
+def _is_countersink_transition_face(face, features: list[HoleFeature]) -> bool:
+    """Reject the annular shoulder between the cone and through cylinder.
+
+    That face is internal machining geometry. Treating its two concentric rims
+    as a normal sheet skin produces the countersink radial width as a false
+    hole-to-edge distance.
+    """
+    outer_wire = _face_outer_wire(face)
+    if outer_wire is None:
+        return False
+    inner_wires = _face_inner_wires(face)
+    if not inner_wires:
+        return False
+    outer_diameter = _wire_circular_diameter(outer_wire)
+    if outer_diameter is None:
+        return False
+    outer_center = _wire_center(outer_wire)
+    for feature in features:
+        if (
+            feature.type != "countersunk"
+            or feature.through_diameter_mm is None
+            or feature.countersink_major_diameter_mm is None
+            or not _center_matches_feature(outer_center, feature)
+        ):
+            continue
+        for inner_wire in inner_wires:
+            inner_diameter = _wire_circular_diameter(inner_wire)
+            if inner_diameter is None:
+                continue
+            diameters = sorted((outer_diameter, inner_diameter))
+            expected = sorted(
+                (
+                    float(feature.through_diameter_mm),
+                    float(feature.countersink_major_diameter_mm),
+                )
+            )
+            if all(abs(left - right) <= 0.25 for left, right in zip(diameters, expected)):
+                return True
+    return False
+
+
+def _countersink_profile_adjustment(wire, feature: HoleFeature) -> float:
+    """Project a through rim to the conservative countersink envelope."""
+    if feature.type != "countersunk" or feature.countersink_major_diameter_mm is None:
+        return 0.0
+    wire_diameter = _wire_circular_diameter(wire)
+    if wire_diameter is None:
+        return 0.0
+    return max(
+        0.0,
+        (float(feature.countersink_major_diameter_mm) - wire_diameter) / 2.0,
+    )
+
+
 def _detect_unknown_holes(
     shape,
     known_features: list[HoleFeature],
@@ -1424,21 +1693,21 @@ def _annotate_hole_edge_distances(
         wires = list(face.Wires)
         if len(wires) < 2:
             continue
-        outer_wire = wires[0]
+        if _is_countersink_transition_face(face, features):
+            continue
+        outer_wire = _face_outer_wire(face)
+        if outer_wire is None:
+            continue
         face_axis = _normalize_vector(surface.Axis)
 
-        for inner_wire in wires[1:]:
+        for inner_wire in _face_inner_wires(face):
             if not inner_wire.isClosed():
                 continue
             center = _wire_center(inner_wire)
             matching_features = [
                 feature
                 for feature in features
-                if _center_matches_feature(center, feature)
-                and (
-                    feature.axis is None
-                    or _axis_aligned(tuple(feature.axis), face_axis, tolerance=0.95)
-                )
+                if _wire_matches_feature_profile(inner_wire, feature, face_axis)
             ]
             if not matching_features:
                 continue
@@ -1454,6 +1723,10 @@ def _annotate_hole_edge_distances(
                 continue
             if not math.isfinite(distance) or distance < 0:
                 continue
+            distance = max(
+                0.0,
+                distance - _countersink_profile_adjustment(inner_wire, feature),
+            )
             rounded_distance = round(distance, 3)
             if feature.edge_distance_mm is None or rounded_distance < feature.edge_distance_mm:
                 feature.edge_distance_mm = rounded_distance
@@ -1486,20 +1759,18 @@ def _annotate_hole_to_hole_distances(
         surface = face.Surface
         if getattr(surface, "TypeId", "") != "Part::GeomPlane":
             continue
+        if _is_countersink_transition_face(face, features):
+            continue
         face_axis = _normalize_vector(surface.Axis)
         matched: list[tuple[object, HoleFeature]] = []
-        for wire in list(face.Wires)[1:]:
+        for wire in _face_inner_wires(face):
             if not wire.isClosed():
                 continue
             center = _wire_center(wire)
             candidates = [
                 feature
                 for feature in features
-                if _center_matches_feature(center, feature)
-                and (
-                    feature.axis is None
-                    or _axis_aligned(tuple(feature.axis), face_axis, tolerance=0.95)
-                )
+                if _wire_matches_feature_profile(wire, feature, face_axis)
             ]
             if not candidates:
                 continue
@@ -1523,6 +1794,12 @@ def _annotate_hole_to_hole_distances(
                     continue
                 if not math.isfinite(distance) or distance < 0:
                     continue
+                distance = max(
+                    0.0,
+                    distance
+                    - _countersink_profile_adjustment(left_wire, left_feature)
+                    - _countersink_profile_adjustment(right_wire, right_feature),
+                )
                 rounded_distance = round(distance, 3)
                 all_distances.append(rounded_distance)
                 measured_pairs.add(pair_key)
@@ -1811,11 +2088,17 @@ def _estimate_flat_pattern(
     cutting_outer_perimeter_mm: float | None,
     density_g_cm3: float | None,
     parameters: AnalysisParameters,
+    part_category: str = "sheet_metal",
 ) -> FlatPattern:
     result = FlatPattern(
         thickness_mm=thickness_mm,
         k_factor=parameters.flat_pattern_k_factor,
     )
+    if part_category == "multi_solid":
+        result.warnings.append(
+            "Sviluppo piano globale non disponibile: lo STEP contiene piu solidi/componenti."
+        )
+        return result
     if thickness_mm is None or thickness_mm <= 0:
         result.warnings.append(
             "Sviluppo piano non determinabile: spessore lamiera non disponibile."
@@ -1832,8 +2115,36 @@ def _estimate_flat_pattern(
         )
         return result
 
+    countersink_extra_removed_volume_mm3 = 0.0
+    for hole in holes:
+        if (
+            hole.type != "countersunk"
+            or hole.through_diameter_mm is None
+            or hole.countersink_major_diameter_mm is None
+            or hole.countersink_depth_mm is None
+        ):
+            continue
+        minor_radius = float(hole.through_diameter_mm) / 2.0
+        major_radius = float(hole.countersink_major_diameter_mm) / 2.0
+        countersink_depth = float(hole.countersink_depth_mm)
+        if major_radius <= minor_radius or countersink_depth <= 0:
+            continue
+        countersink_extra_removed_volume_mm3 += (
+            math.pi
+            * countersink_depth
+            / 3.0
+            * (
+                major_radius * major_radius
+                + major_radius * minor_radius
+                - 2.0 * minor_radius * minor_radius
+            )
+        )
+
     result.available = True
-    result.net_developed_area_mm2 = round(volume_mm3 / thickness_mm, 2)
+    result.net_developed_area_mm2 = round(
+        (volume_mm3 + countersink_extra_removed_volume_mm3) / thickness_mm,
+        2,
+    )
     result.status = "partial"
     result.method = "constant-thickness material-volume estimate"
 
@@ -2045,6 +2356,16 @@ def _classify_part_geometry(
     thickness_confidence: str,
 ) -> PartClassification:
     """Conservatively distinguish sheet metal from compact massive solids."""
+    solid_count = len(getattr(shape, "Solids", []) or [])
+    if solid_count > 1:
+        return PartClassification(
+            category="multi_solid",
+            confidence="high",
+            reason=(
+                f"Lo STEP contiene {solid_count} solidi/componenti distinti; "
+                "non e un singolo pezzo lamiera preventivabile come unita."
+            ),
+        )
     if detected_thickness_mm is not None:
         return PartClassification(
             category="sheet_metal",
@@ -2202,6 +2523,12 @@ def analyze_step_file(
             analysis_parameters,
             detected_thickness,
         )
+        response.holes.countersunk_holes = _annotate_countersunk_holes(
+            shape,
+            response.holes.circular,
+            analysis_parameters,
+            detected_thickness,
+        )
         response.holes.elongated = _detect_elongated_holes(
             shape,
             analysis_parameters,
@@ -2246,6 +2573,7 @@ def analyze_step_file(
             + response.holes.formed_holes
             + response.holes.unknown_holes
         )
+        response.holes.physical_openings_total = response.holes.total_holes
         circular_diameters = [
             hole.diameter_mm
             for hole in response.holes.circular
@@ -2328,14 +2656,24 @@ def analyze_step_file(
                 "High number of circular features detected: hole deduplication applied"
             )
 
-        if response.part_classification.category == "non_sheet_metal":
+        if response.part_classification.category in {"non_sheet_metal", "multi_solid"}:
             response.cutting.confidence = "low"
-            response.cutting.warnings.append(
-                "Taglio laser 2D non applicabile: il modello e classificato come pezzo non lamiera."
-            )
-            response.warnings.append(
-                "Pezzo non lamiera: il normale processo e preventivo di lavorazione lamiera non sono applicabili."
-            )
+            if response.part_classification.category == "multi_solid":
+                warning = (
+                    "STEP contiene piu solidi/componenti: separare i componenti "
+                    "o analizzarli singolarmente."
+                )
+                response.cutting.warnings.append(
+                    "Taglio laser 2D globale non applicabile a uno STEP multi-solid."
+                )
+                response.warnings.append(warning)
+            else:
+                response.cutting.warnings.append(
+                    "Taglio laser 2D non applicabile: il modello e classificato come pezzo non lamiera."
+                )
+                response.warnings.append(
+                    "Pezzo non lamiera: il normale processo e preventivo di lavorazione lamiera non sono applicabili."
+                )
         else:
             (
                 response.cutting.outer_cut_length_mm,
@@ -2362,6 +2700,7 @@ def analyze_step_file(
             cutting_outer_perimeter_mm=response.cutting.outer_cut_length_mm,
             density_g_cm3=response.density_g_cm3,
             parameters=analysis_parameters,
+            part_category=response.part_classification.category,
         )
 
         if response.detected_thickness_mm is None:

@@ -1300,6 +1300,10 @@
     }
 
     function holeMeasureText(feature, group) {
+      if (feature.type === "countersunk") {
+        const through = feature.through_diameter_mm ?? feature.diameter_mm;
+        return `Ø passante ${number(through, "mm")} · Ø svasatura ${number(feature.countersink_major_diameter_mm, "mm")} · prof. ${number(feature.countersink_depth_mm, "mm")}`;
+      }
       if (feature.diameter_mm != null) return `Ø ${number(feature.diameter_mm, "mm")}`;
       if (group === "Asola") {
         return `${number(feature.overall_length_mm, "mm")} x ${number(feature.width_mm, "mm")}`;
@@ -1313,12 +1317,17 @@
       return "-";
     }
 
+    function holeTypeLabel(feature, group) {
+      return feature.type === "countersunk" ? "Svasato" : group;
+    }
+
     function groupedHoleBadges(groups) {
       const grouped = new Map();
       groups.forEach(([group, items]) => items.forEach(feature => {
+        const displayGroup = holeTypeLabel(feature, group);
         const measure = holeMeasureText(feature, group);
-        const key = `${group}|${measure}`;
-        const current = grouped.get(key) || { group, measure, count: 0 };
+        const key = `${displayGroup}|${measure}`;
+        const current = grouped.get(key) || { group: displayGroup, measure, count: 0 };
         current.count += 1;
         grouped.set(key, current);
       }));
@@ -1368,7 +1377,7 @@
       ];
       const holeRows = groups.flatMap(([group, items]) => items.map((feature, index) => `
         <tr>
-          <td>${escapeHtml(`${group} ${index + 1}`)}</td>
+          <td>${escapeHtml(`${holeTypeLabel(feature, group)} ${index + 1}`)}</td>
           <td>${escapeHtml(holeMeasureText(feature, group))}</td>
           <td>${escapeHtml(number(feature.circumference_mm ?? feature.perimeter_mm, "mm"))}</td>
           <td>${escapeHtml(number(feature.area_mm2, "mm²"))}</td>
@@ -1598,12 +1607,15 @@
       const classification = analysis.part_classification || {};
       const applicability = quote.quote_applicability || {};
       const circularHoles = features.circular_holes ?? holes.circular_holes ?? holes.circular?.length ?? 0;
+      const countersunkHoles = features.countersunk_holes ?? holes.countersunk_holes
+        ?? (holes.circular || []).filter(feature => feature.type === "countersunk").length;
       const elongatedHoles = features.elongated_holes ?? holes.elongated_holes ?? holes.elongated?.length ?? 0;
       const roundedRectangularHoles = features.rounded_rectangular_holes ?? holes.rounded_rectangular_holes ?? holes.rounded_rectangular?.length ?? 0;
       const polygonalHoles = features.polygonal_holes ?? holes.polygonal_holes ?? holes.polygonal?.length ?? 0;
       const formedHoles = features.formed_holes ?? holes.formed_holes ?? holes.formed?.length ?? 0;
       const unknownHoles = features.unknown_holes ?? holes.unknown_holes ?? holes.unknown?.length ?? 0;
-      const totalHoles = features.total_holes ?? holes.total_holes
+      const totalHoles = features.physical_openings_total ?? holes.physical_openings_total
+        ?? features.total_holes ?? holes.total_holes
         ?? (circularHoles + elongatedHoles + roundedRectangularHoles + polygonalHoles + formedHoles + unknownHoles);
       renderPreviewGallery(preview, analysis.complexity_score);
       renderTechnicalDetails(analysis);
@@ -1634,12 +1646,13 @@
         ["Dimensioni", `${number(dimensions.x)} x ${number(dimensions.y)} x ${number(dimensions.z)} mm`],
         ["Peso netto pezzo", number(quote.material?.part_weight_kg ?? analysis.estimated_weight_kg, "kg")],
         ["Fori circolari", circularHoles],
+        ["Fori svasati (inclusi nei circolari)", countersunkHoles],
         ["Asole", elongatedHoles],
         ["Aperture rettangolari raccordate", roundedRectangularHoles],
         ["Fori poligonali", polygonalHoles],
         ["Fori sagomati/imbutiti", formedHoles],
         ["Fori non riconosciuti", unknownHoles],
-        ["Fori totali", totalHoles],
+        ["Aperture fisiche totali", totalHoles],
         ["Pieghe", features.bends ?? analysis.bends?.count ?? 0],
         ["Dimensioni grezzo sviluppato", flatDimensionsText(analysis.flat_pattern?.blank_dimensions_mm)],
         ["Area lorda grezzo", number(analysis.flat_pattern?.gross_blank_area_mm2, "mm²")],

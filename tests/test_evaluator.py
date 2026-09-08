@@ -211,3 +211,38 @@ def test_evaluator_compares_part_classification():
 
     assert report["status"] == "pass"
     assert report["checks"]["part_classification"]["status"] == "pass"
+
+
+def test_evaluator_compares_countersink_geometry_and_physical_count():
+    actual = {
+        "holes": {
+            "circular": [
+                {
+                    "type": "countersunk",
+                    "diameter_mm": 6.0,
+                    "through_diameter_mm": 6.0,
+                    "countersink_major_diameter_mm": 12.0,
+                    "countersink_depth_mm": 2.0,
+                }
+            ],
+            "physical_openings_total": 1,
+        }
+    }
+    expected = {
+        "holes": {
+            "countersunk": [
+                {
+                    "through_diameter_mm": 6.0,
+                    "countersink_major_diameter_mm": 12.0,
+                    "countersink_depth_mm": 2.0,
+                    "count": 1,
+                }
+            ],
+            "physical_openings_total": 1,
+        }
+    }
+
+    report = evaluate_staffa(actual, expected)
+
+    assert report["checks"]["countersunk_geometry"]["status"] == "pass"
+    assert report["checks"]["physical_openings_total"]["status"] == "pass"

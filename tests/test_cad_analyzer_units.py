@@ -6,6 +6,7 @@ import pytest
 from app.cad_analyzer import (
     _annotate_hole_edge_distances,
     _annotate_hole_to_hole_distances,
+    _annotate_countersunk_holes,
     _cylindrical_face_angle_deg,
     _classify_part_geometry,
     _detect_bends,
@@ -239,6 +240,96 @@ def test_compact_solid_without_sheet_thickness_is_non_sheet_metal():
 
     assert result.category == "non_sheet_metal"
     assert result.confidence == "high"
+
+
+def test_multi_solid_classification_precedes_detected_sheet_thickness():
+    shape = SimpleNamespace(
+        Solids=[object(), object()],
+        Volume=6992.92,
+        Area=7760.89,
+        BoundBox=_bbox(120.0, 40.0, 2.0),
+    )
+
+    result = _classify_part_geometry(shape, 2.0, "high")
+
+    assert result.category == "multi_solid"
+    assert result.confidence == "high"
+    assert "2 solidi" in result.reason
+
+
+def test_countersink_is_attached_to_one_through_hole():
+    shared_minor_edge = _edge(
+        "Part::GeomCircle",
+        Radius=3.0,
+        Center=_vector(x=72.0, y=35.0, z=2.0),
+    )
+    shared_minor_edge.isSame = lambda other: other is shared_minor_edge
+    major_edge = _edge(
+        "Part::GeomCircle",
+        Radius=6.0,
+        Center=_vector(x=72.0, y=35.0, z=4.0),
+    )
+    major_edge.isSame = lambda other: other is major_edge
+    cone = SimpleNamespace(
+        Surface=SimpleNamespace(TypeId="Part::GeomCone", Axis=_vector(z=1.0)),
+        ParameterRange=(0.0, 2.0 * 3.141592653589793, 0.0, 2.0),
+        Edges=[shared_minor_edge, major_edge],
+    )
+    cylinder = _full_cylinder_face(3.0, 2.0, edges=[shared_minor_edge])
+    cylinder.Surface.Center = _vector(x=72.0, y=35.0, z=0.0)
+    feature = HoleFeature(
+        diameter_mm=6.0,
+        radius_mm=3.0,
+        perimeter_mm=18.85,
+        circumference_mm=18.85,
+        area_mm2=28.27,
+        center=[72.0, 35.0, 2.0],
+        axis=[0.0, 0.0, 1.0],
+        depth_mm=4.0,
+        confidence="high",
+    )
+
+    count = _annotate_countersunk_holes(
+        SimpleNamespace(Faces=[cylinder, cone]),
+        [feature],
+        load_analysis_config(),
+        4.0,
+    )
+
+    assert count == 1
+    assert feature.type == "countersunk"
+    assert feature.diameter_mm == 6.0
+    assert feature.through_diameter_mm == 6.0
+    assert feature.countersink_major_diameter_mm == 12.0
+    assert feature.countersink_depth_mm == 2.0
+    assert feature.area_mm2 == 28.27
+    assert feature.confidence == "high"
+
+
+def test_unrelated_conical_face_is_not_attached_without_sheet_depth_evidence():
+    cone = SimpleNamespace(
+        Surface=SimpleNamespace(TypeId="Part::GeomCone", Axis=_vector(z=1.0)),
+        ParameterRange=(0.0, 2.0 * 3.141592653589793, 0.0, 8.0),
+        Edges=[
+            _edge("Part::GeomCircle", Radius=3.0, Center=_vector(z=0.0)),
+            _edge("Part::GeomCircle", Radius=8.0, Center=_vector(z=8.0)),
+        ],
+    )
+    feature = HoleFeature(
+        diameter_mm=6.0,
+        center=[0.0, 0.0, 0.0],
+        axis=[0.0, 0.0, 1.0],
+    )
+
+    count = _annotate_countersunk_holes(
+        SimpleNamespace(Faces=[cone]),
+        [feature],
+        load_analysis_config(),
+        4.0,
+    )
+
+    assert count == 0
+    assert feature.type is None
 
 
 def test_large_planar_circular_opening_is_not_limited_to_20_mm():
@@ -547,6 +638,53 @@ def test_flat_pattern_reports_exact_planar_blank():
     assert result.confidence == "high"
 
 
+def test_flat_pattern_restores_countersink_removal_before_area_projection():
+    result = _estimate_flat_pattern(
+        shape=SimpleNamespace(Volume=30410.4425, BoundBox=_bbox(110.0, 70.0, 4.0)),
+        thickness_mm=4.0,
+        thickness_confidence="high",
+        bends=[],
+        holes=[
+            HoleFeature(diameter_mm=8.0, area_mm2=50.27),
+            HoleFeature(
+                type="countersunk",
+                diameter_mm=6.0,
+                through_diameter_mm=6.0,
+                countersink_major_diameter_mm=12.0,
+                countersink_depth_mm=2.0,
+                area_mm2=28.27,
+            ),
+        ],
+        cutting_outer_perimeter_mm=360.0,
+        density_g_cm3=7.85,
+        parameters=load_analysis_config(),
+    )
+
+    assert result.status == "exact"
+    assert result.net_developed_area_mm2 == pytest.approx(7621.46, abs=0.02)
+    assert result.opening_area_mm2 == pytest.approx(78.54, abs=0.01)
+    assert result.gross_blank_area_mm2 == pytest.approx(7700.0, abs=0.02)
+
+
+def test_multi_solid_flat_pattern_is_unavailable_even_with_thickness():
+    result = _estimate_flat_pattern(
+        shape=SimpleNamespace(Volume=6992.92, BoundBox=_bbox(120.0, 40.0, 2.0)),
+        thickness_mm=2.0,
+        thickness_confidence="high",
+        bends=[],
+        holes=[],
+        cutting_outer_perimeter_mm=200.0,
+        density_g_cm3=7.85,
+        parameters=load_analysis_config(),
+        part_category="multi_solid",
+    )
+
+    assert result.status == "unavailable"
+    assert result.available is False
+    assert result.gross_blank_area_mm2 is None
+    assert any("piu solidi" in warning for warning in result.warnings)
+
+
 def test_flat_pattern_estimates_simple_parallel_bend_blank():
     bend_items = [
         BendFeature(
@@ -752,3 +890,80 @@ def test_hole_to_hole_distance_is_measured_between_planar_opening_wires():
     assert measured_pairs == 1
     assert features[0].nearest_hole_distance_mm == 12.0
     assert features[1].nearest_hole_distance_mm == 12.0
+
+
+def test_countersink_distances_use_sheet_profiles_not_internal_annulus():
+    def circle_wire(radius, x, y, z, distance):
+        return _Wire(
+            [
+                _edge(
+                    "Part::GeomCircle",
+                    Radius=radius,
+                    Center=_vector(x=x, y=y, z=z),
+                )
+            ],
+            length=2.0 * 3.141592653589793 * radius,
+            bbox=_bbox(
+                radius * 2.0,
+                radius * 2.0,
+                x_min=x - radius,
+                y_min=y - radius,
+                z_min=z,
+            ),
+            edge_distance=distance,
+        )
+
+    top_outer = _Wire([], length=360.0, bbox=_bbox(110.0, 70.0))
+    bottom_outer = _Wire([], length=360.0, bbox=_bbox(110.0, 70.0))
+    top_plain = circle_wire(4.0, 22.0, 35.0, 4.0, 40.0)
+    top_major = circle_wire(6.0, 72.0, 35.0, 4.0, 29.0)
+    bottom_plain = circle_wire(4.0, 22.0, 35.0, 0.0, 43.0)
+    bottom_through = circle_wire(3.0, 72.0, 35.0, 0.0, 32.0)
+    transition_major = circle_wire(6.0, 72.0, 35.0, 2.0, 3.0)
+    transition_through = circle_wire(3.0, 72.0, 35.0, 2.0, 3.0)
+    faces = [
+        SimpleNamespace(
+            Surface=SimpleNamespace(TypeId="Part::GeomPlane", Axis=_vector(z=1.0)),
+            Wires=[top_outer, top_plain, top_major],
+        ),
+        SimpleNamespace(
+            Surface=SimpleNamespace(TypeId="Part::GeomPlane", Axis=_vector(z=1.0)),
+            Wires=[bottom_outer, bottom_plain, bottom_through],
+        ),
+        SimpleNamespace(
+            Surface=SimpleNamespace(TypeId="Part::GeomPlane", Axis=_vector(z=1.0)),
+            Wires=[transition_major, transition_through],
+        ),
+    ]
+    features = [
+        HoleFeature(
+            diameter_mm=8.0,
+            center=[22.0, 35.0, 2.0],
+            axis=[0.0, 0.0, 1.0],
+        ),
+        HoleFeature(
+            type="countersunk",
+            diameter_mm=6.0,
+            through_diameter_mm=6.0,
+            countersink_major_diameter_mm=12.0,
+            countersink_depth_mm=2.0,
+            center=[72.0, 35.0, 2.0],
+            axis=[0.0, 0.0, 1.0],
+        ),
+    ]
+    shape = SimpleNamespace(Faces=faces)
+
+    edge_minimum, edge_confidence, measured = _annotate_hole_edge_distances(
+        shape, features
+    )
+    hole_minimum, hole_confidence, measured_pairs = _annotate_hole_to_hole_distances(
+        shape, features
+    )
+
+    assert edge_minimum == 29.0
+    assert edge_confidence == "high"
+    assert measured == 2
+    assert features[1].edge_distance_mm == 29.0
+    assert hole_minimum == 40.0
+    assert hole_confidence == "high"
+    assert measured_pairs == 1

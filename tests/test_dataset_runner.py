@@ -31,6 +31,10 @@ FREECAD_VALIDATION_V2_CASE_NAMES = (
     "validation_09_staffa_aperture_miste",
     "validation_10_blocco_massivo_negativo",
 )
+FREECAD_VALIDATION_V3_CASE_NAMES = (
+    "validation_13_piastra_foro_svasato",
+    "validation_14_multisolid_due_piastre",
+)
 DATASET_CASE_NAMES = (
     "lamiera_piana_test_1",
     "staffa_1_piega_test_1",
@@ -39,6 +43,7 @@ DATASET_CASE_NAMES = (
     "staffa_16_pieghe_stress_test",
     *FREECAD_VALIDATION_CASE_NAMES,
     *FREECAD_VALIDATION_V2_CASE_NAMES,
+    *FREECAD_VALIDATION_V3_CASE_NAMES,
 )
 
 
@@ -76,6 +81,17 @@ def test_freecad_validation_dataset_cases_exist():
 def test_freecad_validation_v2_dataset_cases_exist():
     assert (PROJECT_ROOT / "tests" / "dataset" / "freecad_validation_ground_truth_v2.json").exists()
     for case_name in FREECAD_VALIDATION_V2_CASE_NAMES:
+        case_dir = PROJECT_ROOT / "tests" / "dataset" / case_name
+        assert (case_dir / "input.stp").exists()
+        assert (case_dir / "expected.json").exists()
+        expected = json.loads((case_dir / "expected.json").read_text(encoding="utf-8"))
+        assert expected["material_key"] == "acciaio"
+        assert expected["density_g_cm3"] == 7.85
+
+
+def test_freecad_validation_v3_dataset_cases_exist():
+    assert (PROJECT_ROOT / "tests" / "dataset" / "freecad_validation_ground_truth_v3.json").exists()
+    for case_name in FREECAD_VALIDATION_V3_CASE_NAMES:
         case_dir = PROJECT_ROOT / "tests" / "dataset" / case_name
         assert (case_dir / "input.stp").exists()
         assert (case_dir / "expected.json").exists()
@@ -309,6 +325,51 @@ def test_real_cad_analysis_matches_dataset_ground_truth(case_name, tmp_path):
         assert actual["bends"]["count"] == 0
         assert actual["flat_pattern"]["status"] == "unavailable"
         assert actual["cutting"]["total_cut_length_mm"] is None
+        quote = quote_from_cad(actual, material="acciaio")
+        assert quote["quote_applicability"]["status"] == "not_applicable"
+        assert quote["process_plan"] == []
+        assert quote["estimated_internal_cost_eur"]["total"] is None
+        assert quote["estimated_internal_cost_eur"]["bending"] == 0.0
+
+    if case_name == "validation_13_piastra_foro_svasato":
+        assert actual["detected_thickness_mm"] == pytest.approx(4.0, abs=0.1)
+        assert actual["part_classification"]["category"] == "sheet_metal"
+        assert holes["circular_holes"] == 2
+        assert holes["countersunk_holes"] == 1
+        assert holes["physical_openings_total"] == 2
+        countersunk = next(
+            feature
+            for feature in holes["circular"]
+            if feature["type"] == "countersunk"
+        )
+        assert countersunk["diameter_mm"] == pytest.approx(6.0, abs=0.1)
+        assert countersunk["through_diameter_mm"] == pytest.approx(6.0, abs=0.1)
+        assert countersunk["countersink_major_diameter_mm"] == pytest.approx(12.0, abs=0.1)
+        assert countersunk["countersink_depth_mm"] == pytest.approx(2.0, abs=0.1)
+        assert countersunk["edge_distance_mm"] == pytest.approx(29.0, abs=0.1)
+        assert actual["manufacturability"]["min_hole_to_edge_mm"] != pytest.approx(
+            3.0, abs=0.1
+        )
+        assert actual["flat_pattern"]["net_developed_area_mm2"] == pytest.approx(
+            7621.46, abs=0.1
+        )
+        assert actual["flat_pattern"]["gross_blank_area_mm2"] == pytest.approx(
+            7700.0, abs=0.1
+        )
+        assert actual["cutting"]["inner_cut_length_mm"] == pytest.approx(
+            43.98, abs=0.1
+        )
+
+    if case_name == "validation_14_multisolid_due_piastre":
+        assert actual["geometry"]["solid_count"] == 2
+        assert actual["part_classification"]["category"] == "multi_solid"
+        assert actual["part_classification"]["confidence"] == "high"
+        assert holes["circular_holes"] == 2
+        assert holes["physical_openings_total"] == 2
+        assert actual["bends"]["count"] == 0
+        assert actual["flat_pattern"]["status"] == "unavailable"
+        assert actual["cutting"]["total_cut_length_mm"] is None
+        assert any("piu solidi" in warning for warning in actual["warnings"])
         quote = quote_from_cad(actual, material="acciaio")
         assert quote["quote_applicability"]["status"] == "not_applicable"
         assert quote["process_plan"] == []

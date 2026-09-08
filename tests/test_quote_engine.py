@@ -31,12 +31,14 @@ def test_quote_from_cad_staffa_test_1():
     assert quote["material"]["cost_eur_kg"] == 6.0
     assert quote["features_summary"] == {
         "circular_holes": 4,
+        "countersunk_holes": 0,
         "elongated_holes": 2,
         "rounded_rectangular_holes": 0,
         "polygonal_holes": 2,
         "formed_holes": 0,
         "unknown_holes": 0,
         "total_holes": 8,
+        "physical_openings_total": 8,
         "bends": 2,
     }
     assert quote["cost_drivers"]["complexity"] == "medium"
@@ -112,6 +114,64 @@ def test_non_sheet_metal_blocks_sheet_process_and_costs():
     assert quote["quantity_breakdown"] == []
     assert quote["cost_drivers"]["setup_required"] is False
     assert any("non applicabile" in warning.lower() for warning in quote["warnings"])
+
+
+def test_multi_solid_blocks_single_sheet_quote():
+    cad_data = {
+        "part_name": "14 multisolid",
+        "declared_material": "acciaio",
+        "volume_cm3": 6.993,
+        "detected_thickness_mm": 2.0,
+        "part_classification": {
+            "category": "multi_solid",
+            "confidence": "high",
+            "reason": "Lo STEP contiene 2 solidi/componenti distinti.",
+        },
+        "holes": {
+            "circular": [{"diameter_mm": 8.0}, {"diameter_mm": 10.0}],
+            "physical_openings_total": 2,
+        },
+        "bends": {"count": 0, "items": []},
+        "cutting": {"total_cut_length_mm": None},
+        "flat_pattern": {"status": "unavailable", "confidence": "low"},
+    }
+
+    quote = quote_from_cad(cad_data, material="acciaio")
+
+    assert quote["quote_applicability"]["status"] == "not_applicable"
+    assert "piu solidi" in quote["quote_applicability"]["reason"]
+    assert quote["process_plan"] == []
+    assert quote["features_summary"]["physical_openings_total"] == 2
+    assert quote["estimated_internal_cost_eur"]["total"] is None
+    assert quote["estimated_internal_cost_eur"]["bending"] == 0.0
+    assert quote["quantity_breakdown"] == []
+
+
+def test_countersink_does_not_add_a_pierce_or_physical_opening():
+    cad_data = _cad_data_without_cutting()
+    cad_data["cutting"] = {"total_cut_length_mm": 363.98}
+    cad_data["holes"] = {
+        "circular": [
+            {"diameter_mm": 8.0},
+            {
+                "type": "countersunk",
+                "diameter_mm": 6.0,
+                "through_diameter_mm": 6.0,
+                "countersink_major_diameter_mm": 12.0,
+                "countersink_depth_mm": 2.0,
+            },
+        ],
+        "countersunk_holes": 1,
+        "physical_openings_total": 2,
+    }
+    cad_data["bends"] = {"count": 0, "items": []}
+
+    quote = quote_from_cad(cad_data)
+
+    assert quote["features_summary"]["circular_holes"] == 2
+    assert quote["features_summary"]["countersunk_holes"] == 1
+    assert quote["features_summary"]["physical_openings_total"] == 2
+    assert quote["laser_details"]["pierce_count"] == 3
 
 
 def test_quote_from_cad_uses_requested_quantity():
