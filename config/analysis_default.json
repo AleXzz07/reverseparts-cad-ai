@@ -16,6 +16,12 @@
     "axis_angle_tolerance_deg": 5.0,
     "min_length_mm": 2.5
   },
+  "assembly_detection": {
+    "contact_tolerance_mm": 0.05,
+    "passage_center_tolerance_mm": 0.25,
+    "passage_diameter_tolerance_mm": 0.2,
+    "passage_axial_gap_tolerance_mm": 0.1
+  },
   "flat_pattern": {
     "k_factor": 0.4,
     "max_simple_parallel_bends": 4

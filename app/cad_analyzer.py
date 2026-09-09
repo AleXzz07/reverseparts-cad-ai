@@ -9,12 +9,17 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .schemas import (
+    AssemblyAnalysis,
+    AssemblyComponent,
+    AssemblyPassage,
     BendFeature,
     CadAnalysisResponse,
     Dimensions,
     FlatPattern,
     HoleFeature,
+    Holes,
     PartClassification,
+    WeldEvidence,
 )
 
 
@@ -56,6 +61,10 @@ class AnalysisParameters:
     bend_radius_pair_tolerance_mm: float
     bend_axis_angle_tolerance_deg: float
     bend_min_length_mm: float
+    assembly_contact_tolerance_mm: float
+    assembly_passage_center_tolerance_mm: float
+    assembly_passage_diameter_tolerance_mm: float
+    assembly_passage_axial_gap_tolerance_mm: float
     flat_pattern_k_factor: float
     flat_pattern_max_simple_parallel_bends: int
 
@@ -66,6 +75,7 @@ def load_analysis_config(path: Path = DEFAULT_ANALYSIS_CONFIG_PATH) -> AnalysisP
     opening = data.get("planar_opening_detection", {})
     bend = data["bend_detection"]
     flat_pattern = data.get("flat_pattern", {})
+    assembly = data.get("assembly_detection", {})
     parameters = AnalysisParameters(
         hole_center_tolerance_mm=float(hole["center_tolerance_mm"]),
         hole_diameter_tolerance_mm=float(hole["diameter_tolerance_mm"]),
@@ -78,6 +88,16 @@ def load_analysis_config(path: Path = DEFAULT_ANALYSIS_CONFIG_PATH) -> AnalysisP
         bend_radius_pair_tolerance_mm=float(bend["radius_pair_tolerance_mm"]),
         bend_axis_angle_tolerance_deg=float(bend["axis_angle_tolerance_deg"]),
         bend_min_length_mm=float(bend["min_length_mm"]),
+        assembly_contact_tolerance_mm=float(assembly.get("contact_tolerance_mm", 0.05)),
+        assembly_passage_center_tolerance_mm=float(
+            assembly.get("passage_center_tolerance_mm", 0.25)
+        ),
+        assembly_passage_diameter_tolerance_mm=float(
+            assembly.get("passage_diameter_tolerance_mm", 0.2)
+        ),
+        assembly_passage_axial_gap_tolerance_mm=float(
+            assembly.get("passage_axial_gap_tolerance_mm", 0.1)
+        ),
         flat_pattern_k_factor=float(flat_pattern.get("k_factor", 0.4)),
         flat_pattern_max_simple_parallel_bends=int(
             flat_pattern.get("max_simple_parallel_bends", 4)
@@ -91,6 +111,8 @@ def load_analysis_config(path: Path = DEFAULT_ANALYSIS_CONFIG_PATH) -> AnalysisP
         raise ValueError("Invalid flat-pattern K-factor in analysis config.")
     if parameters.flat_pattern_max_simple_parallel_bends < 0:
         raise ValueError("Invalid flat-pattern bend limit in analysis config.")
+    if parameters.assembly_contact_tolerance_mm < 0:
+        raise ValueError("Invalid assembly contact tolerance in analysis config.")
     return parameters
 
 
@@ -2414,6 +2436,452 @@ def _classify_part_geometry(
     )
 
 
+def _stable_solids(shape) -> list:
+    """Return solids in a deterministic geometric order.
+
+    STEP topology order is not a stable public identifier.  Sorting by location,
+    extents and volume keeps component IDs repeatable for UI configuration and
+    dataset comparisons.
+    """
+    solids = list(getattr(shape, "Solids", []) or [])
+
+    def key(solid) -> tuple[float, ...]:
+        bbox = solid.BoundBox
+        return tuple(
+            round(float(value), 6)
+            for value in (
+                bbox.XMin,
+                bbox.YMin,
+                bbox.ZMin,
+                bbox.XLength,
+                bbox.YLength,
+                bbox.ZLength,
+                getattr(solid, "Volume", 0.0),
+            )
+        )
+
+    return sorted(solids, key=key)
+
+
+def _assign_component_feature_ids(holes: Holes, component_id: str) -> None:
+    groups = (
+        ("circular", holes.circular),
+        ("elongated", holes.elongated),
+        ("rounded_rectangular", holes.rounded_rectangular),
+        ("polygonal", holes.polygonal),
+        ("formed", holes.formed),
+        ("unknown", holes.unknown),
+    )
+    for group_name, features in groups:
+        for index, feature in enumerate(features, start=1):
+            feature.component_id = component_id
+            feature.feature_id = f"{component_id}_{group_name}_{index:03d}"
+
+
+def _detect_component_holes(
+    solid,
+    component_id: str,
+    parameters: AnalysisParameters,
+    thickness_mm: float | None,
+) -> Holes:
+    holes = Holes()
+    holes.circular, _ = _detect_circular_holes(solid, parameters, thickness_mm)
+    holes.countersunk_holes = _annotate_countersunk_holes(
+        solid,
+        holes.circular,
+        parameters,
+        thickness_mm,
+    )
+    holes.elongated = _detect_elongated_holes(solid, parameters, thickness_mm)
+    holes.rounded_rectangular = _detect_rounded_rectangular_holes(
+        solid,
+        parameters,
+        thickness_mm,
+    )
+    holes.polygonal = _detect_polygonal_holes(solid, parameters, thickness_mm)
+    holes.formed = _detect_formed_holes(solid, parameters)
+    holes.unknown = _detect_unknown_holes(
+        solid,
+        [
+            *holes.circular,
+            *holes.elongated,
+            *holes.rounded_rectangular,
+            *holes.polygonal,
+            *holes.formed,
+        ],
+        parameters,
+        thickness_mm,
+    )
+    holes.circular_holes = len(holes.circular)
+    holes.elongated_holes = len(holes.elongated)
+    holes.rounded_rectangular_holes = len(holes.rounded_rectangular)
+    holes.polygonal_holes = len(holes.polygonal)
+    holes.formed_holes = len(holes.formed)
+    holes.unknown_holes = len(holes.unknown)
+    holes.total_holes = sum(
+        (
+            holes.circular_holes,
+            holes.elongated_holes,
+            holes.rounded_rectangular_holes,
+            holes.polygonal_holes,
+            holes.formed_holes,
+            holes.unknown_holes,
+        )
+    )
+    holes.physical_openings_total = holes.total_holes
+    diameters = [
+        feature.diameter_mm
+        for feature in holes.circular
+        if feature.diameter_mm is not None
+    ]
+    if diameters:
+        holes.min_circular_diameter_mm = min(diameters)
+        holes.max_circular_diameter_mm = max(diameters)
+    holes.confidence = "high" if holes.total_holes and not holes.unknown else (
+        "medium" if holes.total_holes else "low"
+    )
+    _assign_component_feature_ids(holes, component_id)
+    return holes
+
+
+def _aggregate_component_holes(components: list[AssemblyComponent]) -> Holes:
+    result = Holes()
+    for component in components:
+        result.circular.extend(component.holes.circular)
+        result.elongated.extend(component.holes.elongated)
+        result.rounded_rectangular.extend(component.holes.rounded_rectangular)
+        result.polygonal.extend(component.holes.polygonal)
+        result.formed.extend(component.holes.formed)
+        result.unknown.extend(component.holes.unknown)
+        result.countersunk_holes += component.holes.countersunk_holes
+    result.circular_holes = len(result.circular)
+    result.elongated_holes = len(result.elongated)
+    result.rounded_rectangular_holes = len(result.rounded_rectangular)
+    result.polygonal_holes = len(result.polygonal)
+    result.formed_holes = len(result.formed)
+    result.unknown_holes = len(result.unknown)
+    result.total_holes = sum(
+        (
+            result.circular_holes,
+            result.elongated_holes,
+            result.rounded_rectangular_holes,
+            result.polygonal_holes,
+            result.formed_holes,
+            result.unknown_holes,
+        )
+    )
+    result.physical_openings_total = result.total_holes
+    diameters = [
+        feature.diameter_mm
+        for feature in result.circular
+        if feature.diameter_mm is not None
+    ]
+    if diameters:
+        result.min_circular_diameter_mm = min(diameters)
+        result.max_circular_diameter_mm = max(diameters)
+    result.confidence = "high" if result.total_holes and not result.unknown else (
+        "medium" if result.total_holes else "low"
+    )
+    return result
+
+
+def _hole_axial_interval(feature: HoleFeature, axis: tuple[float, float, float]) -> tuple[float, float] | None:
+    if feature.center is None or feature.depth_mm is None:
+        return None
+    center_projection = _dot(tuple(feature.center), axis)
+    half_depth = float(feature.depth_mm) / 2.0
+    return center_projection - half_depth, center_projection + half_depth
+
+
+def _assembly_circular_features_match(
+    left: HoleFeature,
+    right: HoleFeature,
+    parameters: AnalysisParameters,
+) -> bool:
+    if (
+        left.component_id == right.component_id
+        or left.diameter_mm is None
+        or right.diameter_mm is None
+        or left.center is None
+        or right.center is None
+        or left.axis is None
+        or right.axis is None
+    ):
+        return False
+    if abs(float(left.diameter_mm) - float(right.diameter_mm)) > parameters.assembly_passage_diameter_tolerance_mm:
+        return False
+    left_axis = tuple(float(value) for value in left.axis)
+    right_axis = tuple(float(value) for value in right.axis)
+    left_norm = _vector_norm(left_axis)
+    right_norm = _vector_norm(right_axis)
+    if left_norm == 0 or right_norm == 0:
+        return False
+    left_axis = tuple(value / left_norm for value in left_axis)
+    right_axis = tuple(value / right_norm for value in right_axis)
+    if not _axis_aligned(
+        left_axis,
+        right_axis,
+        tolerance=_axis_tolerance(parameters.hole_axis_angle_tolerance_deg),
+    ):
+        return False
+    center_delta = tuple(a - b for a, b in zip(left.center, right.center))
+    axial_delta = _dot(center_delta, left_axis)
+    radial_delta = _vector_norm(
+        tuple(
+            component - axial_delta * axis_component
+            for component, axis_component in zip(center_delta, left_axis)
+        )
+    )
+    if radial_delta > parameters.assembly_passage_center_tolerance_mm:
+        return False
+    left_interval = _hole_axial_interval(left, left_axis)
+    right_interval = _hole_axial_interval(right, left_axis)
+    if left_interval is None or right_interval is None:
+        return False
+    gap = max(
+        0.0,
+        max(left_interval[0], right_interval[0])
+        - min(left_interval[1], right_interval[1]),
+    )
+    return gap <= parameters.assembly_passage_axial_gap_tolerance_mm
+
+
+def _build_assembly_passages(
+    components: list[AssemblyComponent],
+    parameters: AnalysisParameters,
+) -> list[AssemblyPassage]:
+    features = [feature for component in components for feature in component.holes.circular]
+    parents = list(range(len(features)))
+
+    def find(index: int) -> int:
+        while parents[index] != index:
+            parents[index] = parents[parents[index]]
+            index = parents[index]
+        return index
+
+    def union(left: int, right: int) -> None:
+        left_root, right_root = find(left), find(right)
+        if left_root != right_root:
+            parents[right_root] = left_root
+
+    for left_index, left in enumerate(features):
+        for right_index in range(left_index + 1, len(features)):
+            if _assembly_circular_features_match(left, features[right_index], parameters):
+                union(left_index, right_index)
+
+    groups: dict[int, list[HoleFeature]] = {}
+    for index, feature in enumerate(features):
+        groups.setdefault(find(index), []).append(feature)
+
+    passages: list[AssemblyPassage] = []
+    for group in groups.values():
+        merged = len(group) > 1
+        centers = [feature.center for feature in group if feature.center is not None]
+        center = (
+            _rounded_vector(tuple(sum(values) / len(values) for values in zip(*centers)))
+            if centers
+            else None
+        )
+        passages.append(
+            AssemblyPassage(
+                id=f"passage_{len(passages) + 1:03d}",
+                geometry="circular",
+                component_ids=sorted({str(feature.component_id) for feature in group if feature.component_id}),
+                feature_ids=[str(feature.feature_id) for feature in group if feature.feature_id],
+                diameter_mm=round(sum(float(feature.diameter_mm or 0.0) for feature in group) / len(group), 2),
+                center=center,
+                axis=group[0].axis,
+                confidence="high" if merged else group[0].confidence,
+                reason=(
+                    "Aperture coassiali di componenti a contatto formano un passaggio continuo nell'assemblato."
+                    if merged
+                    else "Apertura appartenente a un solo componente dell'assemblato."
+                ),
+            )
+        )
+    for component in components:
+        other_features = [
+            *component.holes.elongated,
+            *component.holes.rounded_rectangular,
+            *component.holes.polygonal,
+            *component.holes.formed,
+            *component.holes.unknown,
+        ]
+        for feature in other_features:
+            passages.append(
+                AssemblyPassage(
+                    id=f"passage_{len(passages) + 1:03d}",
+                    geometry="unknown",
+                    component_ids=[component.id],
+                    feature_ids=[feature.feature_id] if feature.feature_id else [],
+                    center=feature.center,
+                    axis=feature.axis,
+                    confidence=feature.confidence,
+                    reason="Apertura non circolare appartenente a un solo componente dell'assemblato.",
+                )
+            )
+    return passages
+
+
+def _edge_is_in_wire(edge, wire) -> bool:
+    for wire_edge in getattr(wire, "Edges", []) or []:
+        try:
+            if edge.isSame(wire_edge):
+                return True
+        except (AttributeError, TypeError):
+            continue
+    return False
+
+
+def _edge_lies_on_face(edge, face, tolerance_mm: float) -> bool:
+    """Require the complete edge, rather than one coincident point, on a face."""
+    try:
+        common = edge.common(face)
+        common_length = float(getattr(common, "Length", 0.0))
+        edge_length = float(edge.Length)
+        if edge_length > 0 and common_length >= edge_length - max(tolerance_mm, edge_length * 0.001):
+            return True
+    except (AttributeError, TypeError, ValueError):
+        pass
+    try:
+        Part = importlib.import_module("Part")
+        points = edge.discretize(Number=24)
+        return bool(points) and all(
+            float(Part.Vertex(point).distToShape(face)[0]) <= tolerance_mm
+            for point in points
+        )
+    except Exception:
+        return False
+
+
+def _detect_weld_candidates(
+    solids: list,
+    component_ids: list[str],
+    parameters: AnalysisParameters,
+) -> list[WeldEvidence]:
+    candidates: list[WeldEvidence] = []
+    seen: set[tuple[str, str, float, tuple[float, float, float]]] = set()
+    for source_index, solid in enumerate(solids):
+        for face in solid.Faces:
+            surface = face.Surface
+            if getattr(surface, "TypeId", "") != "Part::GeomCylinder":
+                continue
+            span = _cylindrical_surface_span_deg(face)
+            if span is None or span < 350.0:
+                continue
+            radius = float(surface.Radius)
+            axis = _normalize_vector(surface.Axis)
+            for edge in getattr(face, "Edges", []) or []:
+                geometry = _circular_edge_geometry(edge)
+                if geometry is None or abs(geometry[0] - radius) > parameters.hole_diameter_tolerance_mm:
+                    continue
+                own_outer_boundary = any(
+                    getattr(planar_face.Surface, "TypeId", "") == "Part::GeomPlane"
+                    and (outer_wire := _face_outer_wire(planar_face)) is not None
+                    and _edge_is_in_wire(edge, outer_wire)
+                    for planar_face in solid.Faces
+                )
+                if not own_outer_boundary:
+                    continue
+                edge_center = _vector_tuple(edge.Curve.Center)
+                for target_index, target in enumerate(solids):
+                    if target_index == source_index:
+                        continue
+                    for target_face in target.Faces:
+                        target_surface = target_face.Surface
+                        if getattr(target_surface, "TypeId", "") != "Part::GeomPlane":
+                            continue
+                        if not _axis_aligned(
+                            axis,
+                            _normalize_vector(target_surface.Axis),
+                            tolerance=_axis_tolerance(parameters.hole_axis_angle_tolerance_deg),
+                        ):
+                            continue
+                        if not _edge_lies_on_face(
+                            edge,
+                            target_face,
+                            parameters.assembly_contact_tolerance_mm,
+                        ):
+                            continue
+                        pair = tuple(sorted((component_ids[source_index], component_ids[target_index])))
+                        rounded_center = tuple(round(value, 3) for value in edge_center)
+                        key = (pair[0], pair[1], round(radius, 3), rounded_center)
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        candidates.append(
+                            WeldEvidence(
+                                id=f"weld_{len(candidates) + 1:03d}",
+                                state="weld_candidate",
+                                review_status="pending",
+                                component_ids=list(pair),
+                                geometry="circular",
+                                nominal_length_mm=round(float(edge.Length), 2),
+                                reference_diameter_mm=round(radius * 2.0, 2),
+                                center=_rounded_vector(edge_center),
+                                axis=_rounded_vector(axis),
+                                contact_evidence="full_outer_circular_boundary_on_other_component_face",
+                                confidence="medium",
+                                reason=(
+                                    "Contorno circolare esterno a contatto con una faccia di un altro componente; "
+                                    "la saldatura richiede conferma utente."
+                                ),
+                            )
+                        )
+    return candidates
+
+
+def _analyze_assembly(shape, parameters: AnalysisParameters) -> AssemblyAnalysis:
+    solids = _stable_solids(shape)
+    if len(solids) <= 1:
+        return AssemblyAnalysis(component_count=len(solids))
+    components: list[AssemblyComponent] = []
+    component_ids = [f"component_{index:03d}" for index in range(1, len(solids) + 1)]
+    for component_id, solid in zip(component_ids, solids):
+        thickness, thickness_confidence = _detect_sheet_thickness(solid)
+        bbox = solid.BoundBox
+        components.append(
+            AssemblyComponent(
+                id=component_id,
+                name=component_id.replace("_", " ").title(),
+                bounding_box_mm=Dimensions(
+                    x=_round_or_none(bbox.XLength),
+                    y=_round_or_none(bbox.YLength),
+                    z=_round_or_none(bbox.ZLength),
+                ),
+                volume_cm3=_round_or_none(float(solid.Volume) / 1000.0),
+                surface_area_cm2=_round_or_none(float(solid.Area) / 100.0),
+                classification=_classify_part_geometry(
+                    solid,
+                    thickness,
+                    thickness_confidence,
+                ),
+                holes=_detect_component_holes(
+                    solid,
+                    component_id,
+                    parameters,
+                    thickness,
+                ),
+            )
+        )
+    passages = _build_assembly_passages(components, parameters)
+    candidates = _detect_weld_candidates(solids, component_ids, parameters)
+    return AssemblyAnalysis(
+        component_count=len(components),
+        components=components,
+        component_opening_features_total=sum(component.holes.total_holes for component in components),
+        physical_passages_total=len(passages),
+        physical_passages=passages,
+        weld_candidates=candidates,
+        confidence="medium" if candidates else "low",
+        warnings=[
+            "Le giunzioni CAD sono candidate geometriche: processo e parametri di saldatura richiedono conferma utente."
+        ] if candidates else [
+            "Nessuna giunzione saldata deducibile con affidabilita dal solo contatto geometrico."
+        ],
+    )
+
+
 def _base_response(
     *,
     source_file: str,
@@ -2557,6 +3025,9 @@ def analyze_step_file(
             analysis_parameters,
             detected_thickness,
         )
+        if response.part_classification.category == "multi_solid":
+            response.assembly = _analyze_assembly(shape, analysis_parameters)
+            response.holes = _aggregate_component_holes(response.assembly.components)
         response.holes.circular_holes = len(response.holes.circular)
         response.holes.elongated_holes = len(response.holes.elongated)
         response.holes.rounded_rectangular_holes = len(
@@ -2574,6 +3045,10 @@ def analyze_step_file(
             + response.holes.unknown_holes
         )
         response.holes.physical_openings_total = response.holes.total_holes
+        if response.assembly.component_count > 1:
+            response.holes.physical_openings_total = (
+                response.assembly.physical_passages_total
+            )
         circular_diameters = [
             hole.diameter_mm
             for hole in response.holes.circular

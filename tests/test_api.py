@@ -21,6 +21,8 @@ from app.pdf_report import (
     _hole_group_rows,
     _part_rows,
     _verification_rows,
+    _weld_detail_rows,
+    _weld_setup_rows,
 )
 from app.schemas import CadAnalysisResponse
 
@@ -101,6 +103,14 @@ def test_frontend_returns_html():
     assert 'id="quote-applicability"' in response.text
     assert "Confidence classificazione" in response.text
     assert "Preventivo lamiera non applicabile" in response.text
+    assert 'id="welds-section"' in response.text
+    assert "Aggiungi saldatura manuale" in response.text
+    assert "Calcola stima saldature" in response.text
+    assert 'fetchApi("/quote"' in response.text
+    assert "segment_length_mm" in response.text
+    assert "pitch_mm" in response.text
+    assert "gap_mm" in response.text
+    assert "per_process" in response.text
     assert 'fetchApi("/analyze-and-quote"' in response.text
     assert 'fetchApi("/generate-preview"' in response.text
     assert 'fetchApi("/quote-pdf"' in response.text
@@ -441,6 +451,77 @@ def test_quote_endpoint_rejects_zero_laser_cut_speed():
     assert "laser_cut_speed_mm_min" in response.json()["detail"]
 
 
+def test_quote_endpoint_recalculates_welding_only_with_validated_configuration():
+    analysis = {
+        "part_name": "15 piastra collarino saldato",
+        "part_classification": {"category": "multi_solid", "confidence": "high"},
+        "assembly": {
+            "component_count": 2,
+            "weld_candidates": [
+                {"id": "weld_001", "state": "weld_candidate", "geometry": "circular"}
+            ],
+        },
+        "holes": {"physical_openings_total": 3},
+        "bends": {"count": 0},
+    }
+    response = client.post(
+        "/quote",
+        json={
+            "analysis": analysis,
+            "quantity": 2,
+            "material": "acciaio",
+            "welds": [
+                {
+                    "weld_id": "weld_001",
+                    "source_state": "weld_candidate",
+                    "review_status": "confirmed",
+                    "process": "MAG",
+                    "continuity": "continuous",
+                    "joint_type": "fillet",
+                    "side": "one",
+                    "weld_length_mm": 56.55,
+                    "size_basis": "z",
+                    "size_mm": 3.0,
+                    "passes": 1,
+                    "speed_mm_min": 100.0,
+                    "setup_time_min": 6.0,
+                    "preparation_time_min_per_piece": 1.0,
+                    "finishing_grinding": False,
+                    "hourly_rate_eur": 60.0
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["quote_applicability"]["status"] == "not_applicable"
+    assert payload["process_plan"] == []
+    assert payload["welding_quote"]["status"] == "calculated"
+    assert payload["welding_quote"]["scope"] == "welding_only"
+    assert payload["welding_quote"]["setup_groups"][0]["scope"] == "per_process"
+
+
+def test_quote_endpoint_rejects_unrecognised_welding_process():
+    response = client.post(
+        "/quote",
+        json={
+            "analysis": {"part_classification": {"category": "multi_solid"}},
+            "quantity": 1,
+            "material": "acciaio",
+            "welds": [
+                {
+                    "weld_id": "manual_001",
+                    "source_state": "manual_weld",
+                    "process": "LASER",
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 422
+
+
 def test_quote_pdf_endpoint_returns_pdf():
     analysis = json.loads(STAFFA_ACTUAL_FILE.read_text(encoding="utf-8"))
     quote = json.loads(STAFFA_QUOTE_FILE.read_text(encoding="utf-8"))
@@ -546,6 +627,65 @@ def test_quote_pdf_detail_rows_include_rounded_rectangle_dimensions():
     assert rounded_row[1] == "L 26 mm / W 16 mm / R 4 mm"
     assert rounded_row[2] == "77.13 mm"
     assert rounded_row[3] == "402.27 mm2"
+
+
+def test_quote_pdf_weld_rows_include_origin_effective_length_and_grouped_setup():
+    analysis = {
+        "assembly": {
+            "component_count": 2,
+            "weld_candidates": [
+                {
+                    "id": "weld_001",
+                    "state": "weld_candidate",
+                    "review_status": "pending",
+                    "geometry": "circular",
+                    "nominal_length_mm": 56.55,
+                    "confidence": "medium",
+                    "reason": "Contatto circolare.",
+                }
+            ],
+        }
+    }
+    quote = {
+        "welding_quote": {
+            "items": [
+                {
+                    "weld_id": "weld_001",
+                    "review_status": "confirmed",
+                    "process": "TIG",
+                    "continuity": "intermittent",
+                    "joint_type": "fillet",
+                    "side": "one",
+                    "weld_length_mm": 56.55,
+                    "effective_weld_length_mm": 30.0,
+                    "size_basis": "a",
+                    "size_mm": 3.0,
+                    "passes": 1,
+                    "total_time_min": 4.0,
+                    "cost_eur": 3.2,
+                }
+            ],
+            "setup_groups": [
+                {
+                    "scope": "per_process",
+                    "key": "TIG",
+                    "weld_ids": ["weld_001"],
+                    "setup_time_min": 5.0,
+                    "hourly_rate_eur": 48.0,
+                    "setup_cost_eur": 4.0,
+                }
+            ],
+        }
+    }
+
+    weld_rows = _weld_detail_rows(analysis, quote)
+    setup_rows = _weld_setup_rows(quote)
+
+    assert weld_rows[0][0] == "weld_001"
+    assert weld_rows[0][2] == "TIG"
+    assert "eff. 30 mm" in weld_rows[0][4]
+    assert "weld_candidate / medium" in weld_rows[0][9]
+    assert setup_rows[0] == ["per_process", "TIG", "weld_001", "5 min", "48 EUR/h", "4 EUR"]
 
 
 def test_quote_pdf_labels_brep_counts_as_topological_data(monkeypatch):

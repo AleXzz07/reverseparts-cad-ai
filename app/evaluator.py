@@ -634,6 +634,57 @@ def evaluate_staffa(actual: dict[str, Any], expected: dict[str, Any]) -> dict[st
                 int(expected_geometry[field]),
                 field,
             )
+    expected_assembly = expected.get("assembly", {})
+    actual_assembly = actual.get("assembly", {}) or {}
+    for field in (
+        "component_count",
+        "component_opening_features_total",
+        "physical_passages_total",
+    ):
+        if field in expected_assembly:
+            checks[f"assembly_{field}"] = _exact_check(
+                int(actual_assembly.get(field, -1)),
+                int(expected_assembly[field]),
+                f"assembly.{field}",
+            )
+    if "weld_candidates" in expected_assembly:
+        expected_candidates = expected_assembly.get("weld_candidates", []) or []
+        actual_candidates = actual_assembly.get("weld_candidates", []) or []
+        candidate_failures = []
+        for expected_candidate in expected_candidates:
+            matching = [
+                candidate
+                for candidate in actual_candidates
+                if candidate.get("state") == expected_candidate.get("state")
+                and candidate.get("geometry") == expected_candidate.get("geometry")
+                and (
+                    expected_candidate.get("reference_diameter_mm") is None
+                    or candidate.get("reference_diameter_mm") is not None
+                    and abs(
+                        float(candidate["reference_diameter_mm"])
+                        - float(expected_candidate["reference_diameter_mm"])
+                    )
+                    <= DIMENSION_TOLERANCE_MM
+                )
+                and (
+                    expected_candidate.get("nominal_length_mm") is None
+                    or candidate.get("nominal_length_mm") is not None
+                    and abs(
+                        float(candidate["nominal_length_mm"])
+                        - float(expected_candidate["nominal_length_mm"])
+                    )
+                    <= DIMENSION_TOLERANCE_MM
+                )
+            ]
+            if not matching:
+                candidate_failures.append(expected_candidate)
+        checks["assembly_weld_candidates"] = _check(
+            "pass" if not candidate_failures and len(actual_candidates) == len(expected_candidates) else "fail",
+            "Assembly weld candidates matched." if not candidate_failures else "Assembly weld candidates did not match.",
+            actual_count=len(actual_candidates),
+            expected_count=len(expected_candidates),
+            unmatched=candidate_failures,
+        )
 
     score_total = _score(checks)
     warnings = [

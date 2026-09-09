@@ -35,6 +35,10 @@ FREECAD_VALIDATION_V3_CASE_NAMES = (
     "validation_13_piastra_foro_svasato",
     "validation_14_multisolid_due_piastre",
 )
+FREECAD_VALIDATION_V3_FINAL_CASE_NAMES = (
+    "validation_11_staffa_1_piega_60deg",
+    "validation_15_piastra_collarino_saldato",
+)
 DATASET_CASE_NAMES = (
     "lamiera_piana_test_1",
     "staffa_1_piega_test_1",
@@ -44,6 +48,7 @@ DATASET_CASE_NAMES = (
     *FREECAD_VALIDATION_CASE_NAMES,
     *FREECAD_VALIDATION_V2_CASE_NAMES,
     *FREECAD_VALIDATION_V3_CASE_NAMES,
+    *FREECAD_VALIDATION_V3_FINAL_CASE_NAMES,
 )
 
 
@@ -92,6 +97,17 @@ def test_freecad_validation_v2_dataset_cases_exist():
 def test_freecad_validation_v3_dataset_cases_exist():
     assert (PROJECT_ROOT / "tests" / "dataset" / "freecad_validation_ground_truth_v3.json").exists()
     for case_name in FREECAD_VALIDATION_V3_CASE_NAMES:
+        case_dir = PROJECT_ROOT / "tests" / "dataset" / case_name
+        assert (case_dir / "input.stp").exists()
+        assert (case_dir / "expected.json").exists()
+        expected = json.loads((case_dir / "expected.json").read_text(encoding="utf-8"))
+        assert expected["material_key"] == "acciaio"
+        assert expected["density_g_cm3"] == 7.85
+
+
+def test_freecad_validation_v3_final_dataset_cases_exist():
+    assert (PROJECT_ROOT / "tests" / "dataset" / "ground_truth_v3_final.json").exists()
+    for case_name in FREECAD_VALIDATION_V3_FINAL_CASE_NAMES:
         case_dir = PROJECT_ROOT / "tests" / "dataset" / case_name
         assert (case_dir / "input.stp").exists()
         assert (case_dir / "expected.json").exists()
@@ -375,6 +391,34 @@ def test_real_cad_analysis_matches_dataset_ground_truth(case_name, tmp_path):
         assert quote["process_plan"] == []
         assert quote["estimated_internal_cost_eur"]["total"] is None
         assert quote["estimated_internal_cost_eur"]["bending"] == 0.0
+
+    if case_name == "validation_15_piastra_collarino_saldato":
+        assert actual["geometry"]["solid_count"] == 2
+        assert actual["part_classification"]["category"] == "multi_solid"
+        assert holes["circular_holes"] == 4
+        assert sorted(hole["diameter_mm"] for hole in holes["circular"]) == pytest.approx(
+            [6.0, 6.0, 10.0, 10.0], abs=0.1
+        )
+        assert holes["physical_openings_total"] == 3
+        assembly = actual["assembly"]
+        assert assembly["component_count"] == 2
+        assert assembly["component_opening_features_total"] == 4
+        assert assembly["physical_passages_total"] == 3
+        assert len(assembly["weld_candidates"]) == 1
+        candidate = assembly["weld_candidates"][0]
+        assert candidate["state"] == "weld_candidate"
+        assert candidate["review_status"] == "pending"
+        assert candidate["geometry"] == "circular"
+        assert candidate["reference_diameter_mm"] == pytest.approx(18.0, abs=0.1)
+        assert candidate["nominal_length_mm"] == pytest.approx(56.5487, abs=0.1)
+        assert "process" not in candidate
+        assert actual["flat_pattern"]["status"] == "unavailable"
+        quote = quote_from_cad(actual, material="acciaio")
+        assert quote["quote_applicability"]["status"] == "not_applicable"
+        assert quote["process_plan"] == []
+        assert quote["welding_quote"]["status"] == "requires_configuration"
+        assert quote["welding_quote"]["scope"] == "welding_only"
+        assert quote["welding_quote"]["total_cost_eur"] is None
 
     if case_name == "validation_05_staffa_2_pieghe_non_parallele":
         assert holes["circular_holes"] == 4

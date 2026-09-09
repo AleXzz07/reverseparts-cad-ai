@@ -1,0 +1,42 @@
+{
+  "display_name": "15 PIASTRA COLLARINO SALDATO",
+  "material_key": "acciaio",
+  "density_g_cm3": 7.85,
+  "detected_thickness_mm": 2.0,
+  "part_classification": {"category": "multi_solid"},
+  "dimensions_mm": {"x": 100.0, "y": 70.0, "z": 8.0},
+  "volume_cm3": 14.785,
+  "surface_area_cm2": 154.277,
+  "holes": {
+    "circular": [
+      {"diameter_mm": 6.0, "count": 2},
+      {"diameter_mm": 10.0, "count": 2}
+    ],
+    "circular_holes": 4,
+    "countersunk_holes": 0,
+    "elongated_holes": 0,
+    "rounded_rectangular_holes": 0,
+    "polygonal_holes": 0,
+    "formed_holes": 0,
+    "unknown_holes": 0,
+    "total_holes": 4,
+    "physical_openings_total": 3
+  },
+  "bends": {"count": 0},
+  "flat_pattern": {"status": "unavailable"},
+  "geometry": {"solid_count": 2, "face_count": 13, "edge_count": 27, "vertex_count": 18},
+  "assembly": {
+    "component_count": 2,
+    "component_opening_features_total": 4,
+    "physical_passages_total": 3,
+    "weld_candidates": [
+      {
+        "state": "weld_candidate",
+        "geometry": "circular",
+        "reference_diameter_mm": 18.0,
+        "nominal_length_mm": 56.5487,
+        "confidence": "medium"
+      }
+    ]
+  }
+}

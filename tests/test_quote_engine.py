@@ -145,6 +145,218 @@ def test_multi_solid_blocks_single_sheet_quote():
     assert quote["estimated_internal_cost_eur"]["total"] is None
     assert quote["estimated_internal_cost_eur"]["bending"] == 0.0
     assert quote["quantity_breakdown"] == []
+    assert quote["welding_quote"]["status"] == "not_configured"
+    assert quote["welding_quote"]["scope"] == "welding_only"
+
+
+def _assembly_with_weld_candidates(*candidate_ids: str) -> dict:
+    return {
+        "part_name": "15 piastra collarino saldato",
+        "declared_material": "acciaio",
+        "part_classification": {
+            "category": "multi_solid",
+            "confidence": "high",
+            "reason": "Lo STEP contiene 2 solidi/componenti distinti.",
+        },
+        "assembly": {
+            "component_count": 2,
+            "weld_candidates": [
+                {
+                    "id": candidate_id,
+                    "state": "weld_candidate",
+                    "geometry": "circular",
+                    "nominal_length_mm": 56.55,
+                }
+                for candidate_id in candidate_ids
+            ],
+        },
+        "holes": {
+            "circular": [
+                {"diameter_mm": 6.0},
+                {"diameter_mm": 6.0},
+                {"diameter_mm": 10.0},
+                {"diameter_mm": 10.0},
+            ],
+            "physical_openings_total": 3,
+        },
+        "bends": {"count": 0, "items": []},
+        "cutting": {"total_cut_length_mm": None},
+        "flat_pattern": {"status": "unavailable", "confidence": "low"},
+    }
+
+
+def _complete_weld(weld_id: str, **overrides) -> dict:
+    values = {
+        "weld_id": weld_id,
+        "source_state": "weld_candidate",
+        "review_status": "confirmed",
+        "process": "TIG",
+        "continuity": "continuous",
+        "joint_type": "fillet",
+        "side": "one",
+        "weld_length_mm": 60.0,
+        "size_basis": "a",
+        "size_mm": 3.0,
+        "passes": 1,
+        "speed_mm_min": 120.0,
+        "time_sec_per_mm": None,
+        "setup_time_min": 8.0,
+        "setup_scope": "per_process",
+        "preparation_time_min_per_piece": 1.0,
+        "finishing_grinding": False,
+        "finishing_time_min_per_piece": 0.0,
+        "hourly_rate_eur": 60.0,
+    }
+    values.update(overrides)
+    return values
+
+
+def test_welding_quote_requires_user_decision_and_never_unblocks_sheet_quote():
+    quote = quote_from_cad(
+        _assembly_with_weld_candidates("weld_001"),
+        material="acciaio",
+    )
+
+    assert quote["quote_applicability"]["status"] == "not_applicable"
+    assert quote["process_plan"] == []
+    assert quote["features_summary"]["circular_holes"] == 4
+    assert quote["features_summary"]["total_holes"] == 4
+    assert quote["features_summary"]["physical_openings_total"] == 3
+    assert quote["welding_quote"]["status"] == "requires_configuration"
+    assert quote["welding_quote"]["total_cost_eur"] is None
+    assert "weld_001" in quote["welding_quote"]["warnings"][1]
+
+
+def test_setup_per_process_is_not_duplicated_for_same_process():
+    quote = quote_from_cad(
+        _assembly_with_weld_candidates("weld_001", "weld_002"),
+        material="acciaio",
+        quantity=10,
+        welds=[
+            _complete_weld("weld_001"),
+            _complete_weld(
+                "weld_002",
+                weld_length_mm=30.0,
+                side="both",
+                passes=2,
+                setup_time_min=5.0,
+                preparation_time_min_per_piece=0.0,
+            ),
+        ],
+    )
+
+    welding = quote["welding_quote"]
+    assert quote["quote_applicability"]["status"] == "not_applicable"
+    assert welding["status"] == "calculated"
+    assert welding["productive_time_total_min"] == 25.0
+    assert welding["setup_time_total_min"] == 8.0
+    assert welding["total_time_min"] == 33.0
+    assert welding["total_cost_eur"] == 33.0
+    assert len(welding["setup_groups"]) == 1
+    assert welding["setup_groups"][0]["scope"] == "per_process"
+    assert welding["setup_groups"][0]["weld_ids"] == ["weld_001", "weld_002"]
+
+
+def test_setup_per_weld_is_summed_explicitly():
+    quote = quote_from_cad(
+        _assembly_with_weld_candidates("weld_001", "weld_002"),
+        material="acciaio",
+        welds=[
+            _complete_weld("weld_001", setup_scope="per_weld", setup_time_min=8.0),
+            _complete_weld("weld_002", setup_scope="per_weld", setup_time_min=5.0),
+        ],
+    )
+
+    assert quote["welding_quote"]["setup_time_total_min"] == 13.0
+    assert len(quote["welding_quote"]["setup_groups"]) == 2
+
+
+def test_setup_per_lot_is_charged_once_across_different_processes():
+    quote = quote_from_cad(
+        _assembly_with_weld_candidates("weld_001", "weld_002"),
+        material="acciaio",
+        welds=[
+            _complete_weld("weld_001", setup_scope="per_lot", setup_time_min=8.0),
+            _complete_weld(
+                "weld_002",
+                process="MAG",
+                setup_scope="per_lot",
+                setup_time_min=5.0,
+            ),
+        ],
+    )
+
+    welding = quote["welding_quote"]
+    assert welding["setup_time_total_min"] == 8.0
+    assert len(welding["setup_groups"]) == 1
+    assert welding["setup_groups"][0]["scope"] == "per_lot"
+
+
+def test_intermittent_weld_uses_effective_deposited_length_from_gap():
+    configuration = _complete_weld(
+        "weld_001",
+        continuity="intermittent",
+        weld_length_mm=100.0,
+        segment_length_mm=10.0,
+        gap_mm=10.0,
+        pitch_mm=None,
+        segment_count=None,
+        speed_mm_min=None,
+        time_sec_per_mm=0.6,
+        setup_time_min=0.0,
+        preparation_time_min_per_piece=0.0,
+    )
+    quote = quote_from_cad(
+        _assembly_with_weld_candidates("weld_001"),
+        material="acciaio",
+        welds=[configuration],
+    )
+
+    item = quote["welding_quote"]["items"][0]
+    assert quote["welding_quote"]["status"] == "calculated"
+    assert item["segment_count"] == 5
+    assert item["effective_weld_length_mm"] == 50.0
+    assert item["productive_length_mm"] == 50.0
+    assert item["welding_time_min_per_piece"] == 0.5
+    assert quote["welding_quote"]["total_cost_eur"] == 0.5
+
+
+def test_intermittent_weld_optional_segment_count_is_validated_against_pitch():
+    configuration = _complete_weld(
+        "weld_001",
+        continuity="intermittent",
+        weld_length_mm=100.0,
+        segment_length_mm=10.0,
+        pitch_mm=25.0,
+        gap_mm=None,
+        segment_count=5,
+    )
+    quote = quote_from_cad(
+        _assembly_with_weld_candidates("weld_001"),
+        material="acciaio",
+        welds=[configuration],
+    )
+
+    assert quote["welding_quote"]["status"] == "requires_configuration"
+    assert "superano" in quote["welding_quote"]["items"][0]["errors"][0]
+
+
+def test_rejected_candidate_requires_no_productive_configuration():
+    quote = quote_from_cad(
+        _assembly_with_weld_candidates("weld_001"),
+        material="acciaio",
+        welds=[
+            {
+                "weld_id": "weld_001",
+                "source_state": "weld_candidate",
+                "review_status": "rejected",
+            }
+        ],
+    )
+
+    assert quote["welding_quote"]["status"] == "calculated"
+    assert quote["welding_quote"]["total_cost_eur"] is None
+    assert quote["welding_quote"]["items"][0]["cost_eur"] is None
 
 
 def test_countersink_does_not_add_a_pierce_or_physical_opening():

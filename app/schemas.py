@@ -14,6 +14,8 @@ class Dimensions(BaseModel):
 
 
 class HoleFeature(BaseModel):
+    feature_id: str | None = None
+    component_id: str | None = None
     type: str | None = None
     reason: str | None = None
     num_sides: int | None = None
@@ -146,6 +148,80 @@ class PartClassification(BaseModel):
     reason: str = "Geometric classification is not available."
 
 
+class AssemblyComponent(BaseModel):
+    id: str
+    name: str | None = None
+    bounding_box_mm: Dimensions = Field(default_factory=Dimensions)
+    volume_cm3: float | None = None
+    surface_area_cm2: float | None = None
+    classification: PartClassification = Field(default_factory=PartClassification)
+    holes: Holes = Field(default_factory=Holes)
+
+
+class AssemblyPassage(BaseModel):
+    id: str
+    geometry: Literal["circular", "unknown"] = "unknown"
+    component_ids: list[str] = Field(default_factory=list)
+    feature_ids: list[str] = Field(default_factory=list)
+    diameter_mm: float | None = None
+    center: list[float] | None = None
+    axis: list[float] | None = None
+    confidence: Confidence = "low"
+    reason: str = "Assembly passage could not be verified."
+
+
+class WeldEvidence(BaseModel):
+    id: str
+    state: Literal["weld_detected", "weld_candidate", "manual_weld"]
+    review_status: Literal["pending", "confirmed", "rejected"] = "pending"
+    component_ids: list[str] = Field(default_factory=list)
+    geometry: Literal["circular", "linear", "closed_contour", "unknown"] = "unknown"
+    nominal_length_mm: float | None = None
+    reference_diameter_mm: float | None = None
+    center: list[float] | None = None
+    axis: list[float] | None = None
+    contact_evidence: str | None = None
+    confidence: Confidence = "low"
+    reason: str = "Weld evidence is not available."
+
+
+class AssemblyAnalysis(BaseModel):
+    component_count: int = 0
+    components: list[AssemblyComponent] = Field(default_factory=list)
+    component_opening_features_total: int = 0
+    physical_passages_total: int = 0
+    physical_passages: list[AssemblyPassage] = Field(default_factory=list)
+    weld_candidates: list[WeldEvidence] = Field(default_factory=list)
+    confidence: Confidence = "low"
+    warnings: list[str] = Field(default_factory=list)
+
+
+class WeldConfiguration(BaseModel):
+    weld_id: str
+    source_state: Literal["weld_detected", "weld_candidate", "manual_weld"]
+    review_status: Literal["confirmed", "rejected"] = "confirmed"
+    process: Literal["TIG", "MIG", "MAG"] | None = None
+    continuity: Literal["continuous", "intermittent"] | None = None
+    joint_type: str | None = None
+    side: Literal["one", "both"] | None = None
+    weld_length_mm: float | None = Field(default=None, gt=0)
+    segment_length_mm: float | None = Field(default=None, gt=0)
+    pitch_mm: float | None = Field(default=None, gt=0)
+    gap_mm: float | None = Field(default=None, ge=0)
+    segment_count: int | None = Field(default=None, gt=0)
+    size_basis: Literal["a", "z"] | None = None
+    size_mm: float | None = Field(default=None, gt=0)
+    passes: int | None = Field(default=None, gt=0)
+    speed_mm_min: float | None = Field(default=None, gt=0)
+    time_sec_per_mm: float | None = Field(default=None, gt=0)
+    setup_time_min: float = Field(default=0.0, ge=0)
+    setup_scope: Literal["per_lot", "per_process", "per_weld"] = "per_process"
+    preparation_time_min_per_piece: float = Field(default=0.0, ge=0)
+    finishing_grinding: bool = False
+    finishing_time_min_per_piece: float = Field(default=0.0, ge=0)
+    hourly_rate_eur: float | None = Field(default=None, ge=0)
+
+
 class CadAnalysisResponse(BaseModel):
     part_name: str = ""
     source_file: str = ""
@@ -166,6 +242,7 @@ class CadAnalysisResponse(BaseModel):
     manufacturability: Manufacturability = Field(default_factory=Manufacturability)
     coordinate_reference: CoordinateReference = Field(default_factory=CoordinateReference)
     part_classification: PartClassification = Field(default_factory=PartClassification)
+    assembly: AssemblyAnalysis = Field(default_factory=AssemblyAnalysis)
     flat_pattern: FlatPattern = Field(default_factory=FlatPattern)
     complexity_score: Literal["unknown", "low", "medium", "high"] = "unknown"
     warnings: list[str] = Field(default_factory=list)
@@ -183,6 +260,7 @@ class QuoteRequest(BaseModel):
     material: str
     pricing_overrides: dict[str, float] | None = None
     material_overrides: dict[str, float] | None = None
+    welds: list[WeldConfiguration] | None = None
 
 
 class PreviewView(BaseModel):

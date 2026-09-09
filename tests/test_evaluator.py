@@ -246,3 +246,43 @@ def test_evaluator_compares_countersink_geometry_and_physical_count():
 
     assert report["checks"]["countersunk_geometry"]["status"] == "pass"
     assert report["checks"]["physical_openings_total"]["status"] == "pass"
+
+
+def test_evaluator_compares_assembly_passages_and_weld_candidate_geometry():
+    report = evaluate_staffa(
+        {
+            "assembly": {
+                "component_count": 2,
+                "component_opening_features_total": 4,
+                "physical_passages_total": 3,
+                "weld_candidates": [
+                    {
+                        "state": "weld_candidate",
+                        "geometry": "circular",
+                        "reference_diameter_mm": 18.0,
+                        "nominal_length_mm": 56.55,
+                    }
+                ],
+            }
+        },
+        {
+            "assembly": {
+                "component_count": 2,
+                "component_opening_features_total": 4,
+                "physical_passages_total": 3,
+                "weld_candidates": [
+                    {
+                        "state": "weld_candidate",
+                        "geometry": "circular",
+                        "reference_diameter_mm": 18.0,
+                        "nominal_length_mm": 56.5487,
+                    }
+                ],
+            }
+        },
+    )
+
+    assert report["status"] == "pass"
+    assert report["checks"]["assembly_component_count"]["status"] == "pass"
+    assert report["checks"]["assembly_physical_passages_total"]["status"] == "pass"
+    assert report["checks"]["assembly_weld_candidates"]["status"] == "pass"

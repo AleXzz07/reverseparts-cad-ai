@@ -97,7 +97,7 @@ def _part_rows(
     unknown_holes = hole_count("unknown_holes", "unknown")
     total_holes = features.get("total_holes")
     if total_holes is None:
-        total_holes = holes.get("physical_openings_total") or (
+        total_holes = holes.get("total_holes") or (
             circular_holes
             + elongated_holes
             + rounded_rectangular_holes
@@ -105,6 +105,9 @@ def _part_rows(
             + formed_holes
             + unknown_holes
         )
+    physical_openings_total = features.get("physical_openings_total")
+    if physical_openings_total is None:
+        physical_openings_total = holes.get("physical_openings_total", total_holes)
 
     return [
         ("Nome pezzo", quote.get("part_name") or analysis.get("part_name")),
@@ -134,7 +137,7 @@ def _part_rows(
         ("Fori sagomati/imbutiti", formed_holes),
         ("Fori non riconosciuti", unknown_holes),
         ("Fori totali", total_holes),
-        ("Aperture fisiche totali", total_holes),
+        ("Aperture fisiche totali", physical_openings_total),
         (
             "Numero pieghe",
             bends.get("count")
@@ -169,6 +172,20 @@ def _verification_rows(
         (f"Sviluppo piano {index}", warning)
         for index, warning in enumerate(
             analysis.get("flat_pattern", {}).get("warnings", []) or [],
+            start=1,
+        )
+    )
+    rows.extend(
+        (f"Assemblato {index}", warning)
+        for index, warning in enumerate(
+            analysis.get("assembly", {}).get("warnings", []) or [],
+            start=1,
+        )
+    )
+    rows.extend(
+        (f"Saldature {index}", warning)
+        for index, warning in enumerate(
+            quote.get("welding_quote", {}).get("warnings", []) or [],
             start=1,
         )
     )
@@ -361,6 +378,71 @@ def _bend_detail_rows(analysis: dict[str, Any]) -> list[list[Any]]:
             analysis.get("bends", {}).get("items", []) or [],
             start=1,
         )
+    ]
+
+
+def _weld_detail_rows(
+    analysis: dict[str, Any],
+    quote: dict[str, Any],
+) -> list[list[Any]]:
+    assembly = analysis.get("assembly", {}) or {}
+    welding = quote.get("welding_quote", {}) or {}
+    candidates = assembly.get("weld_candidates", []) or []
+    results = welding.get("items", []) or []
+    result_by_id = {str(item.get("weld_id")): item for item in results}
+    sources = list(candidates)
+    sources.extend(
+        {
+            "id": item.get("weld_id"),
+            "state": "manual_weld",
+            "geometry": "manual",
+            "confidence": "manuale",
+            "reason": "Saldatura aggiunta manualmente.",
+        }
+        for item in results
+        if item.get("source_state") == "manual_weld"
+    )
+    rows = []
+    for source in sources:
+        result = result_by_id.get(str(source.get("id")), {})
+        size = (
+            f"{result.get('size_basis')}={_value(result.get('size_mm'), 'mm')}"
+            if result.get("size_basis") and result.get("size_mm") is not None
+            else "-"
+        )
+        lengths = (
+            f"CAD {_value(source.get('nominal_length_mm'), 'mm')} / "
+            f"config. {_value(result.get('weld_length_mm'), 'mm')} / "
+            f"eff. {_value(result.get('effective_weld_length_mm'), 'mm')}"
+        )
+        rows.append(
+            [
+                source.get("id"),
+                result.get("review_status") or source.get("review_status", "pending"),
+                result.get("process") or "-",
+                source.get("geometry", "unknown"),
+                lengths,
+                f"{result.get('joint_type') or '-'} / {result.get('side') or '-'} / {result.get('continuity') or '-'}",
+                f"{size} / passate {_value(result.get('passes'))}",
+                _value(result.get("total_time_min"), "min"),
+                _value(result.get("cost_eur"), "EUR"),
+                f"{source.get('state', 'manual_weld')} / {source.get('confidence', 'low')}: {source.get('reason', '-')}",
+            ]
+        )
+    return rows
+
+
+def _weld_setup_rows(quote: dict[str, Any]) -> list[list[Any]]:
+    return [
+        [
+            group.get("scope"),
+            group.get("key"),
+            ", ".join(group.get("weld_ids", []) or []),
+            _value(group.get("setup_time_min"), "min"),
+            _value(group.get("hourly_rate_eur"), "EUR/h"),
+            _value(group.get("setup_cost_eur"), "EUR"),
+        ]
+        for group in (quote.get("welding_quote", {}) or {}).get("setup_groups", []) or []
     ]
 
 
@@ -615,6 +697,7 @@ def generate_quote_pdf(
     flat_pattern = analysis.get("flat_pattern", {})
     classification = analysis.get("part_classification", {}) or {}
     quote_applicability = quote.get("quote_applicability", {}) or {}
+    welding_quote = quote.get("welding_quote", {}) or {}
     config_used = quote.get("config_used", {})
     pricing = config_used.get("pricing", {})
 
@@ -642,6 +725,37 @@ def generate_quote_pdf(
             ],
         )
     )
+    if (analysis.get("assembly", {}) or {}).get("component_count", 0) > 1:
+        assembly = analysis.get("assembly", {}) or {}
+        elements.extend(
+            _section(
+                "Assemblato e stima saldature",
+                [
+                    ("Componenti", assembly.get("component_count", 0)),
+                    ("Feature aperture componenti", assembly.get("component_opening_features_total", 0)),
+                    ("Passaggi fisici assemblato", assembly.get("physical_passages_total", 0)),
+                    ("Stato stima", welding_quote.get("status", "requires_configuration")),
+                    ("Ambito", welding_quote.get("scope", "welding_only")),
+                    ("Tempo saldature", _value(welding_quote.get("total_time_min"), "min")),
+                    ("Costo saldature", _value(welding_quote.get("total_cost_eur"), "EUR")),
+                    ("Nota", "Stima limitata alle saldature; il preventivo lamiera multi-solid resta non applicabile."),
+                ],
+            )
+        )
+        elements.extend(
+            _detail_table(
+                "Saldature",
+                ["ID", "Decisione", "Processo", "Geometria", "Lunghezze", "Giunto/lato/tipo", "a-z/passate", "Tempo", "Costo", "Origine/confidence"],
+                _weld_detail_rows(analysis, quote),
+            )
+        )
+        elements.extend(
+            _detail_table(
+                "Setup saldature",
+                ["Ambito", "Gruppo", "Cordoni", "Tempo", "Tariffa", "Costo"],
+                _weld_setup_rows(quote),
+            )
+        )
     elements.extend(
         _section(
             "Costi",

@@ -248,6 +248,7 @@ def quote(request: QuoteRequest) -> dict[str, Any]:
             material=request.material,
             pricing_overrides=request.pricing_overrides,
             material_overrides=request.material_overrides,
+            welds=[_model_to_dict(item) for item in (request.welds or [])],
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

@@ -7,6 +7,8 @@ from app.cad_analyzer import (
     _annotate_hole_edge_distances,
     _annotate_hole_to_hole_distances,
     _annotate_countersunk_holes,
+    _assembly_circular_features_match,
+    _build_assembly_passages,
     _cylindrical_face_angle_deg,
     _classify_part_geometry,
     _detect_bends,
@@ -17,12 +19,13 @@ from app.cad_analyzer import (
     _detect_rounded_rectangular_holes,
     _detect_sheet_thickness,
     _detect_unknown_holes,
+    _detect_weld_candidates,
     _estimate_flat_pattern,
     _mass_center_components,
     _planar_wire_area,
     load_analysis_config,
 )
-from app.schemas import BendFeature, HoleFeature
+from app.schemas import AssemblyComponent, BendFeature, HoleFeature, Holes
 
 
 def _vector(x=0.0, y=0.0, z=0.0):
@@ -121,6 +124,105 @@ def _full_cylinder_face(radius, depth, z=0.0, *, surface_center_z=None, edges=No
         BoundBox=_bbox(radius * 2.0, radius * 2.0, depth, z_min=z),
         Edges=edges or [],
     )
+
+
+def test_assembly_passage_merges_only_contiguous_cross_component_holes():
+    parameters = load_analysis_config()
+    left = HoleFeature(
+        feature_id="component_001_circular_001",
+        component_id="component_001",
+        diameter_mm=10.0,
+        center=[50.0, 48.0, 1.0],
+        axis=[0.0, 0.0, 1.0],
+        depth_mm=2.0,
+        confidence="high",
+    )
+    touching = HoleFeature(
+        feature_id="component_002_circular_001",
+        component_id="component_002",
+        diameter_mm=10.0,
+        center=[50.0, 48.0, 5.0],
+        axis=[0.0, 0.0, -1.0],
+        depth_mm=6.0,
+        confidence="high",
+    )
+    separated = touching.model_copy(
+        update={
+            "feature_id": "component_003_circular_001",
+            "component_id": "component_003",
+            "center": [50.0, 48.0, 12.0],
+            "depth_mm": 2.0,
+        }
+    )
+
+    assert _assembly_circular_features_match(left, touching, parameters) is True
+    assert _assembly_circular_features_match(left, separated, parameters) is False
+
+    components = [
+        AssemblyComponent(id="component_001", holes=Holes(circular=[left], total_holes=1)),
+        AssemblyComponent(id="component_002", holes=Holes(circular=[touching], total_holes=1)),
+        AssemblyComponent(id="component_003", holes=Holes(circular=[separated], total_holes=1)),
+    ]
+    passages = _build_assembly_passages(components, parameters)
+    assert len(passages) == 2
+    assert sorted(len(item.feature_ids) for item in passages) == [1, 2]
+
+
+class _CandidateEdge:
+    def __init__(self, radius=9.0, center=None):
+        self.Curve = SimpleNamespace(
+            TypeId="Part::GeomCircle",
+            Radius=radius,
+            Center=center or _vector(50.0, 48.0, 2.0),
+        )
+        self.Length = 2.0 * 3.141592653589793 * radius
+
+    def isSame(self, other):
+        return self is other
+
+    def common(self, _face):
+        return SimpleNamespace(Length=self.Length)
+
+
+def test_full_outer_circular_contact_is_only_a_weld_candidate():
+    edge = _CandidateEdge()
+    cylinder = SimpleNamespace(
+        Surface=SimpleNamespace(
+            TypeId="Part::GeomCylinder",
+            Radius=9.0,
+            Axis=_vector(z=1.0),
+            Center=_vector(50.0, 48.0, 2.0),
+        ),
+        ParameterRange=(0.0, 2.0 * 3.141592653589793, 0.0, 6.0),
+        Edges=[edge],
+    )
+    own_plane = SimpleNamespace(
+        Surface=SimpleNamespace(TypeId="Part::GeomPlane", Axis=_vector(z=1.0)),
+        OuterWire=_Wire([edge], length=edge.Length, bbox=_bbox(18.0, 18.0)),
+        Wires=[],
+    )
+    target_plane = SimpleNamespace(
+        Surface=SimpleNamespace(TypeId="Part::GeomPlane", Axis=_vector(z=1.0)),
+        Wires=[],
+    )
+    solids = [
+        SimpleNamespace(Faces=[cylinder, own_plane]),
+        SimpleNamespace(Faces=[target_plane]),
+    ]
+
+    candidates = _detect_weld_candidates(
+        solids,
+        ["component_001", "component_002"],
+        load_analysis_config(),
+    )
+
+    assert len(candidates) == 1
+    assert candidates[0].state == "weld_candidate"
+    assert candidates[0].review_status == "pending"
+    assert candidates[0].reference_diameter_mm == 18.0
+    assert candidates[0].nominal_length_mm == 56.55
+    assert candidates[0].confidence == "medium"
+    assert not hasattr(candidates[0], "process")
 
 
 def test_circular_hole_uses_one_full_cylindrical_wall_at_three_mm_thickness():

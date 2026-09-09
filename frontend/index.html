@@ -606,6 +606,15 @@
       font-size: 11px;
       line-height: 1.5;
     }
+    .weld-summary { margin-bottom: 12px; }
+    .weld-card { margin: 10px 0; padding: 13px; border: 1px solid var(--line); border-radius: 9px; background: #fbfcfe; }
+    .weld-card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+    .weld-card-head strong { color: #23364d; }
+    .weld-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; }
+    .weld-fields label { font-size: 11px; color: var(--muted); }
+    .weld-fields input, .weld-fields select { margin-top: 4px; min-height: 36px; padding: 7px 8px; }
+    .weld-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 11px; }
+    .weld-errors { margin: 9px 0 0; padding-left: 18px; color: var(--danger); font-size: 11px; }
     .warnings { margin: 0; padding: 0; list-style: none; }
     .warnings li { padding: 9px 0; border-bottom: 1px solid #edf0f2; color: #6c4a13; }
     .badge {
@@ -628,7 +637,7 @@
       .brand small, .api-backend { display: none; }
       .header-status { margin-top: 3px; }
       .status-pill { min-height: 29px; padding: 5px 8px; }
-      .grid-2, .parameter-grid, .legend-grid, .data-grid { grid-template-columns: 1fr; }
+      .grid-2, .parameter-grid, .legend-grid, .data-grid, .weld-fields { grid-template-columns: 1fr; }
       .info-tip::after { position: fixed; left: 16px; right: 16px; bottom: 16px; width: auto; transform: translateY(4px); }
       .info-tip:hover::after, .info-tip:focus-visible::after, .info-tip.is-open::after { transform: translateY(0); }
       .summary-strip { grid-template-columns: 1fr 1fr; }
@@ -814,6 +823,18 @@
             <summary>Dettaglio pieghe</summary>
             <div class="technical-detail-body" id="bends-detail"></div>
           </details>
+          <details class="technical-detail" id="welds-section" hidden open>
+            <summary>Saldature</summary>
+            <div class="technical-detail-body">
+              <div class="weld-summary" id="assembly-summary"></div>
+              <div id="welds-detail"></div>
+              <div class="weld-actions">
+                <button class="secondary" id="add-manual-weld" type="button">Aggiungi saldatura manuale</button>
+                <button class="primary" id="calculate-welds" type="button">Calcola stima saldature</button>
+              </div>
+              <p class="technical-note">La stima copre soltanto le saldature configurate. Il preventivo lamiera multi-solid resta non applicabile.</p>
+            </div>
+          </details>
           <details class="technical-detail" open>
             <summary>Sviluppo piano e grezzo</summary>
             <div class="technical-detail-body">
@@ -910,6 +931,8 @@
     let defaults = null;
     let lastResult = null;
     let lastCadFile = null;
+    let weldConfigurations = [];
+    let manualWeldSequence = 1;
     const maxPdfViews = 4;
     let pdfCapturedViews = [];
     const viewerState = {
@@ -1593,7 +1616,122 @@
       showVisualPane,
     };
 
-    function renderResult(payload) {
+    function weldOption(value, current, label = value) {
+      return `<option value="${escapeHtml(value)}" ${current === value ? "selected" : ""}>${escapeHtml(label)}</option>`;
+    }
+
+    function initialWeldConfiguration(candidate) {
+      return {
+        weld_id: candidate.id,
+        source_state: candidate.state,
+        review_status: "pending",
+        process: null,
+        continuity: null,
+        joint_type: "",
+        side: null,
+        weld_length_mm: candidate.nominal_length_mm ?? null,
+        segment_length_mm: null,
+        pitch_mm: null,
+        gap_mm: null,
+        segment_count: null,
+        size_basis: null,
+        size_mm: null,
+        passes: null,
+        speed_mm_min: null,
+        time_sec_per_mm: null,
+        setup_time_min: 0,
+        setup_scope: "per_process",
+        preparation_time_min_per_piece: 0,
+        finishing_grinding: false,
+        finishing_time_min_per_piece: 0,
+        hourly_rate_eur: null
+      };
+    }
+
+    function weldInput(index, field, label, configuration, step = "0.01") {
+      const value = configuration[field] ?? "";
+      return `<label>${escapeHtml(label)}<input type="number" min="0" step="${step}" value="${escapeHtml(value)}" data-weld-index="${index}" data-weld-field="${escapeHtml(field)}" data-value-type="number"></label>`;
+    }
+
+    function renderWeldSection(analysis, weldingQuote, resetConfigurations = true) {
+      const assembly = analysis.assembly || {};
+      const section = document.getElementById("welds-section");
+      if ((assembly.component_count || 0) <= 1) {
+        section.hidden = true;
+        return;
+      }
+      section.hidden = false;
+      const candidates = assembly.weld_candidates || [];
+      if (resetConfigurations) {
+        weldConfigurations = candidates.map(initialWeldConfiguration);
+        manualWeldSequence = 1;
+      }
+      const resultsById = new Map((weldingQuote?.items || []).map(item => [item.weld_id, item]));
+      document.getElementById("assembly-summary").innerHTML = rows([
+        ["Componenti", assembly.component_count ?? 0],
+        ["Feature aperture dei componenti", assembly.component_opening_features_total ?? 0],
+        ["Passaggi fisici assemblato", assembly.physical_passages_total ?? 0],
+        ["Candidate CAD", candidates.length],
+        ["Stato stima saldature", weldingQuote?.status || "requires_configuration"],
+        ["Tempo saldature", number(weldingQuote?.total_time_min, "min")],
+        ["Costo saldature", money(weldingQuote?.total_cost_eur)]
+      ]);
+      const candidateById = new Map(candidates.map(item => [item.id, item]));
+      const cards = weldConfigurations.map((configuration, index) => {
+        const candidate = candidateById.get(configuration.weld_id);
+        const result = resultsById.get(configuration.weld_id) || {};
+        const badge = configuration.source_state === "manual_weld"
+          ? "Manuale"
+          : configuration.review_status === "confirmed"
+            ? "Confermata"
+            : configuration.review_status === "rejected" ? "Rifiutata" : "Candidata";
+        const errors = (result.errors || []).map(error => `<li>${escapeHtml(error)}</li>`).join("");
+        return `<div class="weld-card" data-weld-card="${index}">
+          <div class="weld-card-head">
+            <strong>${escapeHtml(configuration.weld_id)}</strong>
+            <span class="badge">${escapeHtml(badge)}</span>
+          </div>
+          <div class="technical-note">${escapeHtml(candidate?.reason || "Saldatura aggiunta manualmente.")} Geometria: ${escapeHtml(candidate?.geometry || "manuale")}; lunghezza CAD: ${escapeHtml(number(candidate?.nominal_length_mm, "mm"))}; confidence: ${escapeHtml(candidate?.confidence || "manuale")}.</div>
+          <div class="weld-fields">
+            <label>Processo<select data-weld-index="${index}" data-weld-field="process"><option value="">Seleziona</option>${["TIG","MIG","MAG"].map(value => weldOption(value, configuration.process)).join("")}</select></label>
+            <label>Tipo cordone<select data-weld-index="${index}" data-weld-field="continuity"><option value="">Seleziona</option>${weldOption("continuous", configuration.continuity, "Continua")}${weldOption("intermittent", configuration.continuity, "Intermittente")}</select></label>
+            <label>Tipo giunto<input type="text" value="${escapeHtml(configuration.joint_type || "")}" data-weld-index="${index}" data-weld-field="joint_type"></label>
+            <label>Lato<select data-weld-index="${index}" data-weld-field="side"><option value="">Seleziona</option>${weldOption("one", configuration.side, "Uno")}${weldOption("both", configuration.side, "Entrambi")}</select></label>
+            ${weldInput(index, "weld_length_mm", "Lunghezza giunzione mm", configuration)}
+            <label>Dimensione<select data-weld-index="${index}" data-weld-field="size_basis"><option value="">Seleziona</option>${weldOption("a", configuration.size_basis, "Gola a")}${weldOption("z", configuration.size_basis, "Lato z")}</select></label>
+            ${weldInput(index, "size_mm", "Valore a/z mm", configuration)}
+            ${weldInput(index, "passes", "Numero passate", configuration, "1")}
+            ${weldInput(index, "speed_mm_min", "Velocità mm/min", configuration)}
+            ${weldInput(index, "time_sec_per_mm", "Tempo sec/mm", configuration)}
+            ${weldInput(index, "segment_length_mm", "Segmento mm", configuration)}
+            ${weldInput(index, "pitch_mm", "Pitch mm", configuration)}
+            ${weldInput(index, "gap_mm", "Gap mm", configuration)}
+            ${weldInput(index, "segment_count", "Numero segmenti opzionale", configuration, "1")}
+            ${weldInput(index, "setup_time_min", "Setup min", configuration)}
+            <label>Ambito setup<select data-weld-index="${index}" data-weld-field="setup_scope">${weldOption("per_lot", configuration.setup_scope, "Per lotto")}${weldOption("per_process", configuration.setup_scope, "Per processo")}${weldOption("per_weld", configuration.setup_scope, "Per cordone")}</select></label>
+            ${weldInput(index, "preparation_time_min_per_piece", "Preparazione min/pezzo", configuration)}
+            <label>Molatura/finitura<select data-weld-index="${index}" data-weld-field="finishing_grinding" data-value-type="boolean">${weldOption("false", String(configuration.finishing_grinding), "No")}${weldOption("true", String(configuration.finishing_grinding), "Sì")}</select></label>
+            ${weldInput(index, "finishing_time_min_per_piece", "Finitura min/pezzo", configuration)}
+            ${weldInput(index, "hourly_rate_eur", "Tariffa EUR/ora", configuration)}
+          </div>
+          <div class="weld-actions">
+            ${configuration.source_state === "manual_weld"
+              ? `<button class="secondary" type="button" data-weld-action="delete" data-weld-index="${index}">Elimina</button>`
+              : `<button class="primary" type="button" data-weld-action="confirm" data-weld-index="${index}">Conferma</button><button class="secondary" type="button" data-weld-action="reject" data-weld-index="${index}">Rifiuta</button>`}
+          </div>
+          <dl>${rows([
+            ["Lunghezza saldata effettiva", number(result.effective_weld_length_mm, "mm")],
+            ["Lunghezza produttiva lati/passate", number(result.productive_length_mm, "mm")],
+            ["Tempo totale", number(result.total_time_min, "min")],
+            ["Costo", money(result.cost_eur)]
+          ])}</dl>
+          ${errors ? `<ul class="weld-errors">${errors}</ul>` : ""}
+        </div>`;
+      });
+      document.getElementById("welds-detail").innerHTML = cards.join("") || '<div class="technical-empty">Nessuna candidata CAD. Puoi aggiungere una saldatura manuale.</div>';
+    }
+
+    function renderResult(payload, resetWelds = true) {
       const analysis = payload.analysis;
       const quote = payload.quote;
       const holes = analysis.holes || {};
@@ -1619,6 +1757,7 @@
         ?? (circularHoles + elongatedHoles + roundedRectangularHoles + polygonalHoles + formedHoles + unknownHoles);
       renderPreviewGallery(preview, analysis.complexity_score);
       renderTechnicalDetails(analysis);
+      renderWeldSection(analysis, quote.welding_quote || {}, resetWelds);
       const viewerEnabled = defaults?.viewer_model_enabled !== false;
       document.getElementById("load-viewer-button").disabled = !viewerEnabled;
       setViewerStatus(
@@ -1679,7 +1818,9 @@
         ...(analysis.cutting?.warnings || []),
         ...(analysis.flat_pattern?.warnings || []),
         ...(analysis.manufacturability?.warnings || []),
-        ...(quote.warnings || [])
+        ...(analysis.assembly?.warnings || []),
+        ...(quote.warnings || []),
+        ...(quote.welding_quote?.warnings || [])
       ];
       document.getElementById("warnings").innerHTML = warnings.map(item => `<li>${escapeHtml(item)}</li>`).join("");
       document.getElementById("warnings-panel").hidden = warnings.length === 0;
@@ -1788,6 +1929,70 @@
         setStatus(error.message || "Caricamento del modello 3D non riuscito.", "error");
       } finally {
         button.disabled = defaults?.viewer_model_enabled === false;
+      }
+    });
+
+    document.getElementById("welds-detail").addEventListener("input", event => {
+      const target = event.target;
+      const index = Number(target.dataset.weldIndex);
+      const field = target.dataset.weldField;
+      if (!Number.isInteger(index) || !field || !weldConfigurations[index]) return;
+      let value = target.value;
+      if (target.dataset.valueType === "number") value = value === "" ? null : Number(value);
+      if (target.dataset.valueType === "boolean") value = value === "true";
+      weldConfigurations[index][field] = value === "" ? null : value;
+    });
+
+    document.getElementById("welds-detail").addEventListener("click", event => {
+      const button = event.target.closest("button[data-weld-action]");
+      if (!button) return;
+      const index = Number(button.dataset.weldIndex);
+      const configuration = weldConfigurations[index];
+      if (!configuration) return;
+      if (button.dataset.weldAction === "delete" && configuration.source_state === "manual_weld") {
+        weldConfigurations.splice(index, 1);
+      } else if (button.dataset.weldAction === "confirm") {
+        configuration.review_status = "confirmed";
+      } else if (button.dataset.weldAction === "reject") {
+        configuration.review_status = "rejected";
+      }
+      renderWeldSection(lastResult.analysis, lastResult.quote?.welding_quote || {}, false);
+    });
+
+    document.getElementById("add-manual-weld").addEventListener("click", () => {
+      const id = `manual_${String(manualWeldSequence++).padStart(3, "0")}`;
+      weldConfigurations.push({
+        ...initialWeldConfiguration({id, state: "manual_weld", nominal_length_mm: null}),
+        source_state: "manual_weld",
+        review_status: "confirmed"
+      });
+      renderWeldSection(lastResult.analysis, lastResult.quote?.welding_quote || {}, false);
+    });
+
+    document.getElementById("calculate-welds").addEventListener("click", async () => {
+      if (!lastResult) return;
+      const pricingKeys = [...parameterGroups.laser, ...parameterGroups.bending, ...parameterGroups.general].map(item => item[0]);
+      const materialKeys = parameterGroups.material.map(item => item[0]);
+      const welds = weldConfigurations.filter(item => item.review_status !== "pending");
+      setStatus("Calcolo stima saldature in corso...", "loading");
+      try {
+        const response = await fetchApi("/quote", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({
+            analysis: lastResult.analysis,
+            quantity: Number(document.getElementById("quantity").value || 1),
+            material: document.getElementById("material").value,
+            pricing_overrides: collectOverrides(pricingKeys),
+            material_overrides: collectOverrides(materialKeys),
+            welds
+          })
+        });
+        lastResult.quote = await response.json();
+        renderResult(lastResult, false);
+        clearStatus();
+      } catch (error) {
+        setStatus(error.message || "Calcolo saldature non riuscito.", "error");
       }
     });
 

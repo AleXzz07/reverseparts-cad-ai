@@ -390,6 +390,275 @@ def _not_applicable_amounts(reason: str) -> dict[str, Any]:
     }
 
 
+def _intermittent_effective_length(configuration: dict[str, Any]) -> tuple[float | None, int | None, str | None]:
+    length = configuration.get("weld_length_mm")
+    segment = configuration.get("segment_length_mm")
+    pitch = configuration.get("pitch_mm")
+    gap = configuration.get("gap_mm")
+    requested_count = configuration.get("segment_count")
+    if length is None or segment is None:
+        return None, None, "Intermittente: lunghezza giunzione e lunghezza segmento sono obbligatorie."
+    length = float(length)
+    segment = float(segment)
+    if (pitch is None) == (gap is None):
+        return None, None, "Intermittente: indicare esattamente uno tra pitch_mm e gap_mm."
+    if pitch is not None:
+        pitch = float(pitch)
+        if pitch < segment:
+            return None, None, "Intermittente: pitch_mm deve essere almeno pari a segment_length_mm."
+        count = int(requested_count) if requested_count is not None else int((length - segment) // pitch) + 1
+        occupied_span = (count - 1) * pitch + segment
+        method = "segment_count x segment_length; pitch centro-centro"
+    else:
+        gap = float(gap)
+        count = int(requested_count) if requested_count is not None else int((length + gap) // (segment + gap))
+        occupied_span = count * segment + max(0, count - 1) * gap
+        method = "segment_count x segment_length; gap libero tra segmenti"
+    if count < 1:
+        return None, None, "Intermittente: nessun segmento completo entra nella lunghezza configurata."
+    if occupied_span > length + 1e-6:
+        return None, None, "Intermittente: i segmenti configurati superano la lunghezza disponibile."
+    return round(count * segment, 3), count, method
+
+
+def _calculate_welding_quote(
+    cad_data: dict[str, Any],
+    welds: list[dict[str, Any]] | None,
+    *,
+    quantity: int,
+) -> dict[str, Any]:
+    classification = cad_data.get("part_classification", {}) or {}
+    if classification.get("category") != "multi_solid":
+        return {
+            "status": "not_requested",
+            "scope": "welding_only",
+            "items": [],
+            "setup_groups": [],
+            "total_time_min": None,
+            "total_cost_eur": None,
+            "warnings": [],
+        }
+
+    assembly = cad_data.get("assembly", {}) or {}
+    candidates = assembly.get("weld_candidates", []) or []
+    candidate_by_id = {str(item.get("id")): item for item in candidates}
+    configurations = welds or []
+    configuration_ids = [str(item.get("weld_id", "")) for item in configurations]
+    duplicate_ids = sorted({item_id for item_id in configuration_ids if configuration_ids.count(item_id) > 1})
+    global_errors = [
+        f"Configurazione duplicata per {item_id}." for item_id in duplicate_ids
+    ]
+    configured_candidate_ids = {
+        str(item.get("weld_id"))
+        for item in configurations
+        if item.get("source_state") != "manual_weld"
+    }
+    pending_candidate_ids = sorted(set(candidate_by_id) - configured_candidate_ids)
+
+    item_results: list[dict[str, Any]] = []
+    confirmed_for_setup: list[tuple[dict[str, Any], dict[str, Any]]] = []
+    productive_time_total = 0.0
+    for configuration in configurations:
+        weld_id = str(configuration.get("weld_id", ""))
+        source_state = configuration.get("source_state")
+        review_status = configuration.get("review_status", "confirmed")
+        errors: list[str] = []
+        if source_state in {"weld_candidate", "weld_detected"}:
+            source = candidate_by_id.get(weld_id)
+            if source is None:
+                errors.append("La saldatura CAD indicata non esiste nell'analisi corrente.")
+            elif source.get("state") != source_state:
+                errors.append("Lo stato origine non coincide con l'evidenza CAD.")
+        elif source_state == "manual_weld":
+            source = None
+        else:
+            source = None
+            errors.append("Origine saldatura non valida.")
+
+        base_result = {
+            "weld_id": weld_id,
+            "source_state": source_state,
+            "review_status": review_status,
+            "process": configuration.get("process"),
+            "continuity": configuration.get("continuity"),
+            "joint_type": configuration.get("joint_type"),
+            "side": configuration.get("side"),
+            "weld_length_mm": configuration.get("weld_length_mm"),
+            "segment_length_mm": configuration.get("segment_length_mm"),
+            "pitch_mm": configuration.get("pitch_mm"),
+            "gap_mm": configuration.get("gap_mm"),
+            "segment_count": configuration.get("segment_count"),
+            "effective_weld_length_mm": None,
+            "productive_length_mm": None,
+            "passes": configuration.get("passes"),
+            "size_basis": configuration.get("size_basis"),
+            "size_mm": configuration.get("size_mm"),
+            "setup_scope": configuration.get("setup_scope", "per_process"),
+            "setup_time_min": configuration.get("setup_time_min", 0.0),
+            "welding_time_min_per_piece": None,
+            "preparation_time_min_per_piece": configuration.get("preparation_time_min_per_piece", 0.0),
+            "finishing_time_min_per_piece": configuration.get("finishing_time_min_per_piece", 0.0),
+            "productive_time_total_min": None,
+            "allocated_setup_time_min": 0.0,
+            "total_time_min": None,
+            "hourly_rate_eur": configuration.get("hourly_rate_eur"),
+            "cost_eur": None,
+            "calculation_method": None,
+            "errors": errors,
+        }
+        if review_status == "rejected":
+            base_result["calculation_method"] = "Candidata esclusa dall'utente; nessun costo applicato."
+            item_results.append(base_result)
+            continue
+        required = {
+            "process": configuration.get("process"),
+            "continuity": configuration.get("continuity"),
+            "joint_type": configuration.get("joint_type"),
+            "side": configuration.get("side"),
+            "weld_length_mm": configuration.get("weld_length_mm"),
+            "size_basis": configuration.get("size_basis"),
+            "size_mm": configuration.get("size_mm"),
+            "passes": configuration.get("passes"),
+            "hourly_rate_eur": configuration.get("hourly_rate_eur"),
+        }
+        missing = [name for name, value in required.items() if value in {None, ""}]
+        if missing:
+            errors.append(f"Parametri obbligatori mancanti: {', '.join(missing)}.")
+        speed = configuration.get("speed_mm_min")
+        time_per_mm = configuration.get("time_sec_per_mm")
+        if (speed is None) == (time_per_mm is None):
+            errors.append("Indicare esattamente uno tra speed_mm_min e time_sec_per_mm.")
+
+        continuity = configuration.get("continuity")
+        effective_length = None
+        segment_count = None
+        intermittent_method = None
+        if continuity == "continuous" and configuration.get("weld_length_mm") is not None:
+            if any(configuration.get(field) is not None for field in ("segment_length_mm", "pitch_mm", "gap_mm", "segment_count")):
+                errors.append("I parametri dei segmenti non sono ammessi per una saldatura continua.")
+            effective_length = round(float(configuration["weld_length_mm"]), 3)
+        elif continuity == "intermittent":
+            effective_length, segment_count, intermittent_detail = _intermittent_effective_length(configuration)
+            if effective_length is None:
+                errors.append(str(intermittent_detail))
+            else:
+                intermittent_method = "Lunghezza intermittente: " + str(intermittent_detail)
+
+        if configuration.get("finishing_grinding") and float(configuration.get("finishing_time_min_per_piece", 0.0)) <= 0:
+            errors.append("La finitura/molatura attiva richiede finishing_time_min_per_piece > 0.")
+        if errors or effective_length is None:
+            base_result["segment_count"] = segment_count or configuration.get("segment_count")
+            item_results.append(base_result)
+            continue
+
+        side_multiplier = 2 if configuration.get("side") == "both" else 1
+        productive_length = effective_length * side_multiplier * int(configuration["passes"])
+        if speed is not None:
+            welding_time = productive_length / float(speed)
+            travel_method = "lunghezza produttiva / velocita"
+        else:
+            welding_time = productive_length * float(time_per_mm) / 60.0
+            travel_method = "lunghezza produttiva x tempo/mm"
+        preparation = float(configuration.get("preparation_time_min_per_piece", 0.0))
+        finishing = (
+            float(configuration.get("finishing_time_min_per_piece", 0.0))
+            if configuration.get("finishing_grinding")
+            else 0.0
+        )
+        productive_per_piece = preparation + welding_time + finishing
+        productive_total = productive_per_piece * quantity
+        productive_time_total += productive_total
+        base_result.update(
+            {
+                "segment_count": segment_count or configuration.get("segment_count"),
+                "effective_weld_length_mm": round(effective_length, 3),
+                "productive_length_mm": round(productive_length, 3),
+                "welding_time_min_per_piece": round(welding_time, 4),
+                "productive_time_total_min": round(productive_total, 4),
+                "calculation_method": "; ".join(
+                    item for item in (intermittent_method, travel_method) if item
+                ),
+            }
+        )
+        item_results.append(base_result)
+        confirmed_for_setup.append((configuration, base_result))
+
+    setup_groups: dict[tuple[str, str], dict[str, Any]] = {}
+    for configuration, result in confirmed_for_setup:
+        scope = configuration.get("setup_scope", "per_process")
+        if scope == "per_weld":
+            key = ("per_weld", str(configuration.get("weld_id")))
+        elif scope == "per_lot":
+            key = ("per_lot", "lot")
+        else:
+            key = ("per_process", str(configuration.get("process")))
+        group = setup_groups.setdefault(
+            key,
+            {
+                "scope": scope,
+                "key": key[1],
+                "weld_ids": [],
+                "setup_time_min": 0.0,
+                "hourly_rate_eur": 0.0,
+                "setup_cost_eur": 0.0,
+                "method": "Setup massimo dichiarato nel gruppo; non sommato tra saldature dello stesso gruppo.",
+            },
+        )
+        group["weld_ids"].append(str(configuration.get("weld_id")))
+        group["setup_time_min"] = max(
+            float(group["setup_time_min"]),
+            float(configuration.get("setup_time_min", 0.0)),
+        )
+        group["hourly_rate_eur"] = max(
+            float(group["hourly_rate_eur"]),
+            float(configuration.get("hourly_rate_eur", 0.0)),
+        )
+
+    total_setup = 0.0
+    setup_cost_total = 0.0
+    for group in setup_groups.values():
+        total_setup += float(group["setup_time_min"])
+        group["setup_cost_eur"] = _round_money(
+            float(group["setup_time_min"]) / 60.0 * float(group["hourly_rate_eur"])
+        )
+        setup_cost_total += float(group["setup_cost_eur"])
+
+    total_cost = 0.0
+    for configuration, result in confirmed_for_setup:
+        item_time = float(result["productive_time_total_min"])
+        result["total_time_min"] = round(item_time, 4)
+        result["cost_eur"] = _round_money(item_time / 60.0 * float(configuration["hourly_rate_eur"]))
+        total_cost += float(result["cost_eur"])
+    total_cost += setup_cost_total
+
+    has_errors = bool(global_errors or pending_candidate_ids or any(item["errors"] for item in item_results))
+    if not configurations and not candidates:
+        status = "not_configured"
+    else:
+        status = "requires_configuration" if has_errors or not configurations else "calculated"
+    warnings = [
+        "Stima limitata alle saldature: non costituisce un preventivo completo dell'assemblato."
+    ]
+    if pending_candidate_ids:
+        warnings.append(
+            "Candidate ancora da confermare o rifiutare: " + ", ".join(pending_candidate_ids) + "."
+        )
+    warnings.extend(global_errors)
+    complete = status == "calculated"
+    return {
+        "status": status,
+        "scope": "welding_only",
+        "quantity": quantity,
+        "items": item_results,
+        "setup_groups": list(setup_groups.values()),
+        "productive_time_total_min": round(productive_time_total, 4) if complete and confirmed_for_setup else None,
+        "setup_time_total_min": round(total_setup, 4) if complete and confirmed_for_setup else None,
+        "total_time_min": round(productive_time_total + total_setup, 4) if complete and confirmed_for_setup else None,
+        "total_cost_eur": _round_money(total_cost) if complete and confirmed_for_setup else None,
+        "warnings": warnings,
+    }
+
+
 def quote_from_cad(
     cad_data: dict[str, Any],
     *,
@@ -399,6 +668,7 @@ def quote_from_cad(
     materials: dict[str, dict[str, Any]] | None = None,
     pricing_overrides: dict[str, float] | None = None,
     material_overrides: dict[str, float] | None = None,
+    welds: list[dict[str, Any]] | None = None,
     pricing_config_path: Path = DEFAULT_PRICING_CONFIG_PATH,
     materials_config_path: Path = DEFAULT_MATERIALS_CONFIG_PATH,
 ) -> dict[str, Any]:
@@ -435,6 +705,11 @@ def quote_from_cad(
         ),
     }
     quantity = max(int(quantity), 1)
+    welding_quote = _calculate_welding_quote(
+        cad_data,
+        welds,
+        quantity=quantity,
+    )
     circular_holes = _feature_count(cad_data, "circular")
     elongated_holes = _feature_count(cad_data, "elongated")
     rounded_rectangular_holes = _feature_count(cad_data, "rounded_rectangular")
@@ -451,16 +726,17 @@ def quote_from_cad(
             ),
         )
     )
-    total_holes = int(
+    total_holes = (
+        circular_holes
+        + elongated_holes
+        + rounded_rectangular_holes
+        + polygonal_holes
+        + formed_holes
+        + unknown_holes
+    )
+    physical_openings_total = int(
         (cad_data.get("holes", {}) or {}).get("physical_openings_total")
-        or (
-            circular_holes
-            + elongated_holes
-            + rounded_rectangular_holes
-            + polygonal_holes
-            + formed_holes
-            + unknown_holes
-        )
+        or total_holes
     )
     bends = _bend_count(cad_data)
     bends_count_available = _bend_count_is_declared(cad_data)
@@ -559,7 +835,7 @@ def quote_from_cad(
         polygonal_holes=polygonal_holes + rounded_rectangular_holes,
         formed_holes=formed_holes,
         unknown_holes=unknown_holes,
-        total_holes=total_holes,
+        total_holes=physical_openings_total,
         bends=bends,
         bends_count_available=bends_count_available,
         estimated_weight_kg=estimated_weight_kg,
@@ -576,7 +852,7 @@ def quote_from_cad(
             polygonal_holes=polygonal_holes + rounded_rectangular_holes,
             formed_holes=formed_holes,
             unknown_holes=unknown_holes,
-            total_holes=total_holes,
+            total_holes=physical_openings_total,
             bends=bends,
             bends_count_available=bends_count_available,
             estimated_weight_kg=estimated_weight_kg,
@@ -605,6 +881,7 @@ def quote_from_cad(
         "quantity": quantity,
         "process_plan": [] if quote_not_applicable else _process_plan(bends),
         "quote_applicability": quote_applicability,
+        "welding_quote": welding_quote,
         "part_classification": classification,
         "material": {
             "name": material_name,
@@ -625,7 +902,7 @@ def quote_from_cad(
             "formed_holes": formed_holes,
             "unknown_holes": unknown_holes,
             "total_holes": total_holes,
-            "physical_openings_total": total_holes,
+            "physical_openings_total": physical_openings_total,
             "bends": bends,
         },
         "cost_drivers": {
