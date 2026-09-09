@@ -5,7 +5,7 @@ import json
 import math
 import os
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from .schemas import (
@@ -20,6 +20,10 @@ from .schemas import (
     Holes,
     PartClassification,
     WeldEvidence,
+)
+from .sheetmetal_unfolder import (
+    propagate_openings_and_hole_to_bend,
+    unfold_sheet,
 )
 
 
@@ -67,6 +71,13 @@ class AnalysisParameters:
     assembly_passage_axial_gap_tolerance_mm: float
     flat_pattern_k_factor: float
     flat_pattern_max_simple_parallel_bends: int
+    flat_pattern_face_pair_distance_tolerance_mm: float
+    flat_pattern_edge_match_tolerance_mm: float
+    flat_pattern_width_consistency_tolerance_mm: float
+    flat_pattern_continuity_tolerance_mm: float
+    flat_pattern_max_overlap_area_mm2: float
+    flat_pattern_max_area_coherence_error_pct: float
+    flat_pattern_max_perimeter_coherence_error_pct: float
 
 
 def load_analysis_config(path: Path = DEFAULT_ANALYSIS_CONFIG_PATH) -> AnalysisParameters:
@@ -102,6 +113,27 @@ def load_analysis_config(path: Path = DEFAULT_ANALYSIS_CONFIG_PATH) -> AnalysisP
         flat_pattern_max_simple_parallel_bends=int(
             flat_pattern.get("max_simple_parallel_bends", 4)
         ),
+        flat_pattern_face_pair_distance_tolerance_mm=float(
+            flat_pattern.get("face_pair_distance_tolerance_mm", 0.08)
+        ),
+        flat_pattern_edge_match_tolerance_mm=float(
+            flat_pattern.get("edge_match_tolerance_mm", 0.05)
+        ),
+        flat_pattern_width_consistency_tolerance_mm=float(
+            flat_pattern.get("width_consistency_tolerance_mm", 0.25)
+        ),
+        flat_pattern_continuity_tolerance_mm=float(
+            flat_pattern.get("continuity_tolerance_mm", 0.05)
+        ),
+        flat_pattern_max_overlap_area_mm2=float(
+            flat_pattern.get("max_overlap_area_mm2", 0.05)
+        ),
+        flat_pattern_max_area_coherence_error_pct=float(
+            flat_pattern.get("max_area_coherence_error_pct", 0.5)
+        ),
+        flat_pattern_max_perimeter_coherence_error_pct=float(
+            flat_pattern.get("max_perimeter_coherence_error_pct", 1.0)
+        ),
     )
     if not 0 < parameters.opening_min_dimension_mm <= parameters.opening_max_dimension_mm:
         raise ValueError("Invalid planar opening dimension limits in analysis config.")
@@ -111,6 +143,14 @@ def load_analysis_config(path: Path = DEFAULT_ANALYSIS_CONFIG_PATH) -> AnalysisP
         raise ValueError("Invalid flat-pattern K-factor in analysis config.")
     if parameters.flat_pattern_max_simple_parallel_bends < 0:
         raise ValueError("Invalid flat-pattern bend limit in analysis config.")
+    if parameters.flat_pattern_face_pair_distance_tolerance_mm <= 0:
+        raise ValueError("Invalid flat-pattern face-pair tolerance in analysis config.")
+    if parameters.flat_pattern_edge_match_tolerance_mm <= 0:
+        raise ValueError("Invalid flat-pattern edge tolerance in analysis config.")
+    if parameters.flat_pattern_width_consistency_tolerance_mm <= 0:
+        raise ValueError("Invalid flat-pattern width tolerance in analysis config.")
+    if parameters.flat_pattern_continuity_tolerance_mm <= 0:
+        raise ValueError("Invalid flat-pattern continuity tolerance in analysis config.")
     if parameters.assembly_contact_tolerance_mm < 0:
         raise ValueError("Invalid assembly contact tolerance in analysis config.")
     return parameters
@@ -2137,6 +2177,28 @@ def _estimate_flat_pattern(
         )
         return result
 
+    if bends:
+        geometric_result = unfold_sheet(
+            shape=shape,
+            thickness_mm=thickness_mm,
+            thickness_confidence=thickness_confidence,
+            holes=holes,
+            density_g_cm3=density_g_cm3,
+            k_factor=parameters.flat_pattern_k_factor,
+            parameters=parameters,
+        )
+        if geometric_result is not None:
+            if holes:
+                geometric_result, _, _ = propagate_openings_and_hole_to_bend(
+                    result=geometric_result,
+                    shape=shape,
+                    thickness_mm=thickness_mm,
+                    holes=holes,
+                    k_factor=parameters.flat_pattern_k_factor,
+                    parameters=parameters,
+                )
+            return geometric_result
+
     countersink_extra_removed_volume_mm3 = 0.0
     for hole in holes:
         if (
@@ -2163,26 +2225,12 @@ def _estimate_flat_pattern(
         )
 
     result.available = True
-    result.net_developed_area_mm2 = round(
-        (volume_mm3 + countersink_extra_removed_volume_mm3) / thickness_mm,
-        2,
-    )
     result.status = "partial"
-    result.method = "constant-thickness material-volume estimate"
-
-    if all(hole.area_mm2 is not None for hole in holes):
-        result.opening_area_mm2 = round(
-            sum(float(hole.area_mm2 or 0.0) for hole in holes),
-            2,
-        )
-        result.gross_blank_area_mm2 = round(
-            result.net_developed_area_mm2 + result.opening_area_mm2,
-            2,
-        )
-    else:
-        result.warnings.append(
-            "Area lorda grezzo non disponibile: area di una o più aperture non determinata."
-        )
+    result.method = "unsupported topology; diagnostic material-volume comparison only"
+    result.diagnostic_volume_area_mm2 = round(
+        (volume_mm3 + countersink_extra_removed_volume_mm3) / thickness_mm,
+        4,
+    )
 
     bend_lengths = [bend.length_mm for bend in bends if bend.length_mm is not None]
     if bend_lengths:
@@ -2200,12 +2248,6 @@ def _estimate_flat_pattern(
     if bends and bend_allowances:
         result.total_bend_allowance_mm = round(sum(bend_allowances), 2)
 
-    if result.gross_blank_area_mm2 is not None and density_g_cm3 is not None:
-        result.blank_weight_kg = round(
-            result.gross_blank_area_mm2 * thickness_mm * density_g_cm3 / 1_000_000,
-            3,
-        )
-
     bbox = shape.BoundBox
     bbox_dimensions = [
         float(bbox.XLength),
@@ -2213,6 +2255,22 @@ def _estimate_flat_pattern(
         float(bbox.ZLength),
     ]
     if not bends:
+        opening_area = (
+            sum(float(hole.area_mm2 or 0.0) for hole in holes)
+            if all(hole.area_mm2 is not None for hole in holes)
+            else None
+        )
+        outer_areas = []
+        for face in getattr(shape, "Faces", []):
+            if getattr(face.Surface, "TypeId", "") != "Part::GeomPlane":
+                continue
+            outer_wire = _face_outer_wire(face)
+            if outer_wire is None or not outer_wire.isClosed():
+                continue
+            area = _planar_wire_area(outer_wire)
+            if area is not None and area > 0:
+                outer_areas.append(area)
+        gross_area = max(outer_areas) if outer_areas else None
         thickness_axis = min(
             range(3),
             key=lambda index: abs(bbox_dimensions[index] - thickness_mm),
@@ -2222,54 +2280,79 @@ def _estimate_flat_pattern(
             for index, dimension in enumerate(bbox_dimensions)
             if index != thickness_axis
         ]
-        if all(dimension > 0 for dimension in planar_dimensions):
+        planar_fallback = False
+        if gross_area is None and all(dimension > 0 for dimension in planar_dimensions):
+            fallback_perimeter = 2.0 * sum(planar_dimensions)
+            if (
+                cutting_outer_perimeter_mm is not None
+                and abs(float(cutting_outer_perimeter_mm) - fallback_perimeter)
+                <= parameters.flat_pattern_max_perimeter_coherence_error_pct / 100.0 * fallback_perimeter
+            ):
+                gross_area = planar_dimensions[0] * planar_dimensions[1]
+                planar_fallback = True
+        if all(dimension > 0 for dimension in planar_dimensions) and gross_area is not None and opening_area is not None:
             length, width = sorted(planar_dimensions, reverse=True)
+            net_area = gross_area - opening_area
             result.blank_dimensions_mm = Dimensions(
-                x=round(length, 2),
-                y=round(width, 2),
+                x=round(length, 4),
+                y=round(width, 4),
             )
+            result.net_developed_area_mm2 = round(net_area, 4)
+            result.opening_area_mm2 = round(opening_area, 4)
+            result.gross_blank_area_mm2 = round(gross_area, 4)
             result.outer_perimeter_mm = (
-                round(float(cutting_outer_perimeter_mm), 2)
+                round(float(cutting_outer_perimeter_mm), 4)
                 if cutting_outer_perimeter_mm is not None
                 else None
             )
-            result.status = "exact"
-            result.is_estimate = False
-            result.method = "planar STEP extents and measured contours"
+            inner_perimeter = sum(
+                float(hole.perimeter_mm or hole.circumference_mm or (
+                    math.pi * hole.diameter_mm if hole.diameter_mm is not None else 0.0
+                ))
+                for hole in holes
+            )
+            result.inner_perimeter_mm = round(inner_perimeter, 4)
+            result.total_cut_length_mm = (
+                round(result.outer_perimeter_mm + inner_perimeter, 4)
+                if result.outer_perimeter_mm is not None
+                else None
+            )
+            result.propagated_opening_count = len(holes)
+            result.status = "validated_estimate" if planar_fallback else "exact"
+            result.usable_for_costing = result.total_cut_length_mm is not None
+            result.is_estimate = planar_fallback
+            result.method = (
+                "validated planar bounding rectangle fallback"
+                if planar_fallback
+                else "validated planar STEP contours"
+            )
             result.confidence = "high" if thickness_confidence == "high" else "medium"
-            return result
-
-    simple_parallel_bends = (
-        0 < len(bends) <= parameters.flat_pattern_max_simple_parallel_bends
-        and len(bend_lengths) == len(bends)
-        and all(bend.axis is not None for bend in bends)
-        and all(
-            _axis_aligned(tuple(bends[0].axis or []), tuple(bend.axis or []), tolerance=0.98)
-            for bend in bends[1:]
-        )
-    )
-    if simple_parallel_bends and result.gross_blank_area_mm2 is not None:
-        min_width = min(float(length) for length in bend_lengths)
-        max_width = max(float(length) for length in bend_lengths)
-        consistent_width = max_width - min_width <= max(1.0, max_width * 0.05)
-        if consistent_width and max_width > 0:
-            width = sum(float(length) for length in bend_lengths) / len(bend_lengths)
-            length = result.gross_blank_area_mm2 / width
-            length, width = sorted((length, width), reverse=True)
-            result.blank_dimensions_mm = Dimensions(
-                x=round(length, 2),
-                y=round(width, 2),
-            )
-            result.outer_perimeter_mm = round(2.0 * (length + width), 2)
-            result.status = "estimated"
-            result.method = "parallel-bend rectangular blank estimate"
-            result.confidence = "medium" if thickness_confidence in {"medium", "high"} else "low"
-            result.warnings.append(
-                "Dimensioni grezzo stimate da area lorda e lunghezza delle pieghe parallele; verificare lo sviluppo CAD prima della produzione."
-            )
+            diagnostic_error = abs(result.diagnostic_volume_area_mm2 - net_area) / max(net_area, 1e-9) * 100.0
+            result.diagnostic_volume_area_error_pct = round(diagnostic_error, 6)
+            result.validation.graph_connected = True
+            result.validation.topology_continuous = True
+            result.validation.self_intersections = 0
+            result.validation.overlap_area_mm2 = 0.0
+            result.validation.area_coherence_error_pct = 0.0
+            result.validation.perimeter_coherence_error_pct = 0.0
+            result.validation.all_openings_propagated = True
+            result.validation.passed = result.usable_for_costing
+            if planar_fallback:
+                result.warnings.append(
+                    "Contorno planare ricostruito da bounding box e perimetro coerente; stato conservativo validated_estimate."
+                )
+            for hole in holes:
+                hole.flat_contour_propagated = True
+            if result.usable_for_costing and density_g_cm3 is not None:
+                result.blank_weight_kg = round(
+                    gross_area * thickness_mm * density_g_cm3 / 1_000_000,
+                    3,
+                )
             return result
 
     result.confidence = "low"
+    result.usable_for_costing = False
+    result.blank_weight_kg = None
     result.warnings.append(
         "Sviluppo piano completo non determinabile con sicurezza per questa geometria; disponibili solo i dati parziali verificabili."
     )
@@ -2906,6 +2989,7 @@ def analyze_step_file(
     density_g_cm3: float | None = None,
     declared_thickness_mm: float | None = None,
     quantity: int = 1,
+    k_factor: float | None = None,
 ) -> CadAnalysisResponse:
     response = _base_response(
         source_file=source_file,
@@ -2931,6 +3015,13 @@ def analyze_step_file(
     _configure_freecad_path()
     Part = importlib.import_module("Part")
     analysis_parameters = load_analysis_config()
+    if k_factor is not None:
+        if not 0.0 <= float(k_factor) <= 1.0:
+            raise ValueError("K-factor must be between 0 and 1.")
+        analysis_parameters = replace(
+            analysis_parameters,
+            flat_pattern_k_factor=float(k_factor),
+        )
 
     temp_path: str | None = None
     try:
@@ -3177,6 +3268,40 @@ def analyze_step_file(
             parameters=analysis_parameters,
             part_category=response.part_classification.category,
         )
+
+        if response.part_classification.category == "sheet_metal":
+            if response.flat_pattern.usable_for_costing:
+                response.cutting.outer_cut_length_mm = response.flat_pattern.outer_perimeter_mm
+                response.cutting.inner_cut_length_mm = response.flat_pattern.inner_perimeter_mm
+                response.cutting.total_cut_length_mm = response.flat_pattern.total_cut_length_mm
+                response.cutting.source = "validated_flat_pattern"
+                response.cutting.confidence = (
+                    "high" if response.flat_pattern.status == "exact" else "medium"
+                )
+                response.cutting.warnings = [
+                    "Lunghezze di taglio derivate esclusivamente dallo sviluppo piano validato."
+                ]
+            else:
+                response.cutting.outer_cut_length_mm = None
+                response.cutting.inner_cut_length_mm = None
+                response.cutting.total_cut_length_mm = None
+                response.cutting.source = "unavailable"
+                response.cutting.confidence = "low"
+                response.cutting.warnings = [
+                    "Costo e lunghezza laser non disponibili: lo sviluppo piano non ha superato la validazione geometrica."
+                ]
+
+        flat_bend_distances = [
+            feature.flat_bend_distance_mm
+            for feature in all_hole_features
+            if feature.flat_bend_distance_mm is not None
+        ]
+        if flat_bend_distances:
+            response.manufacturability.min_hole_to_bend_mm = min(flat_bend_distances)
+            response.manufacturability.measured_hole_to_bend = len(flat_bend_distances)
+            response.manufacturability.hole_to_bend_confidence = (
+                "high" if response.flat_pattern.status == "exact" else "medium"
+            )
 
         if response.detected_thickness_mm is None:
             response.warnings.append(

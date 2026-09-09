@@ -134,7 +134,14 @@ def test_staffa_test_1_dataset_evaluate_and_quote(tmp_path):
     assert evaluation["status"] == "pass"
     assert quote["part_name"] == "STAFFA TEST 1"
     assert quote["features_summary"]["bends"] == 2
-    assert quote["estimated_internal_cost_eur"]["total"] > 0
+    assert quote["estimated_internal_cost_eur"]["total"] is None
+    assert quote["estimated_internal_cost_eur"]["laser"] is None
+    assert quote["material"]["blank_weight_kg"] is None
+    assert quote["laser_applicability"]["status"] == "not_available"
+    assert any(
+        "nessun fallback euristico" in warning
+        for warning in quote["warnings"]
+    )
     assert quote["commercial_guidance"]["margin_applied"] is False
 
 
@@ -425,12 +432,13 @@ def test_real_cad_analysis_matches_dataset_ground_truth(case_name, tmp_path):
         assert holes["polygonal"] == []
         assert holes["unknown"] == []
         assert holes["total_holes"] == 4
-        measured_inner_perimeter = sum(
-            feature["perimeter_mm"]
-            for group in ("circular", "elongated", "polygonal", "formed", "unknown")
-            for feature in holes[group]
-        )
-        assert actual["cutting"]["inner_cut_length_mm"] == pytest.approx(
-            measured_inner_perimeter,
-            abs=0.1,
+        assert actual["flat_pattern"]["status"] in {"partial", "unavailable"}
+        assert actual["flat_pattern"]["usable_for_costing"] is False
+        assert actual["cutting"]["outer_cut_length_mm"] is None
+        assert actual["cutting"]["inner_cut_length_mm"] is None
+        assert actual["cutting"]["total_cut_length_mm"] is None
+        assert actual["cutting"]["source"] == "unavailable"
+        assert any(
+            "sviluppo piano non ha superato" in warning
+            for warning in actual["cutting"]["warnings"]
         )

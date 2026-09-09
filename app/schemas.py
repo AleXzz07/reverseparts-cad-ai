@@ -42,6 +42,9 @@ class HoleFeature(BaseModel):
     position_mm: Dimensions | None = None
     edge_distance_mm: float | None = None
     nearest_hole_distance_mm: float | None = None
+    flat_center_mm: Dimensions | None = None
+    flat_bend_distance_mm: float | None = None
+    flat_contour_propagated: bool = False
     confidence: Confidence = "low"
 
 
@@ -86,6 +89,7 @@ class Cutting(BaseModel):
     outer_cut_length_mm: float | None = None
     inner_cut_length_mm: float | None = None
     total_cut_length_mm: float | None = None
+    source: Literal["validated_flat_pattern", "unavailable"] = "unavailable"
     confidence: Confidence = "low"
     warnings: list[str] = Field(default_factory=list)
 
@@ -109,6 +113,7 @@ class Manufacturability(BaseModel):
     measured_hole_pairs: int = 0
     min_hole_to_bend_mm: float | None = None
     hole_to_bend_confidence: Confidence = "low"
+    measured_hole_to_bend: int = 0
     warnings: list[str] = Field(default_factory=list)
 
 
@@ -118,21 +123,54 @@ class CoordinateReference(BaseModel):
     units: Literal["mm"] = "mm"
 
 
+class FlatBendLine(BaseModel):
+    id: str
+    start_mm: Dimensions
+    end_mm: Dimensions
+    radius_mm: float
+    angle_deg: float
+    allowance_mm: float
+    length_mm: float
+
+
+class FlatPatternValidation(BaseModel):
+    graph_connected: bool = False
+    topology_continuous: bool = False
+    self_intersections: int = 0
+    overlap_area_mm2: float | None = None
+    area_coherence_error_pct: float | None = None
+    perimeter_coherence_error_pct: float | None = None
+    all_openings_propagated: bool = False
+    passed: bool = False
+
+
 class FlatPattern(BaseModel):
-    status: Literal["unavailable", "partial", "estimated", "exact"] = "unavailable"
+    status: Literal["unavailable", "partial", "validated_estimate", "exact"] = "unavailable"
     available: bool = False
+    usable_for_costing: bool = False
     method: str | None = None
     is_estimate: bool = True
+    root_panel_id: str | None = None
     thickness_mm: float | None = None
     k_factor: float | None = None
+    k_factor_standard: Literal["ANSI"] = "ANSI"
+    panel_count: int = 0
+    bend_zone_count: int = 0
     net_developed_area_mm2: float | None = None
     opening_area_mm2: float | None = None
     gross_blank_area_mm2: float | None = None
     blank_dimensions_mm: Dimensions | None = None
     outer_perimeter_mm: float | None = None
+    inner_perimeter_mm: float | None = None
+    total_cut_length_mm: float | None = None
     total_bend_length_mm: float | None = None
     total_bend_allowance_mm: float | None = None
     blank_weight_kg: float | None = None
+    diagnostic_volume_area_mm2: float | None = None
+    diagnostic_volume_area_error_pct: float | None = None
+    propagated_opening_count: int = 0
+    bend_lines: list[FlatBendLine] = Field(default_factory=list)
+    validation: FlatPatternValidation = Field(default_factory=FlatPatternValidation)
     confidence: Confidence = "low"
     warnings: list[str] = Field(default_factory=list)
 

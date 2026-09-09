@@ -170,7 +170,13 @@ async def _analyze_uploaded_cad(
     density_g_cm3: float | None,
     declared_thickness_mm: float | None,
     quantity: int,
+    k_factor: float | None = None,
 ) -> CadAnalysisResponse:
+    if k_factor is not None and not 0.0 <= float(k_factor) <= 1.0:
+        raise HTTPException(
+            status_code=400,
+            detail="K-factor must be between 0 and 1.",
+        )
     filename = file.filename or ""
     if not filename:
         raise HTTPException(status_code=400, detail="CAD file is required.")
@@ -200,6 +206,7 @@ async def _analyze_uploaded_cad(
         density_g_cm3=density_g_cm3,
         declared_thickness_mm=declared_thickness_mm,
         quantity=quantity,
+        k_factor=k_factor,
     )
     if result.raw_bounding_box_mm.x is None and result.warnings:
         raise HTTPException(status_code=422, detail=result.warnings)
@@ -227,6 +234,7 @@ async def analyze_cad(
     density_g_cm3: float | None = Form(default=None),
     declared_thickness_mm: float | None = Form(default=None),
     quantity: int = Form(default=1),
+    k_factor: float | None = Form(default=None),
 ) -> CadAnalysisResponse:
     return await _analyze_uploaded_cad(
         file=file,
@@ -234,6 +242,7 @@ async def analyze_cad(
         density_g_cm3=density_g_cm3,
         declared_thickness_mm=declared_thickness_mm,
         quantity=quantity,
+        k_factor=k_factor,
     )
 
 
@@ -374,6 +383,7 @@ async def analyze_and_quote(
     material: str = Form(...),
     quantity: int = Form(...),
     declared_thickness_mm: float | None = Form(default=None),
+    k_factor: float | None = Form(default=None),
     pricing_overrides: str | None = Form(default=None),
     material_overrides: str | None = Form(default=None),
 ) -> AnalyzeAndQuoteResponse:
@@ -399,6 +409,7 @@ async def analyze_and_quote(
         density_g_cm3=density,
         declared_thickness_mm=declared_thickness_mm,
         quantity=quantity,
+        k_factor=k_factor,
     )
     analysis_payload = _model_to_dict(analysis)
     try:

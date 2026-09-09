@@ -728,13 +728,13 @@ def test_flat_pattern_reports_exact_planar_blank():
     )
 
     assert result.available is True
-    assert result.status == "exact"
-    assert result.is_estimate is False
+    assert result.status == "validated_estimate"
+    assert result.is_estimate is True
     assert result.blank_dimensions_mm is not None
     assert result.blank_dimensions_mm.x == 100.0
     assert result.blank_dimensions_mm.y == 60.0
-    assert result.net_developed_area_mm2 == 5887.0
-    assert result.gross_blank_area_mm2 == 6000.04
+    assert result.net_developed_area_mm2 == 5886.96
+    assert result.gross_blank_area_mm2 == 6000.0
     assert result.outer_perimeter_mm == 320.0
     assert result.blank_weight_kg == 0.032
     assert result.confidence == "high"
@@ -762,7 +762,7 @@ def test_flat_pattern_restores_countersink_removal_before_area_projection():
         parameters=load_analysis_config(),
     )
 
-    assert result.status == "exact"
+    assert result.status == "validated_estimate"
     assert result.net_developed_area_mm2 == pytest.approx(7621.46, abs=0.02)
     assert result.opening_area_mm2 == pytest.approx(78.54, abs=0.01)
     assert result.gross_blank_area_mm2 == pytest.approx(7700.0, abs=0.02)
@@ -787,7 +787,7 @@ def test_multi_solid_flat_pattern_is_unavailable_even_with_thickness():
     assert any("piu solidi" in warning for warning in result.warnings)
 
 
-def test_flat_pattern_estimates_simple_parallel_bend_blank():
+def test_flat_pattern_never_uses_volume_rectangle_without_face_graph():
     bend_items = [
         BendFeature(
             radius_mm=2.0,
@@ -809,15 +809,14 @@ def test_flat_pattern_estimates_simple_parallel_bend_blank():
         parameters=load_analysis_config(),
     )
 
-    assert result.status == "estimated"
-    assert result.blank_dimensions_mm is not None
-    assert result.blank_dimensions_mm.x == 196.0
-    assert result.blank_dimensions_mm.y == 50.0
-    assert result.outer_perimeter_mm == 492.0
+    assert result.status == "partial"
+    assert result.blank_dimensions_mm is None
+    assert result.outer_perimeter_mm is None
     assert result.total_bend_length_mm == 100.0
     assert result.total_bend_allowance_mm == 8.8
-    assert result.blank_weight_kg == 0.053
-    assert result.confidence == "medium"
+    assert result.blank_weight_kg is None
+    assert result.diagnostic_volume_area_mm2 == 9244.0
+    assert result.confidence == "low"
 
 
 def test_flat_pattern_keeps_complex_non_parallel_part_partial():
@@ -838,7 +837,8 @@ def test_flat_pattern_keeps_complex_non_parallel_part_partial():
     assert result.available is True
     assert result.status == "partial"
     assert result.blank_dimensions_mm is None
-    assert result.net_developed_area_mm2 == 10000.0
+    assert result.net_developed_area_mm2 is None
+    assert result.diagnostic_volume_area_mm2 == 10000.0
     assert result.confidence == "low"
     assert result.warnings
 

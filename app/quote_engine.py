@@ -206,12 +206,24 @@ def _estimate_amounts(
     material_config: dict[str, Any] | None,
     parameters: QuoteParameters,
     total_cut_length_mm: float | None,
+    laser_costing_available: bool,
 ) -> dict[str, Any]:
     laser_cut_speed_mm_min, laser_pierce_time_sec, material_laser_profile_used = _laser_profile(
         material_config,
         parameters,
     )
-    if total_cut_length_mm is not None and total_cut_length_mm > 0:
+    if not laser_costing_available:
+        laser_cutting = None
+        laser_time_source = "unavailable_flat_pattern"
+        laser_details = {
+            "cut_length_mm": None,
+            "material_laser_profile_used": material_laser_profile_used,
+            "cut_speed_mm_min": laser_cut_speed_mm_min,
+            "pierce_count": None,
+            "pierce_time_sec": laser_pierce_time_sec,
+            "laser_time_min_per_piece": None,
+        }
+    elif total_cut_length_mm is not None and total_cut_length_mm > 0:
         pierce_count = _pierce_count(total_holes)
         laser_time_min_per_piece = (
             total_cut_length_mm / laser_cut_speed_mm_min
@@ -229,15 +241,8 @@ def _estimate_amounts(
             "laser_time_min_per_piece": round(laser_time_min_per_piece, 4),
         }
     else:
-        laser_feature_factor = (
-            circular_holes * 0.12
-            + elongated_holes * 0.35
-            + polygonal_holes * 0.3
-            + formed_holes * 0.4
-            + unknown_holes * 0.4
-        )
-        laser_cutting = round((2.0 + laser_feature_factor) * quantity, 2)
-        laser_time_source = "fallback_feature_based"
+        laser_cutting = None
+        laser_time_source = "unavailable_flat_cut_length"
         laser_details = {
             "cut_length_mm": None,
             "material_laser_profile_used": material_laser_profile_used,
@@ -283,7 +288,11 @@ def _estimate_amounts(
             "bending_time_total_min": bending,
         }
     handling = round(1.5 + 0.4 * quantity, 2)
-    total_time = round(cad_check + laser_cutting + bending + handling, 2)
+    total_time = (
+        round(cad_check + laser_cutting + bending + handling, 2)
+        if laser_cutting is not None
+        else None
+    )
 
     material_cost = (
         _round_money(float(estimated_weight_kg) * material_config["cost_eur_kg"] * quantity)
@@ -291,20 +300,32 @@ def _estimate_amounts(
         else None
     )
     cad_check_cost = _round_money(cad_check * parameters.cad_check_rate_eur_min)
-    laser_cost = _round_money(laser_cutting * parameters.laser_rate_eur_min)
+    laser_cost = (
+        _round_money(laser_cutting * parameters.laser_rate_eur_min)
+        if laser_cutting is not None
+        else None
+    )
     bending_cost = _round_money(bending * parameters.bending_rate_eur_min)
     handling_cost = _round_money(handling * parameters.handling_rate_eur_min)
     setup_cost = _round_money(parameters.setup_cost_eur)
-    total_internal = _round_money(
-        (material_cost or 0.0)
-        + cad_check_cost
-        + laser_cost
-        + bending_cost
-        + handling_cost
-        + setup_cost
+    total_internal = (
+        _round_money(
+            (material_cost or 0.0)
+            + cad_check_cost
+            + laser_cost
+            + bending_cost
+            + handling_cost
+            + setup_cost
+        )
+        if laser_cost is not None and material_cost is not None
+        else None
     )
-    unit_cost = _round_money(total_internal / quantity)
-    minimum_order_applied = total_internal < parameters.minimum_order_value_eur
+    unit_cost = _round_money(total_internal / quantity) if total_internal is not None else None
+    minimum_order_applied = (
+        total_internal < parameters.minimum_order_value_eur
+        if total_internal is not None
+        else False
+    )
     minimum_billable_price = (
         _round_money(parameters.minimum_order_value_eur)
         if minimum_order_applied
@@ -764,6 +785,17 @@ def quote_from_cad(
 
     volume_cm3 = cad_data.get("volume_cm3")
     flat_pattern = cad_data.get("flat_pattern", {}) or {}
+    if total_cut_length_mm is None:
+        total_cut_length_mm = flat_pattern.get("total_cut_length_mm")
+    flat_pattern_status = flat_pattern.get("status", "unavailable")
+    flat_validation = flat_pattern.get("validation", {}) or {}
+    flat_usable_for_costing = bool(flat_pattern.get("usable_for_costing")) and (
+        flat_pattern_status in {"exact", "validated_estimate"}
+        and bool(flat_validation.get("passed"))
+    )
+    laser_costing_available = not quote_not_applicable and flat_usable_for_costing
+    if not laser_costing_available:
+        total_cut_length_mm = None
     gross_blank_area_mm2 = flat_pattern.get("gross_blank_area_mm2")
     flat_pattern_confidence = flat_pattern.get("confidence", "low")
     thickness_mm = cad_data.get("detected_thickness_mm") or cad_data.get("declared_thickness_mm")
@@ -775,6 +807,7 @@ def quote_from_cad(
         and gross_blank_area_mm2 is not None
         and thickness_mm is not None
         and flat_pattern_confidence in {"medium", "high"}
+        and flat_usable_for_costing
     ):
         estimated_weight_kg = round(
             float(gross_blank_area_mm2)
@@ -784,12 +817,12 @@ def quote_from_cad(
             3,
         )
         weight_source = "flat_pattern_gross_blank"
-    elif part_weight_kg is not None:
+    elif part_weight_kg is not None and quote_not_applicable:
         estimated_weight_kg = part_weight_kg
         weight_source = "recalculated_from_volume"
     else:
-        estimated_weight_kg = cad_data.get("estimated_weight_kg")
-        weight_source = "cad_estimate" if estimated_weight_kg is not None else None
+        estimated_weight_kg = None
+        weight_source = None
     warnings = [quote_applicability["reason"]] if quote_not_applicable else [
         "Preventivo preliminare: parametri economici caricati da config e da validare con dati aziendali reali.",
         "Il motore non applica margine e non decide il prezzo finale commerciale.",
@@ -797,7 +830,11 @@ def quote_from_cad(
     if not quote_not_applicable and material_config is None:
         warnings.append("Materiale non presente in config/materials.json: costo materiale non calcolabile in modo affidabile.")
     if not quote_not_applicable and estimated_weight_kg is None:
-        warnings.append("Peso stimato non disponibile: costo materiale non calcolabile in modo affidabile.")
+        warnings.append("Peso grezzo non disponibile: lo sviluppo piano non e validato per il costing.")
+    if not quote_not_applicable and not flat_usable_for_costing:
+        warnings.append(
+            "Costo laser non disponibile: sviluppo piano exact/validated_estimate non disponibile; nessun fallback euristico applicato."
+        )
     if not quote_not_applicable and material_config is not None and volume_cm3 is None:
         warnings.append("Volume CAD non disponibile: peso materiale mantenuto dalla stima CAD originale.")
     if not quote_not_applicable and weight_source == "flat_pattern_gross_blank":
@@ -842,6 +879,7 @@ def quote_from_cad(
         material_config=material_config,
         parameters=parameters,
         total_cut_length_mm=total_cut_length_mm,
+        laser_costing_available=laser_costing_available,
     )
     quantity_breakdown = []
     for break_quantity in (() if quote_not_applicable else STANDARD_QUANTITY_BREAKS):
@@ -859,6 +897,7 @@ def quote_from_cad(
             material_config=material_config,
             parameters=parameters,
             total_cut_length_mm=total_cut_length_mm,
+            laser_costing_available=laser_costing_available,
         )
         quantity_breakdown.append(
             {
@@ -881,6 +920,14 @@ def quote_from_cad(
         "quantity": quantity,
         "process_plan": [] if quote_not_applicable else _process_plan(bends),
         "quote_applicability": quote_applicability,
+        "laser_applicability": {
+            "status": "applicable" if laser_costing_available else "not_available",
+            "reason": (
+                "Sviluppo piano geometricamente validato."
+                if laser_costing_available
+                else "Sviluppo piano non validato per il costing; fallback laser disabilitato."
+            ),
+        },
         "welding_quote": welding_quote,
         "part_classification": classification,
         "material": {

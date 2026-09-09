@@ -697,6 +697,7 @@ def generate_quote_pdf(
     flat_pattern = analysis.get("flat_pattern", {})
     classification = analysis.get("part_classification", {}) or {}
     quote_applicability = quote.get("quote_applicability", {}) or {}
+    laser_applicability = quote.get("laser_applicability", {}) or {}
     welding_quote = quote.get("welding_quote", {}) or {}
     config_used = quote.get("config_used", {})
     pricing = config_used.get("pricing", {})
@@ -722,6 +723,8 @@ def generate_quote_pdf(
                 ("Motivo", classification.get("reason") or "-"),
                 ("Preventivo lamiera", quote_applicability.get("status", "requires_review")),
                 ("Vincolo tecnico", quote_applicability.get("reason") or "-"),
+                ("Costing laser", laser_applicability.get("status", "not_available")),
+                ("Motivo costing laser", laser_applicability.get("reason") or "-"),
             ],
         )
     )
@@ -828,12 +831,16 @@ def generate_quote_pdf(
         )
     )
     flat_dimensions = flat_pattern.get("blank_dimensions_mm") or {}
+    flat_validation = flat_pattern.get("validation") or {}
     elements.extend(
         _section(
             "Sviluppo piano e grezzo",
             [
                 ("Stato", flat_pattern.get("status", "unavailable")),
                 ("Metodo", flat_pattern.get("method") or "-"),
+                ("Utilizzabile per costing", "si" if flat_pattern.get("usable_for_costing") else "no"),
+                ("Root pannello", flat_pattern.get("root_panel_id") or "-"),
+                ("Pannelli / zone piega", f"{flat_pattern.get('panel_count', 0)} / {flat_pattern.get('bend_zone_count', 0)}"),
                 (
                     "Dimensioni grezzo",
                     (
@@ -848,14 +855,24 @@ def generate_quote_pdf(
                 ("Area aperture", _value(flat_pattern.get("opening_area_mm2"), "mm2")),
                 ("Area lorda grezzo", _value(flat_pattern.get("gross_blank_area_mm2"), "mm2")),
                 ("Perimetro esterno sviluppato", _value(flat_pattern.get("outer_perimeter_mm"), "mm")),
+                ("Perimetro interno sviluppato", _value(flat_pattern.get("inner_perimeter_mm"), "mm")),
+                ("Taglio totale sviluppato", _value(flat_pattern.get("total_cut_length_mm"), "mm")),
                 ("Peso grezzo", _value(flat_pattern.get("blank_weight_kg"), "kg")),
                 ("Lunghezza totale pieghe", _value(flat_pattern.get("total_bend_length_mm"), "mm")),
                 ("Sviluppo totale zone di piega", _value(flat_pattern.get("total_bend_allowance_mm"), "mm")),
                 ("Fattore K", flat_pattern.get("k_factor")),
+                ("Standard K", flat_pattern.get("k_factor_standard", "ANSI")),
+                ("Validazione geometrica", "superata" if flat_validation.get("passed") else "non superata"),
+                ("Continuita topologica", "si" if flat_validation.get("topology_continuous") else "no"),
+                ("Self-intersection", flat_validation.get("self_intersections", 0)),
+                ("Errore area", _value(flat_validation.get("area_coherence_error_pct"), "%")),
+                ("Errore perimetro", _value(flat_validation.get("perimeter_coherence_error_pct"), "%")),
+                ("Aperture propagate", flat_pattern.get("propagated_opening_count", 0)),
+                ("Area diagnostica volume/spessore", _value(flat_pattern.get("diagnostic_volume_area_mm2"), "mm2")),
                 ("Confidence", flat_pattern.get("confidence", "low")),
                 (
                     "Nota",
-                    "Le stime non sostituiscono uno sviluppo CAD validato prima della produzione.",
+                    "Exact significa verificato rispetto al modello geometrico e al K-factor impostato; non e una garanzia assoluta di produzione.",
                 ),
             ],
         )

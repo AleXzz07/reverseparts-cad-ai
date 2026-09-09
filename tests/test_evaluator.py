@@ -213,6 +213,38 @@ def test_evaluator_compares_part_classification():
     assert report["checks"]["part_classification"]["status"] == "pass"
 
 
+def test_evaluator_applies_sheetmetal_flat_benchmark_tolerances():
+    report = evaluate_staffa(
+        {
+            "flat_pattern": {
+                "status": "validated_estimate",
+                "usable_for_costing": True,
+                "blank_dimensions_mm": {"x": 117.7, "y": 60.1},
+                "net_developed_area_mm2": 7070.0,
+                "outer_perimeter_mm": 356.2,
+                "validation": {"passed": True},
+            }
+        },
+        {
+            "flat_pattern": {
+                "status": "validated_estimate",
+                "usable_for_costing": True,
+                "blank_dimensions_mm": {"length": 117.9322, "width": 60.0},
+                "net_developed_area_mm2": 7075.9292,
+                "outer_perimeter_mm": 355.8644,
+                "validation": {"passed": True},
+            }
+        },
+    )
+
+    assert report["status"] == "pass"
+    assert report["checks"]["flat_pattern_dimension_x"]["status"] == "pass"
+    assert report["checks"]["flat_pattern_dimension_y"]["status"] == "pass"
+    assert report["checks"]["flat_pattern_net_developed_area_mm2"]["status"] == "pass"
+    assert report["checks"]["flat_pattern_outer_perimeter_mm"]["status"] == "pass"
+    assert report["checks"]["flat_pattern_validation"]["status"] == "pass"
+
+
 def test_evaluator_compares_countersink_geometry_and_physical_count():
     actual = {
         "holes": {

@@ -14,6 +14,10 @@ POLYGON_TOLERANCE_MM = 0.25
 THICKNESS_TOLERANCE_MM = 0.1
 BEND_RADIUS_TOLERANCE_MM = 0.25
 BEND_ANGLE_TOLERANCE_DEG = 1.0
+FLAT_DIMENSION_TOLERANCE_MM = 0.5
+FLAT_DIMENSION_TOLERANCE_PERCENT = 0.5
+FLAT_AREA_TOLERANCE_PERCENT = 0.5
+FLAT_PERIMETER_TOLERANCE_PERCENT = 1.0
 
 
 def _percent_error(actual: float, expected: float) -> float:
@@ -50,6 +54,43 @@ def _numeric_check(
         expected=expected,
         error=round(error, 3),
         tolerance=tolerance,
+        unit=unit,
+    )
+
+
+def _numeric_percent_or_absolute_check(
+    actual: float | None,
+    expected: float | None,
+    *,
+    percent_tolerance: float,
+    absolute_tolerance: float,
+    unit: str,
+) -> dict[str, Any]:
+    if actual is None or expected is None:
+        return _check(
+            "warning",
+            "Value not available for comparison.",
+            actual=actual,
+            expected=expected,
+            percent_tolerance=percent_tolerance,
+            absolute_tolerance=absolute_tolerance,
+            unit=unit,
+        )
+    error = abs(float(actual) - float(expected))
+    error_percent = _percent_error(float(actual), float(expected))
+    passed = error <= absolute_tolerance or error_percent <= percent_tolerance
+    return _check(
+        "pass" if passed else "fail",
+        (
+            f"Error {error:.3f} {unit} ({error_percent:.3f}%); "
+            f"target <= {absolute_tolerance:.3f} {unit} or <= {percent_tolerance:.3f}%."
+        ),
+        actual=actual,
+        expected=expected,
+        error=round(error, 4),
+        error_percent=round(error_percent, 4),
+        absolute_tolerance=absolute_tolerance,
+        percent_tolerance=percent_tolerance,
         unit=unit,
     )
 
@@ -619,11 +660,54 @@ def evaluate_staffa(actual: dict[str, Any], expected: dict[str, Any]) -> dict[st
             "part_classification.category",
         )
     expected_flat_pattern = expected.get("flat_pattern", {})
+    actual_flat_pattern = actual.get("flat_pattern", {}) or {}
     if "status" in expected_flat_pattern:
         checks["flat_pattern_status"] = _exact_check(
-            (actual.get("flat_pattern") or {}).get("status"),
+            actual_flat_pattern.get("status"),
             expected_flat_pattern.get("status"),
             "flat_pattern.status",
+        )
+    if "usable_for_costing" in expected_flat_pattern:
+        checks["flat_pattern_usable_for_costing"] = _exact_check(
+            bool(actual_flat_pattern.get("usable_for_costing")),
+            bool(expected_flat_pattern.get("usable_for_costing")),
+            "flat_pattern.usable_for_costing",
+        )
+    expected_flat_dimensions = expected_flat_pattern.get("blank_dimensions_mm") or {}
+    actual_flat_dimensions = actual_flat_pattern.get("blank_dimensions_mm") or {}
+    for actual_axis, expected_axis in (("x", "length"), ("y", "width")):
+        expected_value = expected_flat_dimensions.get(expected_axis)
+        if expected_value is None:
+            expected_value = expected_flat_dimensions.get(actual_axis)
+        if expected_value is not None:
+            checks[f"flat_pattern_dimension_{actual_axis}"] = _numeric_percent_or_absolute_check(
+                actual_flat_dimensions.get(actual_axis),
+                expected_value,
+                percent_tolerance=FLAT_DIMENSION_TOLERANCE_PERCENT,
+                absolute_tolerance=FLAT_DIMENSION_TOLERANCE_MM,
+                unit="mm",
+            )
+    flat_numeric_targets = (
+        ("net_developed_area_mm2", FLAT_AREA_TOLERANCE_PERCENT, "mm2"),
+        ("gross_blank_area_mm2", FLAT_AREA_TOLERANCE_PERCENT, "mm2"),
+        ("outer_perimeter_mm", FLAT_PERIMETER_TOLERANCE_PERCENT, "mm"),
+        ("total_cut_length_mm", FLAT_PERIMETER_TOLERANCE_PERCENT, "mm"),
+    )
+    for field, percent_tolerance, unit in flat_numeric_targets:
+        if field in expected_flat_pattern:
+            checks[f"flat_pattern_{field}"] = _numeric_percent_or_absolute_check(
+                actual_flat_pattern.get(field),
+                expected_flat_pattern.get(field),
+                percent_tolerance=percent_tolerance,
+                absolute_tolerance=0.0,
+                unit=unit,
+            )
+    expected_validation = expected_flat_pattern.get("validation") or {}
+    if "passed" in expected_validation:
+        checks["flat_pattern_validation"] = _exact_check(
+            bool((actual_flat_pattern.get("validation") or {}).get("passed")),
+            bool(expected_validation.get("passed")),
+            "flat_pattern.validation.passed",
         )
     expected_geometry = expected.get("geometry", {})
     actual_geometry = actual.get("geometry", {})

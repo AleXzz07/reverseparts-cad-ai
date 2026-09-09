@@ -24,6 +24,13 @@
   },
   "flat_pattern": {
     "k_factor": 0.4,
-    "max_simple_parallel_bends": 4
+    "k_factor_standard": "ANSI",
+    "face_pair_distance_tolerance_mm": 0.08,
+    "edge_match_tolerance_mm": 0.05,
+    "width_consistency_tolerance_mm": 0.25,
+    "continuity_tolerance_mm": 0.05,
+    "max_overlap_area_mm2": 0.05,
+    "max_area_coherence_error_pct": 0.5,
+    "max_perimeter_coherence_error_pct": 1.0
   }
 }

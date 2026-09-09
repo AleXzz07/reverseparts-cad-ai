@@ -696,9 +696,14 @@
               <input id="quantity" name="quantity" type="number" min="1" step="1" value="1" required>
             </label>
           </div>
-          <label>Spessore dichiarato mm
-            <input id="thickness" name="declared_thickness_mm" type="number" min="0" step="0.1" placeholder="Opzionale">
-          </label>
+          <div class="grid-2">
+            <label>Spessore dichiarato mm
+              <input id="thickness" name="declared_thickness_mm" type="number" min="0" step="0.1" placeholder="Opzionale">
+            </label>
+            <label>K-factor ANSI
+              <input id="k-factor" name="k_factor" type="number" min="0" max="1" step="0.01" value="0.40">
+            </label>
+          </div>
         </div>
         <details>
           <summary>Parametri preventivo</summary>
@@ -1441,7 +1446,8 @@
 
       const flatStatus = ({
         exact: "Disponibile",
-        estimated: "Stimato",
+        validated_estimate: "Stima validata",
+        estimated: "Stima legacy non validata",
         partial: "Parziale",
         unavailable: "Non disponibile"
       })[flatPattern.status] || "Non disponibile";
@@ -1457,6 +1463,13 @@
         ["Lunghezza totale pieghe", number(flatPattern.total_bend_length_mm, "mm")],
         ["Sviluppo totale zone di piega", number(flatPattern.total_bend_allowance_mm, "mm")],
         ["Fattore K", number(flatPattern.k_factor)],
+        ["Standard K", flatPattern.k_factor_standard || "ANSI"],
+        ["Utilizzabile per costing", flatPattern.usable_for_costing ? "Sì" : "No"],
+        ["Root pannello", flatPattern.root_panel_id || "-"],
+        ["Pannelli / zone piega", `${flatPattern.panel_count ?? 0} / ${flatPattern.bend_zone_count ?? 0}`],
+        ["Validazione geometrica", flatPattern.validation?.passed ? "Superata" : "Non superata"],
+        ["Aperture propagate", `${flatPattern.propagated_opening_count ?? 0} / ${holes.total_holes ?? 0}`],
+        ["Area diagnostica volume/spessore", number(flatPattern.diagnostic_volume_area_mm2, "mm²")],
         ["Confidence", confidenceText(flatPattern.confidence)]
       ]);
 
@@ -1744,6 +1757,7 @@
       const preview = payload.preview || {};
       const classification = analysis.part_classification || {};
       const applicability = quote.quote_applicability || {};
+      const laserApplicability = quote.laser_applicability || {};
       const circularHoles = features.circular_holes ?? holes.circular_holes ?? holes.circular?.length ?? 0;
       const countersunkHoles = features.countersunk_holes ?? holes.countersunk_holes
         ?? (holes.circular || []).filter(feature => feature.type === "countersunk").length;
@@ -1795,6 +1809,8 @@
         ["Pieghe", features.bends ?? analysis.bends?.count ?? 0],
         ["Dimensioni grezzo sviluppato", flatDimensionsText(analysis.flat_pattern?.blank_dimensions_mm)],
         ["Area lorda grezzo", number(analysis.flat_pattern?.gross_blank_area_mm2, "mm²")],
+        ["Costing laser", laserApplicability.status === "applicable" ? "Disponibile" : "Non disponibile"],
+        ["Motivo costing laser", laserApplicability.reason || "-"],
         ["Peso grezzo", number(quote.material?.blank_weight_kg, "kg")],
         ["Perimetro esterno stimato", number(analysis.cutting?.outer_cut_length_mm, "mm")],
         ["Perimetro aperture interne", number(analysis.cutting?.inner_cut_length_mm, "mm")],
@@ -2018,6 +2034,8 @@
       formData.append("quantity", document.getElementById("quantity").value);
       const thickness = document.getElementById("thickness").value;
       if (thickness) formData.append("declared_thickness_mm", thickness);
+      const kFactor = document.getElementById("k-factor").value;
+      if (kFactor !== "") formData.append("k_factor", kFactor);
       formData.append("pricing_overrides", JSON.stringify(collectOverrides(pricingKeys)));
       formData.append("material_overrides", JSON.stringify(collectOverrides(materialKeys)));
 

@@ -315,6 +315,17 @@ def test_analyze_cad_rejects_empty_step_file():
     assert response.json()["detail"] == "Uploaded CAD file is empty."
 
 
+def test_analyze_cad_rejects_k_factor_outside_unit_interval():
+    response = client.post(
+        "/analyze-cad",
+        files={"file": ("part.step", b"STEP", "application/step")},
+        data={"k_factor": "1.01"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "K-factor must be between 0 and 1."
+
+
 def test_analyze_cad_rejects_unparseable_step_file(monkeypatch):
     class AvailableFreeCad:
         available = True
@@ -339,7 +350,7 @@ def test_analyze_cad_rejects_unparseable_step_file(monkeypatch):
     assert response.json()["detail"] == ["FreeCAD failed to parse the STEP file: invalid STEP data"]
 
 
-def test_quote_endpoint_generates_quote_from_analysis():
+def test_quote_endpoint_does_not_cost_legacy_unvalidated_flat_analysis():
     analysis = json.loads(STAFFA_ACTUAL_FILE.read_text(encoding="utf-8"))
 
     response = client.post(
@@ -356,7 +367,11 @@ def test_quote_endpoint_generates_quote_from_analysis():
     assert payload["quantity"] == 37
     assert payload["material"]["name"] == "acciaio"
     assert payload["material"]["density_g_cm3"] == 7.85
-    assert payload["material"]["weight_source"] == "recalculated_from_volume"
+    assert payload["material"]["weight_source"] is None
+    assert payload["material"]["blank_weight_kg"] is None
+    assert payload["laser_applicability"]["status"] == "not_available"
+    assert payload["estimated_internal_cost_eur"]["laser"] is None
+    assert payload["estimated_internal_cost_eur"]["total"] is None
     assert payload["laser_details"]["material_laser_profile_used"] is True
     assert payload["laser_details"]["cut_speed_mm_min"] == 3500.0
     assert payload["overrides_used"] is False
@@ -364,6 +379,15 @@ def test_quote_endpoint_generates_quote_from_analysis():
 
 def test_quote_endpoint_pricing_overrides_change_cost():
     analysis = json.loads(STAFFA_ACTUAL_FILE.read_text(encoding="utf-8"))
+    legacy_cutting = analysis["cutting"]
+    analysis["flat_pattern"] = {
+        "status": "validated_estimate",
+        "usable_for_costing": True,
+        "validation": {"passed": True},
+        "confidence": "medium",
+        "gross_blank_area_mm2": 9259.26,
+        "total_cut_length_mm": legacy_cutting["total_cut_length_mm"],
+    }
     base_response = client.post(
         "/quote",
         json={
@@ -1012,7 +1036,11 @@ def test_analyze_cad_staffa_test_1_real_step_file():
     assert all("angle_deg" in item for item in payload["bends"]["items"])
     assert payload["flat_pattern"]["available"] is True
     assert payload["flat_pattern"]["net_developed_area_mm2"] is not None
-    assert payload["flat_pattern"]["status"] in {"partial", "estimated", "exact"}
+    assert payload["flat_pattern"]["status"] in {
+        "partial",
+        "validated_estimate",
+        "exact",
+    }
     assert payload["flat_pattern"]["confidence"] in {"low", "medium", "high"}
 
     assert payload["holes"]["confidence"] in {"medium", "high"}
@@ -1046,13 +1074,22 @@ def test_analyze_and_quote_staffa_test_1_real_step_file():
     assert abs(payload["analysis"]["estimated_weight_kg"] - 0.05) <= 0.005
     assert payload["quote"]["quantity"] == 37
     assert payload["quote"]["material"]["name"] == "alluminio"
-    assert abs(payload["quote"]["material"]["estimated_weight_kg"] - 0.05) <= 0.005
+    assert payload["analysis"]["flat_pattern"]["usable_for_costing"] is False
+    assert payload["quote"]["material"]["estimated_weight_kg"] is None
+    assert payload["quote"]["material"]["blank_weight_kg"] is None
+    assert payload["quote"]["laser_applicability"]["status"] == "not_available"
+    assert payload["quote"]["estimated_internal_cost_eur"]["laser"] is None
+    assert payload["quote"]["estimated_internal_cost_eur"]["total"] is None
     assert payload["quote"]["laser_details"]["cut_speed_mm_min"] == 2500.0
     assert payload["quote"]["features_summary"]["bends"] == 2
     assert payload["quote"]["features_summary"]["elongated_holes"] == 2
     assert payload["quote"]["features_summary"]["unknown_holes"] == 0
     assert payload["quote"]["features_summary"]["total_holes"] == 8
-    assert payload["quote"]["laser_details"]["pierce_count"] == 9
+    assert payload["quote"]["laser_details"]["pierce_count"] is None
+    assert any(
+        "nessun fallback euristico" in warning
+        for warning in payload["quote"]["warnings"]
+    )
     assert "preview" in payload
     assert payload["preview"]["available"] is False
     assert payload["preview"]["image_png_base64"] is None
@@ -1495,17 +1532,17 @@ def test_detect_bends_staffa_test_1():
     )
 
 
-def test_detect_cutting_lengths_staffa_test_1():
+def test_unvalidated_staffa_flat_does_not_expose_cutting_lengths():
     payload = _analyze_staffa_test_1()
 
     cutting = payload["cutting"]
-    assert cutting["outer_cut_length_mm"] is not None
-    assert cutting["inner_cut_length_mm"] is not None
-    assert cutting["total_cut_length_mm"] is not None
-    assert cutting["inner_cut_length_mm"] > 200.0
-    assert cutting["total_cut_length_mm"] == round(
-        cutting["outer_cut_length_mm"] + cutting["inner_cut_length_mm"],
-        2,
+    assert payload["flat_pattern"]["usable_for_costing"] is False
+    assert cutting["outer_cut_length_mm"] is None
+    assert cutting["inner_cut_length_mm"] is None
+    assert cutting["total_cut_length_mm"] is None
+    assert cutting["source"] == "unavailable"
+    assert cutting["confidence"] == "low"
+    assert any(
+        "sviluppo piano non ha superato" in warning
+        for warning in cutting["warnings"]
     )
-    assert cutting["confidence"] in {"medium", "high"}
-    assert isinstance(cutting["warnings"], list)

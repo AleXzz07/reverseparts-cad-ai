@@ -1,0 +1,334 @@
+{
+  "dataset": "REVERSEPARTS CAD AI - FreeCAD SheetMetal Benchmark v1",
+  "version": "1.0",
+  "units": "mm",
+  "unfold_reference": {
+    "engine": "FreeCAD SheetMetal Workbench Unfold",
+    "k_factor": 0.4,
+    "k_factor_standard": "ANSI",
+    "note": "Le dimensioni e le aree flat sono lette direttamente dal solido Unfold generato da FreeCAD SheetMetal. SM02 incorpora l'override canonico v1.1 con root Face5."
+  },
+  "pieces": [
+    {
+      "id": "SM01_1_piega_90",
+      "fcstd": "SM01_1_piega_90.FCStd",
+      "folded_step": "SM01_1_piega_90.STEP",
+      "unfold_step": "SM01_1_piega_90_UNFOLD.STEP",
+      "design_truth": {
+        "family": "sheetmetal_real_1_bend_90",
+        "sheet_thickness_mm": 2.0,
+        "bend_count": 1,
+        "bend_angles_deg": [
+          90.0
+        ],
+        "inner_bend_radii_mm": [
+          2.0
+        ],
+        "base_plate_mm": [
+          80,
+          60
+        ],
+        "flange_lengths_mm": [
+          30
+        ]
+      },
+      "freecad_folded": {
+        "bounding_box_mm": {
+          "x": 84.0,
+          "y": 60.0,
+          "z": 34.0
+        },
+        "volume_mm3": 13765.4867,
+        "surface_area_mm2": 14464.3362,
+        "solid_count": 1,
+        "face_count": 14,
+        "edge_count": 28,
+        "vertex_count": 16
+      },
+      "freecad_unfold_ground_truth": {
+        "status": "success",
+        "root_face": "Face4",
+        "k_factor": 0.4,
+        "k_factor_standard": "ANSI",
+        "blank_dimensions_mm": {
+          "length": 114.3982,
+          "width": 60.0
+        },
+        "unfold_bbox_xyz_mm": {
+          "x": 114.3982,
+          "y": 60.0,
+          "z": 2.0
+        },
+        "thickness_bbox_mm": 2.0,
+        "material_area_from_unfold_volume_mm2": 6863.8938,
+        "material_area_from_folded_volume_mm2": 6882.7433,
+        "largest_planar_outer_perimeter_mm": 348.7965,
+        "unfold_volume_mm3": 13727.7876
+      }
+    },
+    {
+      "id": "SM02_1_piega_60",
+      "fcstd": "SM02_1_piega_60.FCStd",
+      "folded_step": "SM02_1_piega_60.STEP",
+      "unfold_step": "SM02_1_piega_60_UNFOLD.STEP",
+      "design_truth": {
+        "family": "sheetmetal_real_1_bend_60",
+        "sheet_thickness_mm": 2.0,
+        "bend_count": 1,
+        "bend_angles_deg": [
+          60.0
+        ],
+        "inner_bend_radii_mm": [
+          2.0
+        ],
+        "base_plate_mm": [
+          80,
+          60
+        ],
+        "flange_lengths_mm": [
+          35
+        ]
+      },
+      "freecad_folded": {
+        "bounding_box_mm": {
+          "x": 100.9641,
+          "y": 60.0,
+          "z": 33.3109
+        },
+        "volume_mm3": 14176.9911,
+        "surface_area_mm2": 14889.5575,
+        "solid_count": 1,
+        "face_count": 14,
+        "edge_count": 28,
+        "vertex_count": 16
+      },
+      "freecad_unfold_ground_truth": {
+        "status": "success",
+        "root_face": "Face5",
+        "k_factor": 0.4,
+        "k_factor_standard": "ANSI",
+        "blank_dimensions_mm": {
+          "length": 117.9322,
+          "width": 60.0
+        },
+        "unfold_bbox_xyz_mm": {
+          "x": 117.9322,
+          "y": 60.0,
+          "z": 2.0
+        },
+        "thickness_bbox_mm": 2.0,
+        "material_area_from_unfold_volume_mm2": 7075.9292,
+        "material_area_from_folded_volume_mm2": 7088.4956,
+        "largest_planar_outer_perimeter_mm": 355.8644,
+        "unfold_volume_mm3": 14151.8584
+      }
+    },
+    {
+      "id": "SM03_U_2_pieghe_parallele",
+      "fcstd": "SM03_U_2_pieghe_parallele.FCStd",
+      "folded_step": "SM03_U_2_pieghe_parallele.STEP",
+      "unfold_step": "SM03_U_2_pieghe_parallele_UNFOLD.STEP",
+      "design_truth": {
+        "family": "sheetmetal_real_U_parallel",
+        "sheet_thickness_mm": 2.0,
+        "bend_count": 2,
+        "bend_angles_deg": [
+          90.0,
+          90.0
+        ],
+        "inner_bend_radii_mm": [
+          2.0,
+          2.0
+        ],
+        "bend_axes_relation": "parallel",
+        "base_plate_mm": [
+          90,
+          60
+        ],
+        "flange_lengths_mm": [
+          25,
+          30
+        ]
+      },
+      "freecad_folded": {
+        "bounding_box_mm": {
+          "x": 98.0,
+          "y": 60.0,
+          "z": 61.0
+        },
+        "volume_mm3": 18530.9734,
+        "surface_area_mm2": 19388.6725,
+        "solid_count": 1,
+        "face_count": 22,
+        "edge_count": 44,
+        "vertex_count": 24
+      },
+      "freecad_unfold_ground_truth": {
+        "status": "success",
+        "root_face": "Face4",
+        "k_factor": 0.4,
+        "k_factor_standard": "ANSI",
+        "blank_dimensions_mm": {
+          "length": 153.7965,
+          "width": 60.0
+        },
+        "unfold_bbox_xyz_mm": {
+          "x": 153.7965,
+          "y": 60.0,
+          "z": 2.0
+        },
+        "thickness_bbox_mm": 2.0,
+        "material_area_from_unfold_volume_mm2": 9227.7876,
+        "material_area_from_folded_volume_mm2": 9265.4867,
+        "largest_planar_outer_perimeter_mm": 427.5929,
+        "unfold_volume_mm3": 18455.5751
+      }
+    },
+    {
+      "id": "SM04_2_pieghe_perpendicolari",
+      "fcstd": "SM04_2_pieghe_perpendicolari.FCStd",
+      "folded_step": "SM04_2_pieghe_perpendicolari.STEP",
+      "unfold_step": "SM04_2_pieghe_perpendicolari_UNFOLD.STEP",
+      "design_truth": {
+        "family": "sheetmetal_real_perpendicular_bends",
+        "sheet_thickness_mm": 2.0,
+        "bend_count": 2,
+        "bend_angles_deg": [
+          90.0,
+          90.0
+        ],
+        "inner_bend_radii_mm": [
+          2.0,
+          3.0
+        ],
+        "bend_axes_relation": "perpendicular",
+        "base_plate_mm": [
+          90,
+          70
+        ],
+        "flange_lengths_mm": [
+          25,
+          22
+        ],
+        "note": "AutoMiter attivo per il corner tra flange adiacenti."
+      },
+      "freecad_folded": {
+        "bounding_box_mm": {
+          "x": 94.0,
+          "y": 75.0,
+          "z": 29.0
+        },
+        "volume_mm3": 21850.7078,
+        "surface_area_mm2": 22722.6901,
+        "solid_count": 1,
+        "face_count": 22,
+        "edge_count": 44,
+        "vertex_count": 24
+      },
+      "freecad_unfold_ground_truth": {
+        "status": "success",
+        "root_face": "Face4",
+        "k_factor": 0.4,
+        "k_factor_standard": "ANSI",
+        "blank_dimensions_mm": {
+          "length": 119.3982,
+          "width": 97.969
+        },
+        "unfold_bbox_xyz_mm": {
+          "x": 119.3982,
+          "y": 97.969,
+          "z": 2.0
+        },
+        "thickness_bbox_mm": 2.0,
+        "material_area_from_unfold_volume_mm2": 10875.0884,
+        "material_area_from_folded_volume_mm2": 10925.3539,
+        "largest_planar_outer_perimeter_mm": 434.7345,
+        "unfold_volume_mm3": 21750.1768
+      }
+    },
+    {
+      "id": "SM05_4_pieghe_parallele",
+      "fcstd": "SM05_4_pieghe_parallele.FCStd",
+      "folded_step": "SM05_4_pieghe_parallele.STEP",
+      "unfold_step": "SM05_4_pieghe_parallele_UNFOLD.STEP",
+      "design_truth": {
+        "family": "sheetmetal_real_4_parallel_bends",
+        "sheet_thickness_mm": 2.0,
+        "bend_count": 4,
+        "bend_angles_deg": [
+          90.0,
+          90.0,
+          90.0,
+          90.0
+        ],
+        "inner_bend_radii_mm": [
+          2.0,
+          2.0,
+          2.0,
+          2.0
+        ],
+        "bend_axes_relation": "parallel",
+        "extrusion_width_mm": 55,
+        "profile_points_mm": [
+          [
+            0,
+            0
+          ],
+          [
+            28,
+            0
+          ],
+          [
+            28,
+            20
+          ],
+          [
+            58,
+            20
+          ],
+          [
+            58,
+            42
+          ],
+          [
+            92,
+            42
+          ]
+        ]
+      },
+      "freecad_folded": {
+        "bounding_box_mm": {
+          "x": 92.0,
+          "y": 44.0,
+          "z": 55.0
+        },
+        "volume_mm3": 14173.4512,
+        "surface_area_mm2": 14908.8494,
+        "solid_count": 1,
+        "face_count": 38,
+        "edge_count": 76,
+        "vertex_count": 40
+      },
+      "freecad_unfold_ground_truth": {
+        "status": "success",
+        "root_face": "Face1",
+        "k_factor": 0.4,
+        "k_factor_standard": "ANSI",
+        "blank_dimensions_mm": {
+          "length": 127.5929,
+          "width": 55.0
+        },
+        "unfold_bbox_xyz_mm": {
+          "x": 127.5929,
+          "y": 2.0,
+          "z": 55.0
+        },
+        "thickness_bbox_mm": 2.0,
+        "material_area_from_unfold_volume_mm2": 7017.6105,
+        "material_area_from_folded_volume_mm2": 7086.7256,
+        "largest_planar_outer_perimeter_mm": 365.1858,
+        "unfold_volume_mm3": 14035.2211
+      }
+    }
+  ]
+}

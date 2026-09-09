@@ -12,7 +12,15 @@ ACTUAL_FILE = PROJECT_ROOT / "tests" / "output" / "staffa_test_1_actual.json"
 
 def _cad_data_without_cutting() -> dict:
     cad_data = json.loads(ACTUAL_FILE.read_text(encoding="utf-8"))
-    cad_data.pop("cutting", None)
+    cutting = cad_data.pop("cutting", {}) or {}
+    cad_data["flat_pattern"] = {
+        "status": "validated_estimate",
+        "usable_for_costing": True,
+        "validation": {"passed": True},
+        "confidence": "medium",
+        "gross_blank_area_mm2": 9259.26,
+        "total_cut_length_mm": cutting.get("total_cut_length_mm"),
+    }
     return cad_data
 
 
@@ -27,7 +35,7 @@ def test_quote_from_cad_staffa_test_1():
     assert quote["material"]["name"] == "alluminio"
     assert quote["material"]["thickness_mm"] == 2.0
     assert quote["material"]["estimated_weight_kg"] == 0.05
-    assert quote["material"]["weight_source"] == "recalculated_from_volume"
+    assert quote["material"]["weight_source"] == "flat_pattern_gross_blank"
     assert quote["material"]["cost_eur_kg"] == 6.0
     assert quote["features_summary"] == {
         "circular_holes": 4,
@@ -44,8 +52,8 @@ def test_quote_from_cad_staffa_test_1():
     assert quote["cost_drivers"]["complexity"] == "medium"
     assert quote["cost_drivers"]["setup_required"] is True
     assert quote["estimated_times_min"]["total"] > 0
-    assert quote["estimated_internal_cost_eur"]["total"] == 28.47
-    assert quote["estimated_internal_cost_eur"]["unit_cost"] == 28.47
+    assert quote["estimated_internal_cost_eur"]["total"] == 24.52
+    assert quote["estimated_internal_cost_eur"]["unit_cost"] == 24.52
     assert quote["estimated_internal_cost_eur"]["material"] == 0.3
     assert quote["commercial_guidance"]["minimum_order_value_eur"] == 40.0
     assert quote["commercial_guidance"]["minimum_order_applied"] is True
@@ -61,12 +69,12 @@ def test_quote_from_cad_staffa_test_1():
     assert quote["config_used"]["pricing"]["bending_time_sec_per_bend"] == 12.0
     assert quote["config_used"]["pricing"]["bending_extra_handling_sec_per_piece"] == 15.0
     assert quote["config_used"]["material"]["cost_eur_kg"] == 6.0
-    assert quote["estimated_times_min"]["laser_time_source"] == "fallback_feature_based"
-    assert quote["laser_details"]["cut_length_mm"] is None
+    assert quote["estimated_times_min"]["laser_time_source"] == "cut_length"
+    assert quote["laser_details"]["cut_length_mm"] == 517.66
     assert quote["laser_details"]["material_laser_profile_used"] is True
     assert quote["laser_details"]["cut_speed_mm_min"] == 2500.0
     assert quote["laser_details"]["pierce_time_sec"] == 0.8
-    assert quote["laser_details"]["pierce_count"] is None
+    assert quote["laser_details"]["pierce_count"] == 9
     assert quote["bending_details"] == {
         "bends_count": 2,
         "bending_setup_time_min": 5.0,
@@ -76,7 +84,7 @@ def test_quote_from_cad_staffa_test_1():
         "bending_time_total_min": 5.65,
     }
     assert [item["quantity"] for item in quote["quantity_breakdown"]] == [1, 5, 10, 25, 50, 100]
-    assert quote["quantity_breakdown"][0]["estimated_internal_cost_eur"]["unit_cost"] == 28.47
+    assert quote["quantity_breakdown"][0]["estimated_internal_cost_eur"]["unit_cost"] == 24.52
     assert quote["quantity_breakdown"][-1]["estimated_internal_cost_eur"]["unit_cost"] < 10.0
     assert quote["confidence"] in {"medium", "high"}
     assert quote["warnings"]
@@ -392,10 +400,10 @@ def test_quote_from_cad_uses_requested_quantity():
     quote = quote_from_cad(cad_data, quantity=37)
 
     assert quote["quantity"] == 37
-    assert quote["estimated_internal_cost_eur"]["total"] == 232.25
-    assert quote["estimated_internal_cost_eur"]["unit_cost"] == 6.28
+    assert quote["estimated_internal_cost_eur"]["total"] == 86.34
+    assert quote["estimated_internal_cost_eur"]["unit_cost"] == 2.33
     assert quote["commercial_guidance"]["minimum_order_applied"] is False
-    assert quote["commercial_guidance"]["minimum_billable_price_eur"] == 232.25
+    assert quote["commercial_guidance"]["minimum_billable_price_eur"] == 86.34
 
 
 def test_quote_from_cad_uses_selected_material():
@@ -407,7 +415,7 @@ def test_quote_from_cad_uses_selected_material():
     assert quote["material"]["density_g_cm3"] == 7.85
     assert quote["material"]["cost_eur_kg"] == 2.0
     assert quote["material"]["estimated_weight_kg"] == 0.145
-    assert quote["material"]["weight_source"] == "recalculated_from_volume"
+    assert quote["material"]["weight_source"] == "flat_pattern_gross_blank"
     assert quote["estimated_internal_cost_eur"]["material"] == 10.73
     assert quote["config_used"]["material"] == {
         "density_g_cm3": 7.85,
@@ -425,9 +433,12 @@ def test_quote_from_cad_uses_selected_material():
 def test_quote_uses_gross_flat_blank_weight_when_reliable():
     cad_data = _cad_data_without_cutting()
     cad_data["flat_pattern"] = {
-        "status": "estimated",
+        "status": "validated_estimate",
+        "usable_for_costing": True,
+        "validation": {"passed": True},
         "confidence": "medium",
         "gross_blank_area_mm2": 10000.0,
+        "total_cut_length_mm": 517.66,
     }
 
     quote = quote_from_cad(cad_data)
@@ -573,7 +584,7 @@ def test_quote_uses_bending_fallback_when_bends_count_is_missing():
 
     assert quote["estimated_times_min"]["bending"] == 1.9
     assert quote["estimated_internal_cost_eur"]["bending"] == 1.71
-    assert quote["estimated_internal_cost_eur"]["total"] == 25.09
+    assert quote["estimated_internal_cost_eur"]["total"] == 21.14
     assert quote["bending_details"] == {
         "bends_count": None,
         "bending_setup_time_min": None,
@@ -594,9 +605,8 @@ def test_quote_files_writes_report(tmp_path):
     assert output_path.exists()
     assert written == quote
     assert written["quantity"] == 3
-    assert written["estimated_internal_cost_eur"]["total"] > 0
-    assert written["estimated_internal_cost_eur"]["unit_cost"] == round(
-        written["estimated_internal_cost_eur"]["total"] / 3,
-        2,
-    )
-    assert written["commercial_guidance"]["minimum_billable_price_eur"] > 0
+    assert written["estimated_internal_cost_eur"]["total"] is None
+    assert written["estimated_internal_cost_eur"]["unit_cost"] is None
+    assert written["estimated_times_min"]["laser_time_source"] == "unavailable_flat_pattern"
+    assert any("nessun fallback" in warning.lower() for warning in written["warnings"])
+    assert written["commercial_guidance"]["minimum_billable_price_eur"] is None
