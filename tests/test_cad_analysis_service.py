@@ -13,6 +13,7 @@ from app.cad_analysis_service import (
     CadAnalysisBusy,
     CadAnalysisInvalidOutput,
     CadAnalysisSettings,
+    CadAnalysisSuperseded,
     CadAnalysisTimeout,
     CadAnalysisWorkerCrash,
     CadAnalysisWorkerError,
@@ -26,6 +27,10 @@ from app.schemas import CadAnalysisResponse
 def restore_service_state():
     diagnostic = service.get_cached_freecad_diagnostic()
     yield
+    with service._JOB_CONDITION:
+        service._CURRENT_JOB = None
+        service._LATEST_ANALYSIS_BY_SESSION.clear()
+        service._JOB_CONDITION.notify_all()
     service._set_freecad_diagnostic(
         diagnostic["status"],
         diagnostic.get("error"),
@@ -39,6 +44,7 @@ def _settings(**overrides):
         "max_concurrency": 1,
         "max_output_mb": 2.0,
         "diagnostic_timeout_sec": 2.0,
+        "cancellation_grace_sec": 0.05,
     }
     values.update(overrides)
     return CadAnalysisSettings(**values)
@@ -128,6 +134,67 @@ def test_worker_timeout_is_distinct_and_worker_is_stopped(monkeypatch):
     assert len(stopped) == 1
 
 
+def test_supersede_uses_term_then_force_kill_without_holding_registry_lock(
+    monkeypatch,
+):
+    signals = []
+
+    class StubbornProcess(FakeProcess):
+        def __init__(self):
+            super().__init__(["worker"], returncode=None)
+            self.wait_calls = 0
+
+        def wait(self, timeout):
+            self.wait_calls += 1
+            if self.wait_calls == 1:
+                raise subprocess.TimeoutExpired("worker", timeout)
+            self.returncode = -9
+            return self.returncode
+
+        def poll(self):
+            return self.returncode
+
+    process = StubbornProcess()
+    monkeypatch.setattr(
+        service.os,
+        "killpg",
+        lambda pid, sent_signal: signals.append(sent_signal),
+    )
+
+    service._terminate_worker_gracefully(process, 0.01)
+
+    assert signals == [service.signal.SIGTERM, service.signal.SIGKILL]
+    assert process.poll() == -9
+
+
+def test_active_job_cancellation_forces_kill_when_owner_does_not_finish(
+    monkeypatch,
+):
+    process = FakeProcess(["worker"], returncode=None)
+    job = service.ActiveCadJob(
+        session_id="same-session",
+        analysis_id="analysis-a",
+        process=process,
+    )
+    signals = []
+
+    def record_signal(target, *, force):
+        assert target is process
+        signals.append(force)
+        if force:
+            target.returncode = -9
+
+    monkeypatch.setattr(service, "_signal_worker", record_signal)
+
+    service._cancel_active_job(
+        job,
+        _settings(cancellation_grace_sec=0.01, queue_timeout_sec=0.01),
+    )
+
+    assert signals == [False, True]
+    assert process.poll() == -9
+
+
 def test_worker_crash_is_distinct(monkeypatch):
     monkeypatch.setattr(
         service.subprocess,
@@ -174,7 +241,7 @@ def test_worker_reported_technical_error_is_distinct(monkeypatch):
     assert error.value.worker_error_type == "technical_error"
 
 
-def test_only_one_cad_analysis_runs_at_a_time(monkeypatch):
+def test_different_session_cannot_cancel_active_analysis(monkeypatch):
     first_started = threading.Event()
     release_first = threading.Event()
     active = 0
@@ -203,13 +270,29 @@ def test_only_one_cad_analysis_runs_at_a_time(monkeypatch):
     )
     settings = _settings(queue_timeout_sec=0.02)
     first_result = []
-    first = threading.Thread(target=lambda: first_result.append(_invoke(settings)))
+    first = threading.Thread(
+        target=lambda: first_result.append(
+            run_isolated_cad_analysis(
+                file_bytes=b"STEP-A",
+                source_file="a.step",
+                analysis_session_id="session-a",
+                analysis_id="analysis-a",
+                settings=settings,
+            )
+        )
+    )
     first.start()
     assert first_started.wait(timeout=1.0)
 
     try:
         with pytest.raises(CadAnalysisBusy):
-            _invoke(settings)
+            run_isolated_cad_analysis(
+                file_bytes=b"STEP-B",
+                source_file="b.step",
+                analysis_session_id="session-b",
+                analysis_id="analysis-b",
+                settings=settings,
+            )
     finally:
         release_first.set()
         first.join(timeout=2.0)
@@ -218,7 +301,186 @@ def test_only_one_cad_analysis_runs_at_a_time(monkeypatch):
     assert maximum_active == 1
 
 
-def test_health_responds_during_slow_analysis(monkeypatch):
+def test_latest_analysis_wins_for_same_session_and_cleans_previous(monkeypatch):
+    first_started = threading.Event()
+    first_terminated = threading.Event()
+    processes = []
+    commands = []
+
+    class LatestWinsProcess(FakeProcess):
+        def __init__(self, command, index):
+            super().__init__(command, returncode=None)
+            self.index = index
+            self.terminated = False
+
+        def communicate(self, timeout):
+            if self.index == 0:
+                first_started.set()
+                first_terminated.wait(timeout=2.0)
+                self.returncode = -15
+                return "", "superseded"
+            analysis = CadAnalysisResponse(part_name="B", source_file="b.step")
+            with open(self.command[-1], "w", encoding="utf-8") as output_file:
+                json.dump(
+                    {"status": "ok", "analysis": analysis.model_dump()},
+                    output_file,
+                )
+            self.returncode = 0
+            return "", ""
+
+        def poll(self):
+            return self.returncode
+
+    def fake_popen(command, **kwargs):
+        process = LatestWinsProcess(command, len(processes))
+        processes.append(process)
+        commands.append(command)
+        return process
+
+    def signal_previous(process, *, force):
+        assert process is processes[0]
+        assert service._JOB_CONDITION.acquire(blocking=False) is True
+        service._JOB_CONDITION.release()
+        assert force is False
+        process.terminated = True
+        process.returncode = -15
+        first_terminated.set()
+
+    monkeypatch.setattr(service.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(service, "_signal_worker", signal_previous)
+    settings = _settings(queue_timeout_sec=1.0)
+    first_error = []
+
+    def run_first():
+        try:
+            run_isolated_cad_analysis(
+                file_bytes=b"STEP-A",
+                source_file="a.step",
+                analysis_session_id="same-session",
+                analysis_id="analysis-a",
+                settings=settings,
+            )
+        except Exception as exc:
+            first_error.append(exc)
+
+    first = threading.Thread(target=run_first)
+    first.start()
+    assert first_started.wait(timeout=1.0)
+
+    second_result = run_isolated_cad_analysis(
+        file_bytes=b"STEP-B",
+        source_file="b.step",
+        analysis_session_id="same-session",
+        analysis_id="analysis-b",
+        settings=settings,
+    )
+    first.join(timeout=2.0)
+
+    assert second_result.part_name == "B"
+    assert len(first_error) == 1
+    assert isinstance(first_error[0], CadAnalysisSuperseded)
+    assert first_error[0].analysis_id == "analysis-a"
+    assert processes[0].terminated is True
+    assert all(process.poll() is not None for process in processes)
+    assert all(not service.Path(command[-2]).exists() for command in commands)
+    assert all(not service.Path(command[-1]).exists() for command in commands)
+
+
+def test_same_session_http_request_a_returns_409_and_b_completes(monkeypatch):
+    first_started = threading.Event()
+    first_stopped = threading.Event()
+    second_started = threading.Event()
+    release_second = threading.Event()
+    processes = []
+
+    class HttpProcess(FakeProcess):
+        def __init__(self, command, index):
+            super().__init__(command, returncode=None)
+            self.index = index
+
+        def communicate(self, timeout):
+            if self.index == 0:
+                first_started.set()
+                first_stopped.wait(timeout=3.0)
+                self.returncode = -15
+                return "", "superseded"
+            second_started.set()
+            release_second.wait(timeout=3.0)
+            analysis = CadAnalysisResponse(part_name="B", source_file="b.step")
+            with open(self.command[-1], "w", encoding="utf-8") as output_file:
+                json.dump(
+                    {"status": "ok", "analysis": analysis.model_dump()},
+                    output_file,
+                )
+            self.returncode = 0
+            return "", ""
+
+        def poll(self):
+            return self.returncode
+
+    def fake_popen(command, **kwargs):
+        process = HttpProcess(command, len(processes))
+        processes.append(process)
+        return process
+
+    def signal_worker(process, *, force):
+        assert process is processes[0]
+        process.returncode = -9 if force else -15
+        first_stopped.set()
+
+    monkeypatch.setattr(service.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(service, "_signal_worker", signal_worker)
+    monkeypatch.setattr(
+        api,
+        "quote_from_cad",
+        lambda *args, **kwargs: {"part_name": "B", "quantity": 1},
+    )
+    monkeypatch.setenv("CAD_ANALYSIS_QUEUE_TIMEOUT_SEC", "2")
+
+    async def exercise():
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            common_data = {
+                "material": "acciaio",
+                "quantity": "1",
+                "analysis_session_id": "browser-session",
+            }
+            first_task = asyncio.create_task(
+                client.post(
+                    "/analyze-and-quote",
+                    data={**common_data, "analysis_id": "analysis-a"},
+                    files={"file": ("a.step", b"STEP-A", "application/step")},
+                )
+            )
+            assert await asyncio.to_thread(first_started.wait, 1.0)
+            second_task = asyncio.create_task(
+                client.post(
+                    "/analyze-and-quote",
+                    data={**common_data, "analysis_id": "analysis-b"},
+                    files={"file": ("b.step", b"STEP-B", "application/step")},
+                )
+            )
+            assert await asyncio.to_thread(second_started.wait, 2.0)
+            healthz = await asyncio.wait_for(client.get("/healthz"), timeout=1.0)
+            release_second.set()
+            return await first_task, await second_task, healthz
+
+    try:
+        first_response, second_response, healthz_response = asyncio.run(exercise())
+    finally:
+        first_stopped.set()
+        release_second.set()
+
+    assert first_response.status_code == 409
+    assert first_response.json()["detail"]["code"] == "cad_analysis_superseded"
+    assert first_response.json()["detail"]["analysis_id"] == "analysis-a"
+    assert second_response.status_code == 200
+    assert second_response.json()["analysis"]["part_name"] == "B"
+    assert healthz_response.status_code == 200
+    assert all(process.poll() is not None for process in processes)
+
+
+def test_health_endpoints_respond_during_slow_analysis(monkeypatch):
     analysis_started = threading.Event()
     release_analysis = threading.Event()
 
@@ -242,18 +504,26 @@ def test_health_responds_during_slow_analysis(monkeypatch):
             assert started is True
             before = time.monotonic()
             health_response = await asyncio.wait_for(client.get("/health"), timeout=1.0)
+            healthz_response = await asyncio.wait_for(
+                client.get("/healthz"),
+                timeout=1.0,
+            )
             elapsed = time.monotonic() - before
             release_analysis.set()
             analysis_response = await analysis_task
-            return health_response, elapsed, analysis_response
+            return health_response, healthz_response, elapsed, analysis_response
 
     try:
-        health_response, elapsed, analysis_response = asyncio.run(exercise())
+        health_response, healthz_response, elapsed, analysis_response = asyncio.run(
+            exercise()
+        )
     finally:
         release_analysis.set()
 
     assert health_response.status_code == 200
     assert health_response.json()["status"] == "ok"
+    assert healthz_response.status_code == 200
+    assert healthz_response.json() == {"status": "ok"}
     assert elapsed < 1.0
     assert analysis_response.status_code == 200
 
@@ -263,6 +533,11 @@ def test_health_responds_during_slow_analysis(monkeypatch):
     [
         (CadAnalysisTimeout("slow"), 504, "cad_analysis_timeout"),
         (CadAnalysisBusy("busy"), 503, "cad_analysis_busy"),
+        (
+            CadAnalysisSuperseded("old-analysis"),
+            409,
+            "cad_analysis_superseded",
+        ),
         (CadAnalysisWorkerCrash("crash"), 502, "cad_analysis_worker_crash"),
         (CadAnalysisInvalidOutput("bad output"), 502, "cad_analysis_invalid_output"),
     ],

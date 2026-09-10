@@ -16,6 +16,7 @@ from .cad_analyzer import VALID_STEP_SUFFIXES
 from .cad_analysis_service import (
     CadAnalysisBusy,
     CadAnalysisInvalidOutput,
+    CadAnalysisSuperseded,
     CadAnalysisTimeout,
     CadAnalysisWorkerCrash,
     CadAnalysisWorkerError,
@@ -182,6 +183,8 @@ async def _analyze_uploaded_cad(
     declared_thickness_mm: float | None,
     quantity: int,
     k_factor: float | None = None,
+    analysis_session_id: str | None = None,
+    analysis_id: str | None = None,
 ) -> CadAnalysisResponse:
     if k_factor is not None and not 0.0 <= float(k_factor) <= 1.0:
         raise HTTPException(
@@ -209,11 +212,22 @@ async def _analyze_uploaded_cad(
             declared_thickness_mm=declared_thickness_mm,
             quantity=quantity,
             k_factor=k_factor,
+            analysis_session_id=analysis_session_id,
+            analysis_id=analysis_id,
         )
     except CadAnalysisTimeout as exc:
         raise HTTPException(
             status_code=504,
             detail={"code": exc.code, "message": str(exc)},
+        ) from exc
+    except CadAnalysisSuperseded as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": exc.code,
+                "analysis_id": exc.analysis_id,
+                "message": str(exc),
+            },
         ) from exc
     except CadAnalysisBusy as exc:
         raise HTTPException(
@@ -285,6 +299,8 @@ async def analyze_cad(
     declared_thickness_mm: float | None = Form(default=None),
     quantity: int = Form(default=1),
     k_factor: float | None = Form(default=None),
+    analysis_session_id: str | None = Form(default=None),
+    analysis_id: str | None = Form(default=None),
 ) -> CadAnalysisResponse:
     return await _analyze_uploaded_cad(
         file=file,
@@ -293,6 +309,8 @@ async def analyze_cad(
         declared_thickness_mm=declared_thickness_mm,
         quantity=quantity,
         k_factor=k_factor,
+        analysis_session_id=analysis_session_id,
+        analysis_id=analysis_id,
     )
 
 
@@ -434,6 +452,8 @@ async def analyze_and_quote(
     quantity: int = Form(...),
     declared_thickness_mm: float | None = Form(default=None),
     k_factor: float | None = Form(default=None),
+    analysis_session_id: str | None = Form(default=None),
+    analysis_id: str | None = Form(default=None),
     pricing_overrides: str | None = Form(default=None),
     material_overrides: str | None = Form(default=None),
 ) -> AnalyzeAndQuoteResponse:
@@ -460,6 +480,8 @@ async def analyze_and_quote(
         declared_thickness_mm=declared_thickness_mm,
         quantity=quantity,
         k_factor=k_factor,
+        analysis_session_id=analysis_session_id,
+        analysis_id=analysis_id,
     )
     analysis_payload = _model_to_dict(analysis)
     try:

@@ -312,10 +312,22 @@ CAD_ANALYSIS_TIMEOUT_SEC=300
 CAD_ANALYSIS_QUEUE_TIMEOUT_SEC=30
 CAD_ANALYSIS_MAX_OUTPUT_MB=50
 CAD_DIAGNOSTIC_TIMEOUT_SEC=20
+CAD_ANALYSIS_CANCEL_GRACE_SEC=2
 ```
 
-Il default avvia al massimo un processo FreeCAD alla volta. Una richiesta
-successiva attende fino al queue timeout e poi riceve un errore controllato 503.
+Il default avvia al massimo un processo FreeCAD alla volta. Il frontend assegna
+un `analysis_session_id` stabile alla scheda del browser e un `analysis_id` a
+ogni richiesta. Una nuova analisi della stessa sessione sostituisce quella in
+corso: il vecchio process group riceve SIGTERM, poi SIGKILL se non termina entro
+il grace timeout, e la vecchia richiesta riceve 409 `cad_analysis_superseded`.
+Una sessione diversa non può cancellare il job attivo e riceve 503 con
+`Retry-After`.
+
+La richiesta più recente è l'unica autorizzata a pubblicare il risultato; il
+frontend ignora inoltre qualsiasi risposta appartenente a un `analysis_id`
+precedente. La directory temporanea del vecchio job viene rimossa prima di
+assegnare lo slot al nuovo job.
+
 Un'analisi che supera il timeout riceve 504; crash e output non valido ricevono
 502; un errore tecnico restituito dal worker resta distinto dagli errori
 geometrici del pezzo.

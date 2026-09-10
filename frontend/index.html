@@ -881,15 +881,18 @@
       try {
         response = await fetch(url, options);
       } catch (error) {
+        if (error?.name === "AbortError") throw error;
         const message = error instanceof Error ? error.message : String(error);
         throw new Error(`URL: ${url} | Metodo: ${method} | Errore: ${message}`);
       }
 
       if (!response.ok) {
         const detail = await parseError(response);
-        throw new Error(
+        const requestError = new Error(
           `URL: ${url} | Metodo: ${method} | HTTP ${response.status} | Errore: ${detail}`
         );
+        requestError.status = response.status;
+        throw requestError;
       }
       return response;
     }
@@ -936,6 +939,22 @@
     let defaults = null;
     let lastResult = null;
     let lastCadFile = null;
+    const newAnalysisId = () => window.crypto?.randomUUID?.()
+      || `analysis-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const analysisSessionId = (() => {
+      const storageKey = "reverseparts_analysis_session_id";
+      try {
+        const existing = window.sessionStorage.getItem(storageKey);
+        if (existing) return existing;
+        const created = newAnalysisId();
+        window.sessionStorage.setItem(storageKey, created);
+        return created;
+      } catch {
+        return newAnalysisId();
+      }
+    })();
+    let activeAnalysisId = null;
+    let activeAnalysisController = null;
     let weldConfigurations = [];
     let manualWeldSequence = 1;
     const maxPdfViews = 4;
@@ -2083,6 +2102,12 @@
       event.preventDefault();
       const file = document.getElementById("cad-file").files[0];
       if (!file) return setStatus("Seleziona un file .stp o .step.", "error");
+      const replacesActiveAnalysis = activeAnalysisId !== null;
+      if (activeAnalysisController) activeAnalysisController.abort();
+      const requestAnalysisId = newAnalysisId();
+      const requestController = new AbortController();
+      activeAnalysisId = requestAnalysisId;
+      activeAnalysisController = requestController;
       lastCadFile = file;
       disposeViewerModel();
       resetPdfViews();
@@ -2103,22 +2128,41 @@
       if (thickness) formData.append("declared_thickness_mm", thickness);
       const kFactor = document.getElementById("k-factor").value;
       if (kFactor !== "") formData.append("k_factor", kFactor);
+      formData.append("analysis_session_id", analysisSessionId);
+      formData.append("analysis_id", requestAnalysisId);
       formData.append("pricing_overrides", JSON.stringify(collectOverrides(pricingKeys)));
       formData.append("material_overrides", JSON.stringify(collectOverrides(materialKeys)));
 
-      const submit = document.getElementById("submit-button");
-      submit.disabled = true;
       document.getElementById("pdf-button").disabled = true;
-      setStatus("Analisi CAD e calcolo preventivo in corso...", "loading");
+      setStatus(
+        replacesActiveAnalysis
+          ? "Interruzione dell'analisi precedente e avvio della nuova..."
+          : "Analisi CAD e calcolo preventivo in corso...",
+        "loading"
+      );
       try {
-        const response = await fetchApi("/analyze-and-quote", { method: "POST", body: formData });
-        lastResult = await response.json();
+        const response = await fetchApi("/analyze-and-quote", {
+          method: "POST",
+          body: formData,
+          signal: requestController.signal,
+        });
+        const payload = await response.json();
+        if (activeAnalysisId !== requestAnalysisId) return;
+        lastResult = payload;
         renderResult(lastResult);
         clearStatus();
       } catch (error) {
+        if (
+          activeAnalysisId !== requestAnalysisId
+          || error?.name === "AbortError"
+          || error?.status === 409
+        ) return;
         setStatus(error.message || "Analisi non riuscita.", "error");
       } finally {
-        submit.disabled = false;
+        if (activeAnalysisId === requestAnalysisId) {
+          activeAnalysisId = null;
+          activeAnalysisController = null;
+        }
       }
     });
 

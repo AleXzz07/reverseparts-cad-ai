@@ -154,6 +154,12 @@ def test_frontend_returns_html():
     assert "gap_mm" in response.text
     assert "per_process" in response.text
     assert 'fetchApi("/analyze-and-quote"' in response.text
+    assert "reverseparts_analysis_session_id" in response.text
+    assert 'formData.append("analysis_session_id", analysisSessionId)' in response.text
+    assert 'formData.append("analysis_id", requestAnalysisId)' in response.text
+    assert "Interruzione dell'analisi precedente e avvio della nuova" in response.text
+    assert "activeAnalysisId !== requestAnalysisId" in response.text
+    assert "error?.status === 409" in response.text
     assert 'fetchApi("/generate-preview"' in response.text
     assert 'fetchApi("/quote-pdf"' in response.text
     assert 'fetch(apiUrl("/health"))' not in response.text
