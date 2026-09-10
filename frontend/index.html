@@ -1920,9 +1920,16 @@
     async function checkHealth() {
       try {
         const healthResponse = await fetchApi("/health");
-        const health = await healthResponse.json();
-        document.getElementById("health").textContent = health.freecad_available ? "FreeCAD disponibile" : "FreeCAD non disponibile";
-        document.getElementById("health-dot").className = `status-dot ${health.freecad_available ? "ready" : "error"}`;
+        if (!healthResponse.ok) throw new Error(`HTTP ${healthResponse.status}`);
+        const diagnosticResponse = await fetchApi("/freecad-status?refresh=true");
+        if (!diagnosticResponse.ok) throw new Error(`HTTP ${diagnosticResponse.status}`);
+        const diagnostic = await diagnosticResponse.json();
+        const available = diagnostic.status === "available";
+        const unknown = diagnostic.status === "unknown";
+        document.getElementById("health").textContent = unknown
+          ? "Stato FreeCAD non verificato"
+          : available ? "FreeCAD disponibile" : "FreeCAD non disponibile";
+        document.getElementById("health-dot").className = `status-dot ${available ? "ready" : "error"}`;
       } catch (error) {
         document.getElementById("health").textContent = "Stato FreeCAD non verificato";
         document.getElementById("health-dot").className = "status-dot error";

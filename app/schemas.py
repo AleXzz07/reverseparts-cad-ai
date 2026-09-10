@@ -292,6 +292,12 @@ class HealthResponse(BaseModel):
     freecad_error: str | None = None
 
 
+class FreeCadDiagnosticResponse(BaseModel):
+    status: Literal["available", "unavailable", "unknown"] = "unknown"
+    available: bool | None = None
+    error: str | None = None
+
+
 class QuoteRequest(BaseModel):
     analysis: dict[str, Any]
     quantity: int = Field(gt=0)

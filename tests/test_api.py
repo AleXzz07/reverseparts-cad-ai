@@ -44,6 +44,13 @@ def _skip_without_freecad_for_real_fixture() -> None:
     health_response = client.get("/health")
     health_payload = health_response.json()
     if not health_payload["freecad_available"]:
+        diagnostic_response = client.get("/freecad-status?refresh=true")
+        diagnostic_payload = diagnostic_response.json()
+        health_payload = {
+            "freecad_available": diagnostic_payload["status"] == "available",
+            "freecad_error": diagnostic_payload.get("error"),
+        }
+    if not health_payload["freecad_available"]:
         if os.getenv("REVERSEPARTS_RUNNING_IN_DOCKER") == "1":
             pytest.fail(f"FreeCAD must be available inside Docker: {health_payload['freecad_error']}")
         pytest.skip(f"FreeCAD is required for the real STEP fixture: {health_payload['freecad_error']}")
@@ -83,12 +90,42 @@ def test_healthz_returns_fast_ok_without_freecad_check(monkeypatch):
     def fail_if_called():
         raise AssertionError("healthz must not call FreeCAD diagnostics")
 
-    monkeypatch.setattr(api, "get_freecad_status", fail_if_called)
+    monkeypatch.setattr(api, "probe_freecad_status", fail_if_called)
 
     response = client.get("/healthz")
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+def test_health_returns_cached_status_without_freecad_probe(monkeypatch):
+    monkeypatch.setattr(
+        api,
+        "probe_freecad_status",
+        lambda: pytest.fail("health must not probe or import FreeCAD"),
+    )
+
+    response = client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
+
+
+def test_freecad_status_exposes_tristate_diagnostic(monkeypatch):
+    monkeypatch.setattr(
+        api,
+        "get_cached_freecad_diagnostic",
+        lambda: {"status": "unknown", "error": None},
+    )
+
+    response = client.get("/freecad-status")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "unknown",
+        "available": None,
+        "error": None,
+    }
 
 
 def test_frontend_returns_html():
@@ -103,6 +140,7 @@ def test_frontend_returns_html():
     assert 'id="api-backend"' in response.text
     assert "API:" in response.text
     assert 'fetchApi("/health")' in response.text
+    assert 'fetchApi("/freecad-status?refresh=true")' in response.text
     assert 'fetchApi("/config/defaults")' in response.text
     assert 'id="quote-applicability"' in response.text
     assert "Confidence classificazione" in response.text
@@ -339,19 +377,14 @@ def test_analyze_cad_rejects_k_factor_outside_unit_interval():
 
 
 def test_analyze_cad_rejects_unparseable_step_file(monkeypatch):
-    class AvailableFreeCad:
-        available = True
-        error = None
-
-    def fake_analyze_step_file(**kwargs):
+    def fake_isolated_analysis(**kwargs):
         return CadAnalysisResponse(
             part_name="broken",
             source_file=kwargs["source_file"],
             warnings=["FreeCAD failed to parse the STEP file: invalid STEP data"],
         )
 
-    monkeypatch.setattr(api, "get_freecad_status", lambda: AvailableFreeCad())
-    monkeypatch.setattr(api, "analyze_step_file", fake_analyze_step_file)
+    monkeypatch.setattr(api, "run_isolated_cad_analysis", fake_isolated_analysis)
 
     response = client.post(
         "/analyze-cad",

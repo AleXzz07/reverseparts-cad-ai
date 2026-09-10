@@ -12,7 +12,17 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
-from .cad_analyzer import VALID_STEP_SUFFIXES, analyze_step_file, get_freecad_status
+from .cad_analyzer import VALID_STEP_SUFFIXES
+from .cad_analysis_service import (
+    CadAnalysisBusy,
+    CadAnalysisInvalidOutput,
+    CadAnalysisTimeout,
+    CadAnalysisWorkerCrash,
+    CadAnalysisWorkerError,
+    get_cached_freecad_diagnostic,
+    probe_freecad_status,
+    run_isolated_cad_analysis,
+)
 from .model_service import (
     deferred_viewer_model,
     generate_safe_viewer_model,
@@ -29,6 +39,7 @@ from .quote_engine import load_materials_config, load_pricing_config, quote_from
 from .schemas import (
     AnalyzeAndQuoteResponse,
     CadAnalysisResponse,
+    FreeCadDiagnosticResponse,
     HealthResponse,
     QuotePdfRequest,
     QuoteRequest,
@@ -188,43 +199,82 @@ async def _analyze_uploaded_cad(
     if not file_bytes:
         raise HTTPException(status_code=400, detail="Uploaded CAD file is empty.")
 
-    freecad_status = get_freecad_status()
-    if not freecad_status.available:
+    try:
+        result = await run_in_threadpool(
+            run_isolated_cad_analysis,
+            file_bytes=file_bytes,
+            source_file=filename,
+            material=material,
+            density_g_cm3=density_g_cm3,
+            declared_thickness_mm=declared_thickness_mm,
+            quantity=quantity,
+            k_factor=k_factor,
+        )
+    except CadAnalysisTimeout as exc:
+        raise HTTPException(
+            status_code=504,
+            detail={"code": exc.code, "message": str(exc)},
+        ) from exc
+    except CadAnalysisBusy as exc:
         raise HTTPException(
             status_code=503,
+            detail={"code": exc.code, "message": str(exc)},
+            headers={"Retry-After": "5"},
+        ) from exc
+    except CadAnalysisWorkerError as exc:
+        status_code = 503 if exc.worker_error_type == "freecad_unavailable" else 500
+        raise HTTPException(
+            status_code=status_code,
             detail={
-                "message": "FreeCAD is not available, CAD analysis cannot run.",
-                "freecad_error": freecad_status.error,
+                "code": exc.code,
+                "worker_error_type": exc.worker_error_type,
+                "message": str(exc),
             },
-        )
-
-    result = await run_in_threadpool(
-        analyze_step_file,
-        file_bytes=file_bytes,
-        source_file=filename,
-        material=material,
-        density_g_cm3=density_g_cm3,
-        declared_thickness_mm=declared_thickness_mm,
-        quantity=quantity,
-        k_factor=k_factor,
-    )
+        ) from exc
+    except (CadAnalysisWorkerCrash, CadAnalysisInvalidOutput) as exc:
+        raise HTTPException(
+            status_code=502,
+            detail={"code": exc.code, "message": str(exc)},
+        ) from exc
     if result.raw_bounding_box_mm.x is None and result.warnings:
         raise HTTPException(status_code=422, detail=result.warnings)
     return result
 
 
 @app.get("/health", response_model=HealthResponse)
-def health() -> HealthResponse:
-    status = get_freecad_status()
+async def health() -> HealthResponse:
+    diagnostic = get_cached_freecad_diagnostic()
     return HealthResponse(
-        freecad_available=status.available,
-        freecad_error=status.error,
+        freecad_available=diagnostic["status"] == "available",
+        freecad_error=diagnostic.get("error"),
     )
 
 
 @app.get("/healthz")
 async def healthz() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/freecad-status", response_model=FreeCadDiagnosticResponse)
+async def freecad_diagnostic(refresh: bool = False) -> FreeCadDiagnosticResponse:
+    diagnostic = (
+        await run_in_threadpool(probe_freecad_status)
+        if refresh
+        else get_cached_freecad_diagnostic()
+    )
+    status = diagnostic["status"]
+    available = (
+        True
+        if status == "available"
+        else False
+        if status == "unavailable"
+        else None
+    )
+    return FreeCadDiagnosticResponse(
+        status=status,
+        available=available,
+        error=diagnostic.get("error"),
+    )
 
 
 @app.post("/analyze-cad", response_model=CadAnalysisResponse)

@@ -14,7 +14,9 @@ Backend Python per REVERSEPARTS che analizza file CAD STEP/STP di componenti mec
 
 ### `GET /health`
 
-Checks service status and whether the FreeCAD Python API can be imported.
+Lightweight liveness endpoint. It never imports or calls FreeCAD during the
+request. The FreeCAD fields expose only the last cached diagnostic state, so
+`freecad_available: false` can mean that no diagnostic has completed yet.
 
 ```json
 {
@@ -23,6 +25,17 @@ Checks service status and whether the FreeCAD Python API can be imported.
   "freecad_error": null
 }
 ```
+
+### `GET /healthz`
+
+Minimal liveness alias. It always returns `{"status":"ok"}` while the API
+process is alive.
+
+### `GET /freecad-status`
+
+Returns the cached FreeCAD diagnostic as `available`, `unavailable`, or
+`unknown`. Use `GET /freecad-status?refresh=true` to run an isolated diagnostic
+worker without adding FreeCAD work to either liveness endpoint.
 
 ### `POST /analyze-cad`
 
@@ -150,7 +163,9 @@ uvicorn app.main:app --reload --port 8000
 pytest
 ```
 
-FreeCAD is required for real STEP analysis. Without FreeCAD, `/health` reports `freecad_available: false` and `/analyze-cad` returns an HTTP 503.
+FreeCAD is required for real STEP analysis. Without FreeCAD,
+`/freecad-status?refresh=true` reports `unavailable` and `/analyze-cad` returns
+an HTTP 503 with a technical worker error.
 
 ## Docker
 
@@ -283,7 +298,27 @@ Il backend genera preview PNG del pezzo STEP tramite la tessellazione FreeCAD e 
 
 La modalità preview `clean`, attiva di default e configurabile con `PREVIEW_RENDER_MODE=clean`, usa la hidden-line removal di FreeCAD per mostrare solo i contorni tecnici visibili. Seam, raccordi tangenti, micro-edge e linee proiettate duplicate vengono filtrati, rendendo più leggibili anche aperture formate, collarini e imbutiture nei componenti complessi.
 
-La generazione preview viene eseguita in un subprocess isolato e attesa fuori dall'event loop FastAPI: un crash del renderer o di FreeCAD non interrompe il processo API e `/healthz` continua a rispondere durante il rendering. Anche l'analisi CAD bloccante viene eseguita fuori dall'event loop. Analisi CAD, preventivo e PDF restano disponibili quando la preview viene saltata, non richiesta o supera il timeout.
+La generazione preview e l'analisi STEP vengono eseguite in subprocess Python
+separati e attese fuori dall'event loop FastAPI. Un timeout o crash FreeCAD non
+interrompe il processo API e gli endpoint di liveness continuano a rispondere.
+Il worker CAD conserva lo schema di `analyze_step_file()`, mentre quote e PDF
+restano nel processo API.
+
+Impostazioni runtime dell'analisi CAD:
+
+```text
+CAD_ANALYSIS_MAX_CONCURRENCY=1
+CAD_ANALYSIS_TIMEOUT_SEC=300
+CAD_ANALYSIS_QUEUE_TIMEOUT_SEC=30
+CAD_ANALYSIS_MAX_OUTPUT_MB=50
+CAD_DIAGNOSTIC_TIMEOUT_SEC=20
+```
+
+Il default avvia al massimo un processo FreeCAD alla volta. Una richiesta
+successiva attende fino al queue timeout e poi riceve un errore controllato 503.
+Un'analisi che supera il timeout riceve 504; crash e output non valido ricevono
+502; un errore tecnico restituito dal worker resta distinto dagli errori
+geometrici del pezzo.
 
 La preview usa fallback progressivi:
 
@@ -353,7 +388,10 @@ VIEWER_MODEL_MAX_FILE_SIZE_MB=10
 
 The FastAPI backend must run from the repository Dockerfile on a service with Docker and enough resources for FreeCAD, such as Render, Railway, Fly.io, or a VPS. Vercel must not run the FreeCAD backend.
 
-On Render, set **Health Check Path** to `/healthz`. This endpoint returns only `{"status":"ok"}` and does not run FreeCAD or preview diagnostics, so it stays responsive while a heavy static preview is rendering. Keep `/health` for manual diagnostics because it reports `freecad_available` and `freecad_error`, but do not use `/health` as the production health check path.
+On Render, keep one Uvicorn worker and set **Health Check Path** to `/healthz`
+or `/health`. Both are lightweight and never import FreeCAD during a liveness
+request. Use `/freecad-status` for diagnostics; do not increase Uvicorn workers
+without first measuring the FreeCAD memory peak.
 
 The backend allows `https://reverseparts-cad-ai.vercel.app`, `localhost`, and `127.0.0.1` by default. To replace or extend the explicit production origins on Render, configure:
 
