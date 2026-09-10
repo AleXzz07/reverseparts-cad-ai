@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import math
 from io import BytesIO
 from typing import Any
 from xml.sax.saxutils import escape
@@ -36,6 +37,84 @@ def _value(value: Any, unit: str = "") -> str:
     else:
         text = str(value)
     return f"{text} {unit}".strip()
+
+
+FLAT_STATUS_NOTES = {
+    "exact": (
+        "Exact indica uno sviluppo costruito e verificato geometricamente rispetto "
+        "al modello e al K-factor impostato; non e una garanzia assoluta di produzione."
+    ),
+    "validated_estimate": (
+        "Validated estimate indica uno sviluppo ricostruito geometricamente e validato "
+        "rispetto ai controlli interni impostati. E utilizzabile per il costing quando "
+        "i controlli risultano superati, ma non rappresenta una garanzia assoluta di produzione."
+    ),
+    "partial": (
+        "Partial indica che solo una parte dello sviluppo e stata ricostruita o validata; "
+        "il risultato non e utilizzabile per il costing."
+    ),
+    "unavailable": (
+        "Unavailable indica che non e stato possibile ottenere uno sviluppo piano "
+        "geometricamente affidabile."
+    ),
+}
+
+
+def _diagnostic_volume_area_error_pct(flat_pattern: dict[str, Any]) -> float | None:
+    diagnostic_area = flat_pattern.get("diagnostic_volume_area_mm2")
+    final_net_area = flat_pattern.get("net_developed_area_mm2")
+    try:
+        diagnostic_area = float(diagnostic_area)
+        final_net_area = float(final_net_area)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(diagnostic_area) or not math.isfinite(final_net_area) or final_net_area <= 0:
+        return None
+    return round(abs(diagnostic_area - final_net_area) / final_net_area * 100.0, 6)
+
+
+def _final_flat_is_valid(flat_pattern: dict[str, Any]) -> bool:
+    validation = flat_pattern.get("validation") or {}
+    return (
+        flat_pattern.get("status") in {"exact", "validated_estimate"}
+        and flat_pattern.get("usable_for_costing") is True
+        and validation.get("passed") is True
+        and validation.get("all_openings_propagated") is True
+    )
+
+
+def _reported_blank_weight(
+    flat_pattern: dict[str, Any],
+    quote: dict[str, Any],
+) -> float | None:
+    weight = flat_pattern.get("blank_weight_kg")
+    if weight is not None:
+        return weight
+    if not _final_flat_is_valid(flat_pattern):
+        return None
+    return (quote.get("material") or {}).get("blank_weight_kg")
+
+
+def _presentation_warnings(
+    analysis: dict[str, Any],
+    warnings: list[str],
+) -> list[str]:
+    flat_pattern = analysis.get("flat_pattern") or {}
+    if not _final_flat_is_valid(flat_pattern):
+        return list(warnings)
+    contradictory_fragments = (
+        "aperture saranno propagate",
+        "aperture o contorni non completamente propagati",
+        "flat non utilizzabile per il costing",
+        "sviluppo piano non ha superato",
+        "sviluppo piano exact/validated_estimate non disponibile",
+        "peso grezzo non disponibile: lo sviluppo piano non e validato",
+    )
+    return [
+        warning
+        for warning in warnings
+        if not any(fragment in warning.casefold() for fragment in contradictory_fragments)
+    ]
 
 
 def _dimensions(analysis: dict[str, Any]) -> str:
@@ -168,12 +247,13 @@ def _verification_rows(
             start=1,
         )
     )
+    flat_warnings = _presentation_warnings(
+        analysis,
+        analysis.get("flat_pattern", {}).get("warnings", []) or [],
+    )
     rows.extend(
         (f"Sviluppo piano {index}", warning)
-        for index, warning in enumerate(
-            analysis.get("flat_pattern", {}).get("warnings", []) or [],
-            start=1,
-        )
+        for index, warning in enumerate(flat_warnings, start=1)
     )
     rows.extend(
         (f"Assemblato {index}", warning)
@@ -832,11 +912,14 @@ def generate_quote_pdf(
     )
     flat_dimensions = flat_pattern.get("blank_dimensions_mm") or {}
     flat_validation = flat_pattern.get("validation") or {}
+    diagnostic_volume_error_pct = _diagnostic_volume_area_error_pct(flat_pattern)
+    blank_weight_kg = _reported_blank_weight(flat_pattern, quote)
+    flat_status = flat_pattern.get("status", "unavailable")
     elements.extend(
         _section(
             "Sviluppo piano e grezzo",
             [
-                ("Stato", flat_pattern.get("status", "unavailable")),
+                ("Stato", flat_status),
                 ("Metodo", flat_pattern.get("method") or "-"),
                 ("Utilizzabile per costing", "si" if flat_pattern.get("usable_for_costing") else "no"),
                 ("Root pannello", flat_pattern.get("root_panel_id") or "-"),
@@ -857,7 +940,7 @@ def generate_quote_pdf(
                 ("Perimetro esterno sviluppato", _value(flat_pattern.get("outer_perimeter_mm"), "mm")),
                 ("Perimetro interno sviluppato", _value(flat_pattern.get("inner_perimeter_mm"), "mm")),
                 ("Taglio totale sviluppato", _value(flat_pattern.get("total_cut_length_mm"), "mm")),
-                ("Peso grezzo", _value(flat_pattern.get("blank_weight_kg"), "kg")),
+                ("Peso grezzo", _value(blank_weight_kg, "kg")),
                 ("Lunghezza totale pieghe", _value(flat_pattern.get("total_bend_length_mm"), "mm")),
                 ("Sviluppo totale zone di piega", _value(flat_pattern.get("total_bend_allowance_mm"), "mm")),
                 ("Fattore K", flat_pattern.get("k_factor")),
@@ -869,7 +952,7 @@ def generate_quote_pdf(
                 ("Errore coerenza perimetro interno", _value(flat_validation.get("perimeter_coherence_error_pct"), "%")),
                 ("Aperture propagate", flat_pattern.get("propagated_opening_count", 0)),
                 ("Area diagnostica volume/spessore", _value(flat_pattern.get("diagnostic_volume_area_mm2"), "mm2")),
-                ("Differenza diagnostica volume/spessore", _value(flat_pattern.get("diagnostic_volume_area_error_pct"), "%")),
+                ("Differenza diagnostica volume/spessore", _value(diagnostic_volume_error_pct, "%")),
                 ("Confidence", flat_pattern.get("confidence", "low")),
                 (
                     "Legenda Fattore K",
@@ -880,8 +963,8 @@ def generate_quote_pdf(
                     f"K = {str(flat_pattern.get('k_factor', 0.40)).replace('.', ',')} {flat_pattern.get('k_factor_standard', 'ANSI')} - valore usato nel calcolo corrente, non costante universale.",
                 ),
                 (
-                    "Nota",
-                    "Exact significa verificato rispetto al modello geometrico e al K-factor impostato; non e una garanzia assoluta di produzione.",
+                    "Nota stato",
+                    FLAT_STATUS_NOTES.get(flat_status, FLAT_STATUS_NOTES["unavailable"]),
                 ),
             ],
         )

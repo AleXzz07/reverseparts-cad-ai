@@ -1371,7 +1371,62 @@
       ).join("");
     }
 
-    function renderTechnicalDetails(analysis) {
+    function finalFlatIsValid(flatPattern) {
+      const validation = flatPattern?.validation || {};
+      return ["exact", "validated_estimate"].includes(flatPattern?.status)
+        && flatPattern?.usable_for_costing === true
+        && validation.passed === true
+        && validation.all_openings_propagated === true;
+    }
+
+    function diagnosticVolumeAreaErrorPct(flatPattern) {
+      const diagnosticArea = Number(flatPattern?.diagnostic_volume_area_mm2);
+      const finalNetArea = Number(flatPattern?.net_developed_area_mm2);
+      if (!Number.isFinite(diagnosticArea) || !Number.isFinite(finalNetArea) || finalNetArea <= 0) return null;
+      return Math.abs(diagnosticArea - finalNetArea) / finalNetArea * 100;
+    }
+
+    function reportedBlankWeight(flatPattern, quote) {
+      if (flatPattern?.blank_weight_kg != null) return flatPattern.blank_weight_kg;
+      if (!finalFlatIsValid(flatPattern)) return null;
+      return quote?.material?.blank_weight_kg ?? null;
+    }
+
+    function flatStatusNote(status) {
+      return ({
+        exact: "Exact indica uno sviluppo costruito e verificato geometricamente rispetto al modello e al K-factor impostato; non è una garanzia assoluta di produzione.",
+        validated_estimate: "Validated estimate indica uno sviluppo ricostruito geometricamente e validato rispetto ai controlli interni impostati. È utilizzabile per il costing quando i controlli risultano superati, ma non rappresenta una garanzia assoluta di produzione.",
+        partial: "Partial indica che solo una parte dello sviluppo è stata ricostruita o validata; il risultato non è utilizzabile per il costing.",
+        unavailable: "Unavailable indica che non è stato possibile ottenere uno sviluppo piano geometricamente affidabile."
+      })[status] || "Unavailable indica che non è stato possibile ottenere uno sviluppo piano geometricamente affidabile.";
+    }
+
+    function presentationWarnings(analysis, quote) {
+      const warnings = [
+        ...(analysis.warnings || []),
+        ...(analysis.cutting?.warnings || []),
+        ...(analysis.flat_pattern?.warnings || []),
+        ...(analysis.manufacturability?.warnings || []),
+        ...(analysis.assembly?.warnings || []),
+        ...(quote.warnings || []),
+        ...(quote.welding_quote?.warnings || [])
+      ];
+      if (!finalFlatIsValid(analysis.flat_pattern || {})) return warnings;
+      const contradictoryFragments = [
+        "aperture saranno propagate",
+        "aperture o contorni non completamente propagati",
+        "flat non utilizzabile per il costing",
+        "sviluppo piano non ha superato",
+        "sviluppo piano exact/validated_estimate non disponibile",
+        "peso grezzo non disponibile: lo sviluppo piano non e validato"
+      ];
+      return warnings.filter(warning => {
+        const normalized = String(warning).toLocaleLowerCase("it");
+        return !contradictoryFragments.some(fragment => normalized.includes(fragment));
+      });
+    }
+
+    function renderTechnicalDetails(analysis, quote) {
       const geometry = analysis.geometry || {};
       const classification = analysis.part_classification || {};
       const manufacturability = analysis.manufacturability || {};
@@ -1458,6 +1513,8 @@
         partial: "Parziale",
         unavailable: "Non disponibile"
       })[flatPattern.status] || "Non disponibile";
+      const diagnosticVolumeErrorPct = diagnosticVolumeAreaErrorPct(flatPattern);
+      const blankWeight = reportedBlankWeight(flatPattern, quote);
       document.getElementById("flat-pattern-data").innerHTML = rows([
         ["Stato sviluppo", flatStatus],
         ["Metodo", flatPattern.method || "-"],
@@ -1466,7 +1523,7 @@
         ["Area aperture", number(flatPattern.opening_area_mm2, "mm²")],
         ["Area lorda grezzo", number(flatPattern.gross_blank_area_mm2, "mm²")],
         ["Perimetro esterno sviluppato", number(flatPattern.outer_perimeter_mm, "mm")],
-        ["Peso grezzo", number(flatPattern.blank_weight_kg, "kg")],
+        ["Peso grezzo", number(blankWeight, "kg")],
         ["Lunghezza totale pieghe", number(flatPattern.total_bend_length_mm, "mm")],
         ["Sviluppo totale zone di piega", number(flatPattern.total_bend_allowance_mm, "mm")],
         ["Fattore K", number(flatPattern.k_factor)],
@@ -1479,8 +1536,9 @@
         ["Aperture propagate", `${flatPattern.propagated_opening_count ?? 0} / ${holes.total_holes ?? 0}`],
         ["Area diagnostica volume/spessore", number(flatPattern.diagnostic_volume_area_mm2, "mm²")],
         ["Errore coerenza area interna", number(flatPattern.validation?.area_coherence_error_pct, "%")],
-        ["Differenza diagnostica volume/spessore", number(flatPattern.diagnostic_volume_area_error_pct, "%")],
-        ["Confidence", confidenceText(flatPattern.confidence)]
+        ["Differenza diagnostica volume/spessore", number(diagnosticVolumeErrorPct, "%")],
+        ["Confidence", confidenceText(flatPattern.confidence)],
+        ["Nota stato", flatStatusNote(flatPattern.status)]
       ]);
 
       document.getElementById("manufacturability-data").innerHTML = rows([
@@ -1780,7 +1838,7 @@
         ?? features.total_holes ?? holes.total_holes
         ?? (circularHoles + elongatedHoles + roundedRectangularHoles + polygonalHoles + formedHoles + unknownHoles);
       renderPreviewGallery(preview, analysis.complexity_score);
-      renderTechnicalDetails(analysis);
+      renderTechnicalDetails(analysis, quote);
       renderWeldSection(analysis, quote.welding_quote || {}, resetWelds);
       const viewerEnabled = defaults?.viewer_model_enabled !== false;
       document.getElementById("load-viewer-button").disabled = !viewerEnabled;
@@ -1839,15 +1897,7 @@
         ["Minimo consigliato", money(guidance.minimum_billable_price_eur)]
       ]);
 
-      const warnings = [
-        ...(analysis.warnings || []),
-        ...(analysis.cutting?.warnings || []),
-        ...(analysis.flat_pattern?.warnings || []),
-        ...(analysis.manufacturability?.warnings || []),
-        ...(analysis.assembly?.warnings || []),
-        ...(quote.warnings || []),
-        ...(quote.welding_quote?.warnings || [])
-      ];
+      const warnings = presentationWarnings(analysis, quote);
       document.getElementById("warnings").innerHTML = warnings.map(item => `<li>${escapeHtml(item)}</li>`).join("");
       document.getElementById("warnings-panel").hidden = warnings.length === 0;
       document.getElementById("empty").hidden = true;

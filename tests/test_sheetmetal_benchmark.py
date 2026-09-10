@@ -4,7 +4,10 @@ from pathlib import Path
 
 import pytest
 
+import app.pdf_report as pdf_report
 from app.cad_analyzer import analyze_step_file, get_freecad_status
+from app.pdf_report import _diagnostic_volume_area_error_pct
+from app.quote_engine import quote_from_cad
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -210,3 +213,43 @@ def test_blind_sheetmetal_v2_canonical_benchmark(case_dir, piece_id):
     assert _within_target(flat["net_developed_area_mm2"], truth["material_area_from_unfold_volume_mm2"], 0.5, 0.0)
     assert _within_target(flat["outer_perimeter_mm"], truth["largest_planar_outer_perimeter_mm"], 1.0, 0.0)
     assert "benchmark_error_pct" not in flat
+
+
+@pytest.mark.parametrize("case_dir", ["SM06", "SM07", "SM10", "SM11", "SM13"])
+def test_blind_sheetmetal_reporting_uses_final_validated_values(case_dir, monkeypatch):
+    _require_freecad()
+    step_path = BLIND_ROOT / case_dir / "folded.step"
+    analysis = analyze_step_file(
+        file_bytes=step_path.read_bytes(),
+        source_file=step_path.name,
+        material="acciaio",
+        density_g_cm3=7.85,
+    ).model_dump()
+    quote = quote_from_cad(analysis, material="acciaio")
+    flat = analysis["flat_pattern"]
+    expected_error = _diagnostic_volume_area_error_pct(flat)
+    recorded_sections = {}
+    original_section = pdf_report._section
+
+    def recording_section(title, section_rows):
+        recorded_sections[title] = dict(section_rows)
+        return original_section(title, section_rows)
+
+    monkeypatch.setattr(pdf_report, "_section", recording_section)
+    pdf_report.generate_quote_pdf(analysis, quote)
+
+    rows = recorded_sections["Sviluppo piano e grezzo"]
+    assert flat["usable_for_costing"] is True
+    assert flat["validation"]["passed"] is True
+    assert flat["validation"]["all_openings_propagated"] is True
+    assert rows["Peso grezzo"] != "-"
+    assert rows["Differenza diagnostica volume/spessore"] == pdf_report._value(
+        expected_error, "%"
+    )
+    assert "Validated estimate indica" in rows["Nota stato"]
+    assert "Exact" not in rows["Nota stato"]
+    verification_values = [
+        str(value).casefold()
+        for value in recorded_sections.get("Avvisi di verifica", {}).values()
+    ]
+    assert not any("flat non utilizzabile per il costing" in value for value in verification_values)

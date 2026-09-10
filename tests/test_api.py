@@ -16,10 +16,14 @@ import app.main as api
 import app.pdf_report as pdf_report
 from app.main import app
 from app.pdf_report import (
+    FLAT_STATUS_NOTES,
     _bend_detail_rows,
+    _diagnostic_volume_area_error_pct,
     _hole_detail_rows,
     _hole_group_rows,
     _part_rows,
+    _presentation_warnings,
+    _reported_blank_weight,
     _verification_rows,
     _weld_detail_rows,
     _weld_setup_rows,
@@ -124,6 +128,10 @@ def test_frontend_returns_html():
     assert "Legenda parametri" in response.text
     assert 'class="info-tip"' in response.text
     assert "Densit&agrave; del materiale." in response.text
+    assert "function diagnosticVolumeAreaErrorPct" in response.text
+    assert "function reportedBlankWeight" in response.text
+    assert "function presentationWarnings" in response.text
+    assert "Validated estimate indica uno sviluppo ricostruito geometricamente" in response.text
     assert "Controllo visivo del pezzo" in response.text
     assert "Modello CAD 3D interattivo" in response.text
     assert 'id="viewer-frame"' in response.text
@@ -185,7 +193,7 @@ def test_frontend_returns_html():
     assert 'id="holes-detail"' in response.text
     assert 'id="bends-detail"' in response.text
     assert 'id="manufacturability-data"' in response.text
-    assert "renderTechnicalDetails(analysis)" in response.text
+    assert "renderTechnicalDetails(analysis, quote)" in response.text
     assert "Distanza minima foro-bordo" in response.text
     assert "Baricentro X / Y / Z" in response.text
     assert "Facce CAD (B-Rep)" in response.text
@@ -811,6 +819,65 @@ def test_quote_pdf_includes_flat_pattern_data(monkeypatch):
     assert "non costante universale" in rows["Valore K corrente"]
     assert "Errore coerenza area interna" in rows
     assert "Differenza diagnostica volume/spessore" in rows
+
+
+def test_sheetmetal_reporting_recalculates_final_diagnostic_percentage():
+    sm06 = {
+        "diagnostic_volume_area_mm2": 8107.50,
+        "net_developed_area_mm2": 8087.0749,
+    }
+    sm07 = {
+        "diagnostic_volume_area_mm2": 7453.06,
+        "net_developed_area_mm2": 7440.491,
+    }
+    assert _diagnostic_volume_area_error_pct(sm06) == pytest.approx(0.252565, abs=0.000001)
+    assert _diagnostic_volume_area_error_pct(sm07) == pytest.approx(0.168927, abs=0.000001)
+
+
+@pytest.mark.parametrize("case_name", ["SM10", "SM11", "SM13"])
+def test_sheetmetal_reporting_uses_existing_quote_blank_weight(case_name):
+    flat_pattern = {
+        "status": "validated_estimate",
+        "usable_for_costing": True,
+        "blank_weight_kg": None,
+        "validation": {"passed": True, "all_openings_propagated": True},
+    }
+    quote = {"material": {"blank_weight_kg": 0.123}}
+    assert _reported_blank_weight(flat_pattern, quote) == 0.123, case_name
+
+    flat_pattern["validation"]["passed"] = False
+    assert _reported_blank_weight(flat_pattern, quote) is None, case_name
+
+
+def test_sheetmetal_reporting_status_notes_are_conditional():
+    assert set(FLAT_STATUS_NOTES) == {
+        "exact",
+        "validated_estimate",
+        "partial",
+        "unavailable",
+    }
+    assert "Exact indica" in FLAT_STATUS_NOTES["exact"]
+    assert "Validated estimate indica" in FLAT_STATUS_NOTES["validated_estimate"]
+    assert "Exact" not in FLAT_STATUS_NOTES["validated_estimate"]
+    assert "Partial indica" in FLAT_STATUS_NOTES["partial"]
+    assert "Unavailable indica" in FLAT_STATUS_NOTES["unavailable"]
+
+
+def test_sheetmetal_reporting_filters_only_final_state_contradictions():
+    analysis = {
+        "flat_pattern": {
+            "status": "validated_estimate",
+            "usable_for_costing": True,
+            "validation": {"passed": True, "all_openings_propagated": True},
+        }
+    }
+    warnings = [
+        "Le aperture saranno propagate nella Fase B; flat non utilizzabile per il costing.",
+        "Parte CAD complessa: richiede verifica tecnica.",
+    ]
+    assert _presentation_warnings(analysis, warnings) == [
+        "Parte CAD complessa: richiede verifica tecnica."
+    ]
 
 
 def test_quote_pdf_includes_unknown_hole_verification_warning():
