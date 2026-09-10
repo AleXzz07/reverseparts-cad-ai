@@ -71,7 +71,10 @@ def _projection_span(points: list[Vector3], axis: Vector3) -> float:
 
 
 def _face_points(face: Any) -> list[Vector3]:
-    return [_vector(vertex.Point) for vertex in getattr(face, "Vertexes", [])]
+    wire = getattr(face, "OuterWire", None)
+    ordered = getattr(wire, "OrderedVertexes", None)
+    vertices = ordered if ordered else getattr(face, "Vertexes", [])
+    return [_vector(vertex.Point) for vertex in vertices]
 
 
 def _face_center(face: Any) -> Vector3:
@@ -131,15 +134,16 @@ class SheetPanel:
     area_mm2: float
     direct: bool = True
 
-    def representative_face_for(self, bend_faces: tuple[Any, Any] | None = None) -> Any:
+    def representative_face_for(self, bend_faces: tuple[Any, Any | None] | None = None) -> Any:
         if bend_faces is not None:
             inner_face, outer_face = bend_faces
             for face in self.faces:
                 if _faces_share_edge(face, inner_face):
                     return face
-            for face in self.faces:
-                if _faces_share_edge(face, outer_face):
-                    return face
+            if outer_face is not None:
+                for face in self.faces:
+                    if _faces_share_edge(face, outer_face):
+                        return face
         return max(self.faces, key=lambda face: (float(face.Area), _face_signature(face)))
 
 
@@ -147,7 +151,7 @@ class SheetPanel:
 class SheetBendZone:
     id: str
     inner_face: Any
-    outer_face: Any
+    outer_face: Any | None
     axis: Vector3
     center: Vector3
     inner_radius_mm: float
@@ -156,6 +160,152 @@ class SheetBendZone:
     allowance_mm: float
     panel_ids: list[str] = field(default_factory=list)
     direct: bool = True
+
+
+def _shared_edges(left: Any, right: Any | None) -> list[Any]:
+    if right is None:
+        return []
+    return [
+        left_edge
+        for left_edge in getattr(left, "Edges", [])
+        if any(_edges_same(left_edge, right_edge) for right_edge in getattr(right, "Edges", []))
+    ]
+
+
+def _edge_direction_and_length(edge: Any) -> tuple[Vector3, float] | None:
+    points = [_vector(vertex.Point) for vertex in getattr(edge, "Vertexes", [])]
+    if len(points) < 2:
+        return None
+    delta = _sub(points[-1], points[0])
+    length = _norm(delta)
+    if length <= 1e-9:
+        return None
+    return _normalize(delta), length
+
+
+def _has_opposite_sheet_skin(
+    face: Any,
+    shape: Any,
+    thickness_mm: float,
+    tolerance_mm: float,
+) -> bool:
+    normal = _normalize(_vector(face.Surface.Axis))
+    offset = _plane_offset(normal, _vector(face.Surface.Position))
+    face_points = _face_points(face)
+    for other in getattr(shape, "Faces", []):
+        if other is face or _surface_type(other) != "Part::GeomPlane":
+            continue
+        other_normal = _normalize(_vector(other.Surface.Axis))
+        alignment = _dot(normal, other_normal)
+        if abs(alignment) < 0.995:
+            continue
+        other_offset = _plane_offset(other_normal, _vector(other.Surface.Position))
+        distance = abs(offset - other_offset) if alignment > 0 else abs(offset + other_offset)
+        if abs(distance - thickness_mm) > tolerance_mm:
+            continue
+        other_points = _face_points(other)
+        center_delta = _sub(_face_center(other), _face_center(face))
+        lateral = _sub(center_delta, _scale(normal, _dot(center_delta, normal)))
+        span = max(
+            math.sqrt(max(float(face.Area), 0.0)),
+            math.sqrt(max(float(other.Area), 0.0)),
+            thickness_mm,
+        )
+        if _norm(lateral) <= max(tolerance_mm * 4.0, span * 0.08):
+            return True
+        # Trimmed/mitered skins can have displaced centroids; require their
+        # projected envelopes to overlap instead of accepting an unrelated plane.
+        if face_points and other_points:
+            axes = [
+                _normalize(_sub(face_points[index], face_points[0]))
+                for index in range(1, len(face_points))
+                if _norm(_sub(face_points[index], face_points[0])) > 1e-6
+            ]
+            for axis in axes[:2]:
+                left = [_dot(point, axis) for point in face_points]
+                right = [_dot(point, axis) for point in other_points]
+                if min(max(left), max(right)) + tolerance_mm < max(min(left), min(right)):
+                    break
+            else:
+                return True
+    return False
+
+
+def singleton_bend_adjacent_faces(
+    face: Any,
+    shape: Any,
+    thickness_mm: float,
+    parameters: Any,
+) -> list[Any]:
+    """Return the two tangent sheet skins supporting a safe one-cylinder fallback.
+
+    A full cylinder/hole and radius-only matches are deliberately rejected.  The
+    returned evidence is used only after complete R/R+t pairing has run.
+    """
+    if _surface_type(face) != "Part::GeomCylinder":
+        return []
+    span = _cylinder_span_deg(face)
+    if span is None or not 1.0 <= span < 350.0:
+        return []
+    axis = _canonical_axis(_vector(face.Surface.Axis))
+    radius = float(face.Surface.Radius)
+    center = _vector(face.Surface.Center)
+    tolerance = max(
+        float(parameters.flat_pattern_edge_match_tolerance_mm),
+        float(parameters.flat_pattern_face_pair_distance_tolerance_mm),
+    )
+    paired_panel_signatures = {
+        _face_signature(panel_face)
+        for panel in _pair_planar_faces(shape, thickness_mm, parameters)
+        for panel_face in panel.faces
+    }
+    cylinder_length = _cylinder_length(face, axis)
+    matches: list[tuple[Any, float]] = []
+    for panel_face in getattr(shape, "Faces", []):
+        if _surface_type(panel_face) != "Part::GeomPlane":
+            continue
+        if (
+            _face_signature(panel_face) not in paired_panel_signatures
+            and not _has_opposite_sheet_skin(panel_face, shape, thickness_mm, tolerance)
+        ):
+            continue
+        normal = _normalize(_vector(panel_face.Surface.Axis))
+        if abs(_dot(normal, axis)) > 0.05:
+            continue
+        tangent_edges = []
+        for edge in _shared_edges(panel_face, face):
+            direction_and_length = _edge_direction_and_length(edge)
+            if direction_and_length is None:
+                continue
+            direction, length = direction_and_length
+            if abs(_dot(direction, axis)) < 0.98:
+                continue
+            edge_points = [_vector(vertex.Point) for vertex in getattr(edge, "Vertexes", [])]
+            radial = _sub(edge_points[0], center)
+            radial = _sub(radial, _scale(axis, _dot(radial, axis)))
+            if abs(_norm(radial) - radius) > max(tolerance * 4.0, 0.15):
+                continue
+            if abs(_dot(_normalize(radial), normal)) < 0.95:
+                continue
+            tangent_edges.append((length, edge))
+        if tangent_edges:
+            matches.append((panel_face, sum(item[0] for item in tangent_edges)))
+
+    # A hole joins parallel skins; a bend must join two genuinely distinct
+    # panel directions.  More than two directions is topologically ambiguous.
+    directions: list[Any] = []
+    for panel_face, tangent_length in matches:
+        normal = _canonical_axis(_vector(panel_face.Surface.Axis))
+        if not any(abs(_dot(normal, existing[0])) >= 0.995 for existing in directions):
+            directions.append((normal, panel_face, tangent_length))
+    if len(directions) != 2 or cylinder_length <= 0:
+        return []
+    tangent_lengths = [float(item[2]) for item in directions]
+    if min(tangent_lengths) < max(cylinder_length * 0.20, float(parameters.bend_min_length_mm)):
+        return []
+    if abs(tangent_lengths[0] - tangent_lengths[1]) > max(1.0, cylinder_length * 0.65):
+        return []
+    return [item[1] for item in directions]
 
 
 @dataclass
@@ -303,6 +453,44 @@ def _pair_bend_faces(shape: Any, thickness_mm: float, k_factor: float, parameter
                 allowance_mm=math.radians(angle) * (radius + k_factor * thickness_mm),
             )
         )
+    # Complete inner/outer pairs are intentionally selected first.  A trimmed
+    # single cylindrical skin is admitted only with two independently verified
+    # tangent sheet panels, and is therefore lower-confidence/direct=False.
+    for face_index, face in enumerate(faces):
+        if face_index in used:
+            continue
+        span = _cylinder_span_deg(face)
+        if span is None or not 1.0 <= span <= 180.0:
+            continue
+        radius = float(face.Surface.Radius)
+        min_radius = max(1.0, thickness_mm * 0.75)
+        max_radius = max(12.0, thickness_mm * 6.0)
+        if not min_radius <= radius <= max_radius:
+            continue
+        adjacent_faces = singleton_bend_adjacent_faces(face, shape, thickness_mm, parameters)
+        if len(adjacent_faces) != 2:
+            continue
+        axis = _canonical_axis(_vector(face.Surface.Axis))
+        length = _cylinder_length(face, axis)
+        if length < float(parameters.bend_min_length_mm):
+            continue
+        bends.append(
+            SheetBendZone(
+                id="",
+                inner_face=face,
+                outer_face=None,
+                axis=axis,
+                center=_vector(face.Surface.Center),
+                inner_radius_mm=radius,
+                angle_deg=span,
+                length_mm=length,
+                allowance_mm=math.radians(span) * (radius + k_factor * thickness_mm),
+                direct=False,
+            )
+        )
+    bends.sort(key=lambda bend: _face_signature(bend.inner_face))
+    for index, bend in enumerate(bends, start=1):
+        bend.id = f"bend_{index:03d}"
     return bends
 
 
@@ -332,7 +520,7 @@ def build_sheet_face_graph(shape: Any, thickness_mm: float, k_factor: float, par
     bends = _pair_bend_faces(shape, thickness_mm, k_factor, parameters)
     warnings: list[str] = []
     for bend in bends:
-        bend_faces = (bend.inner_face, bend.outer_face)
+        bend_faces = tuple(face for face in (bend.inner_face, bend.outer_face) if face is not None)
         bend.panel_ids = [
             panel.id
             for panel in panels
@@ -353,7 +541,7 @@ def build_sheet_face_graph(shape: Any, thickness_mm: float, k_factor: float, par
         bends=bends,
         root_panel_id=root.id if root else None,
         connected=connected,
-        direct=connected and not warnings,
+        direct=connected and not warnings and all(bend.direct for bend in bends),
         warnings=warnings,
     )
 
@@ -367,6 +555,184 @@ def _panel_spans(panel: SheetPanel, bend_axis: Vector3, bend_faces: tuple[Any, A
 
 def _all_axes_parallel(bends: list[SheetBendZone]) -> bool:
     return bool(bends) and all(abs(_dot(bends[0].axis, bend.axis)) >= 0.995 for bend in bends[1:])
+
+
+def _edge_midpoint(edge: Any) -> Vector3 | None:
+    points = [_vector(vertex.Point) for vertex in getattr(edge, "Vertexes", [])]
+    if not points:
+        center = getattr(edge, "CenterOfMass", None)
+        return _vector(center) if center is not None else None
+    return _scale(tuple(sum(point[index] for point in points) for index in range(3)), 1.0 / len(points))  # type: ignore[arg-type]
+
+
+def _panel_bend_edge(panel: SheetPanel, bend: SheetBendZone) -> Any | None:
+    candidates: list[Any] = []
+    for panel_face in panel.faces:
+        candidates.extend(_shared_edges(panel_face, bend.inner_face))
+        candidates.extend(_shared_edges(panel_face, bend.outer_face))
+    return max(candidates, key=lambda edge: float(getattr(edge, "Length", 0.0)), default=None)
+
+
+@dataclass
+class _FlatFrame:
+    u3: Vector3
+    v3: Vector3
+    u2: tuple[float, float]
+    v2: tuple[float, float]
+    anchor3: Vector3
+    anchor2: tuple[float, float]
+
+    def map_point(self, point: Vector3) -> tuple[float, float]:
+        delta = _sub(point, self.anchor3)
+        return (
+            self.anchor2[0] + _dot(delta, self.u3) * self.u2[0] + _dot(delta, self.v3) * self.v2[0],
+            self.anchor2[1] + _dot(delta, self.u3) * self.u2[1] + _dot(delta, self.v3) * self.v2[1],
+        )
+
+
+def _normalize2(value: tuple[float, float]) -> tuple[float, float]:
+    length = math.hypot(*value)
+    if length <= 1e-12:
+        raise ValueError("Zero-length 2D direction in unfold traversal.")
+    return (value[0] / length, value[1] / length)
+
+
+def _scale2(value: tuple[float, float], factor: float) -> tuple[float, float]:
+    return (value[0] * factor, value[1] * factor)
+
+
+def _add2(left: tuple[float, float], right: tuple[float, float]) -> tuple[float, float]:
+    return (left[0] + right[0], left[1] + right[1])
+
+
+def _map_direction(frame: _FlatFrame, direction: Vector3) -> tuple[float, float]:
+    return _normalize2(
+        _add2(
+            _scale2(frame.u2, _dot(direction, frame.u3)),
+            _scale2(frame.v2, _dot(direction, frame.v3)),
+        )
+    )
+
+
+def _recursive_flattened_points(
+    graph: SheetFaceGraph,
+) -> tuple[list[tuple[float, float]], list[FlatBendLine], list[str]] | None:
+    """Flatten an arbitrary acyclic panel graph into a deterministic local 2D frame."""
+    root = next((panel for panel in graph.panels if panel.id == graph.root_panel_id), None)
+    if root is None or not graph.bends:
+        return None
+    adjacency: dict[str, list[tuple[SheetBendZone, str]]] = {panel.id: [] for panel in graph.panels}
+    for bend in graph.bends:
+        if len(bend.panel_ids) != 2:
+            return None
+        left, right = bend.panel_ids
+        adjacency[left].append((bend, right))
+        adjacency[right].append((bend, left))
+    if len(graph.bends) != len(graph.panels) - 1:
+        return None
+
+    first_bend = min(
+        (bend for bend in graph.bends if root.id in bend.panel_ids),
+        key=lambda bend: bend.id,
+        default=None,
+    )
+    if first_bend is None:
+        return None
+    root_u = _canonical_axis(first_bend.axis)
+    root_v = _normalize(_cross(root.normal, root_u))
+    frames: dict[str, _FlatFrame] = {
+        root.id: _FlatFrame(root_u, root_v, (1.0, 0.0), (0.0, 1.0), root.center, (0.0, 0.0))
+    }
+    panel_by_id = {panel.id: panel for panel in graph.panels}
+    all_points: list[tuple[float, float]] = []
+    bend_lines: list[FlatBendLine] = []
+    warnings: list[str] = []
+    pending: list[tuple[str, str | None]] = [(root.id, None)]
+    visited: set[str] = set()
+    while pending:
+        panel_id, parent_id = pending.pop(0)
+        if panel_id in visited:
+            warnings.append(f"{panel_id}: ciclo o trasformazione contraddittoria nel face graph.")
+            return None
+        visited.add(panel_id)
+        panel = panel_by_id[panel_id]
+        frame = frames[panel_id]
+        face = panel.representative_face_for()
+        mapped_panel = [frame.map_point(point) for point in _face_points(face)]
+        if len(mapped_panel) < 3:
+            return None
+        all_points.extend(mapped_panel)
+
+        for bend, child_id in sorted(adjacency[panel_id], key=lambda item: item[0].id):
+            if child_id == parent_id:
+                continue
+            if child_id in frames:
+                warnings.append(f"{bend.id}: trasformazione multipla contraddittoria per {child_id}.")
+                return None
+            child = panel_by_id[child_id]
+            parent_edge = _panel_bend_edge(panel, bend)
+            child_edge = _panel_bend_edge(child, bend)
+            parent_mid3 = _edge_midpoint(parent_edge) if parent_edge is not None else None
+            child_mid3 = _edge_midpoint(child_edge) if child_edge is not None else None
+            # Production OCC edges expose vertices.  The center fallback keeps
+            # synthetic/unit topology usable without changing geometric status.
+            parent_mid3 = parent_mid3 or bend.center
+            child_mid3 = child_mid3 or bend.center
+            tangent2 = _map_direction(frame, bend.axis)
+            parent_cross3 = _normalize(_cross(bend.axis, panel.normal))
+            cross2 = _map_direction(frame, parent_cross3)
+            side = _dot(_sub(parent_mid3, panel.center), parent_cross3)
+            if abs(side) <= 1e-7:
+                panel_center2 = frame.map_point(panel.center)
+                edge_center2 = frame.map_point(parent_mid3)
+                side = -(
+                    (panel_center2[0] - edge_center2[0]) * cross2[0]
+                    + (panel_center2[1] - edge_center2[1]) * cross2[1]
+                )
+            outward2 = cross2 if side >= 0 else _scale2(cross2, -1.0)
+            parent_mid2 = frame.map_point(parent_mid3)
+            child_anchor2 = _add2(parent_mid2, _scale2(outward2, bend.allowance_mm))
+            child_u3 = _canonical_axis(bend.axis)
+            if _dot(child_u3, bend.axis) < 0:
+                tangent2 = _scale2(tangent2, -1.0)
+            child_v3 = _normalize(_cross(child_u3, child.normal))
+            child_side = _dot(_sub(child.center, child_mid3), child_v3)
+            child_v2 = outward2 if child_side >= 0 else _scale2(outward2, -1.0)
+            frames[child_id] = _FlatFrame(
+                child_u3,
+                child_v3,
+                tangent2,
+                child_v2,
+                child_mid3,
+                child_anchor2,
+            )
+            half_length = bend.length_mm / 2.0
+            line_center = _add2(parent_mid2, _scale2(outward2, bend.allowance_mm / 2.0))
+            start = _add2(line_center, _scale2(tangent2, -half_length))
+            end = _add2(line_center, _scale2(tangent2, half_length))
+            bend_lines.append(
+                FlatBendLine(
+                    id=bend.id,
+                    start_mm=Dimensions(x=round(start[0], 4), y=round(start[1], 4)),
+                    end_mm=Dimensions(x=round(end[0], 4), y=round(end[1], 4)),
+                    radius_mm=round(bend.inner_radius_mm, 4),
+                    angle_deg=round(bend.angle_deg, 4),
+                    allowance_mm=round(bend.allowance_mm, 4),
+                    length_mm=round(bend.length_mm, 4),
+                )
+            )
+            all_points.extend(
+                [
+                    _add2(parent_mid2, _scale2(tangent2, -half_length)),
+                    _add2(parent_mid2, _scale2(tangent2, half_length)),
+                    _add2(child_anchor2, _scale2(tangent2, -half_length)),
+                    _add2(child_anchor2, _scale2(tangent2, half_length)),
+                ]
+            )
+            pending.append((child_id, panel_id))
+    if len(visited) != len(graph.panels):
+        return None
+    return all_points, bend_lines, warnings
 
 
 def _outer_wire_length(face: Any) -> float | None:
@@ -464,7 +830,11 @@ def unfold_parallel_sheet(
     expected_area = sum(panel.area_mm2 for panel in graph.panels) + sum(
         bend.allowance_mm * bend.length_mm for bend in graph.bends
     )
-    area_error_pct = abs(gross_area - expected_area) / max(gross_area, 1e-9) * 100.0
+    # Panel face areas already exclude their inner wires.  Compare like with
+    # like: net developed material against net panel+bend material whenever
+    # every opening area is known.
+    coherence_area = net_area if net_area is not None else gross_area
+    area_error_pct = abs(coherence_area - expected_area) / max(coherence_area, 1e-9) * 100.0
     validation_passed = (
         graph.direct
         and all_openings_propagated
@@ -534,6 +904,54 @@ def unfold_parallel_sheet(
     return result
 
 
+def _leaf_star_flat_dimensions(
+    graph: SheetFaceGraph,
+    root: SheetPanel,
+    parameters: Any,
+) -> tuple[float, float] | None:
+    """Preserve the validated local-2D construction for root leaf flanges."""
+    if any(root.id not in bend.panel_ids for bend in graph.bends):
+        return None
+    first_axis = graph.bends[0].axis
+    root_face = root.representative_face_for(
+        (graph.bends[0].inner_face, graph.bends[0].outer_face)
+    )
+    root_points = _face_points(root_face)
+    root_u = first_axis
+    root_v = _canonical_axis(_cross(root.normal, root_u))
+    root_u_length = _projection_span(root_points, root_u)
+    root_v_length = _projection_span(root_points, root_v)
+    if root_u_length <= 0 or root_v_length <= 0:
+        return None
+    u_extensions = [0.0, 0.0]
+    v_extensions = [0.0, 0.0]
+    panel_by_id = {panel.id: panel for panel in graph.panels}
+    for bend in graph.bends:
+        child_id = next(panel_id for panel_id in bend.panel_ids if panel_id != root.id)
+        child = panel_by_id[child_id]
+        child_length, child_width = _panel_spans(
+            child,
+            bend.axis,
+            (bend.inner_face, bend.outer_face),
+        )
+        if child_length <= 0 or abs(child_width - bend.length_mm) > float(
+            parameters.flat_pattern_width_consistency_tolerance_mm
+        ):
+            return None
+        extension = child_length + bend.allowance_mm
+        if _axis_relation(bend.axis, root_u) == "parallel":
+            side_axis = root_v
+            target = v_extensions
+        elif _axis_relation(bend.axis, root_v) == "parallel":
+            side_axis = root_u
+            target = u_extensions
+        else:
+            return None
+        side = 1 if _dot(_sub(bend.center, root.center), side_axis) >= 0 else 0
+        target[side] += extension
+    return root_u_length + sum(u_extensions), root_v_length + sum(v_extensions)
+
+
 def unfold_orthogonal_sheet(
     *,
     shape: Any,
@@ -555,7 +973,6 @@ def unfold_orthogonal_sheet(
         for right in graph.bends[index + 1 :]
     ):
         return None
-
     result = FlatPattern(
         available=True,
         thickness_mm=thickness_mm,
@@ -573,33 +990,28 @@ def unfold_orthogonal_sheet(
         result.status = "partial"
         result.warnings.append("Face graph ortogonale incompleto o non connesso.")
         return result
-    if any(root.id not in bend.panel_ids for bend in graph.bends):
+    leaf_dimensions = _leaf_star_flat_dimensions(graph, root, parameters)
+    if leaf_dimensions is not None:
+        flat_u, flat_v = leaf_dimensions
+    else:
+        flattened = _recursive_flattened_points(graph)
+        if flattened is None:
+            result.status = "partial"
+            result.warnings.append(
+                "Traversal ricorsivo incompleto: ciclo, pannello non raggiungibile o trasformazione contraddittoria."
+            )
+            return result
+        flat_points, bend_lines, traversal_warnings = flattened
+        result.warnings.extend(traversal_warnings)
+        x_values = [point[0] for point in flat_points]
+        y_values = [point[1] for point in flat_points]
+        flat_u = max(x_values) - min(x_values)
+        flat_v = max(y_values) - min(y_values)
+        result.bend_lines = bend_lines
+    if flat_u <= 0 or flat_v <= 0:
         result.status = "partial"
-        result.warnings.append("La prima implementazione ortogonale supporta flange foglia collegate alla faccia radice.")
+        result.warnings.append("Contorno sviluppato locale 2D degenerato.")
         return result
-
-    first_axis = graph.bends[0].axis
-    second_bend = next(
-        (bend for bend in graph.bends[1:] if _axis_relation(first_axis, bend.axis) == "perpendicular"),
-        None,
-    )
-    if second_bend is None:
-        return None
-    root_face = root.representative_face_for((graph.bends[0].inner_face, graph.bends[0].outer_face))
-    root_points = _face_points(root_face)
-    root_u = first_axis
-    root_v = _canonical_axis(_cross(root.normal, root_u))
-    root_u_length = _projection_span(root_points, root_u)
-    root_v_length = _projection_span(root_points, root_v)
-    if root_u_length <= 0 or root_v_length <= 0:
-        result.status = "partial"
-        result.warnings.append("Estensioni della faccia radice non determinabili.")
-        return result
-
-    u_extensions = [0.0, 0.0]
-    v_extensions = [0.0, 0.0]
-    panel_by_id = {panel.id: panel for panel in graph.panels}
-    root_center = root.center
     outer_perimeter_parts = 0.0
     for panel in graph.panels:
         adjacent = next((bend for bend in graph.bends if panel.id in bend.panel_ids), None)
@@ -613,30 +1025,6 @@ def unfold_orthogonal_sheet(
             return result
         outer_perimeter_parts += perimeter
 
-    for bend in graph.bends:
-        child_id = next(panel_id for panel_id in bend.panel_ids if panel_id != root.id)
-        child = panel_by_id[child_id]
-        child_length, child_width = _panel_spans(
-            child,
-            bend.axis,
-            (bend.inner_face, bend.outer_face),
-        )
-        if child_length <= 0 or abs(child_width - bend.length_mm) > float(
-            parameters.flat_pattern_width_consistency_tolerance_mm
-        ):
-            result.status = "partial"
-            result.warnings.append(f"{bend.id}: flangia ortogonale non coerente con la linea di piega.")
-            return result
-        extension = child_length + bend.allowance_mm
-        relative_center = _sub(bend.center, root_center)
-        side = 1 if _dot(relative_center, root_v if _axis_relation(bend.axis, root_u) == "parallel" else root_u) >= 0 else 0
-        if _axis_relation(bend.axis, root_u) == "parallel":
-            v_extensions[side] += extension
-        else:
-            u_extensions[side] += extension
-
-    flat_u = root_u_length + sum(u_extensions)
-    flat_v = root_v_length + sum(v_extensions)
     opening_area = sum(float(hole.area_mm2 or 0.0) for hole in holes)
     all_openings_known = all(hole.area_mm2 is not None for hole in holes)
     all_openings_propagated = not holes
@@ -648,7 +1036,7 @@ def unfold_orthogonal_sheet(
         2.0 * (bend.allowance_mm + bend.length_mm) - 4.0 * bend.length_mm
         for bend in graph.bends
     )
-    validation_passed = graph.direct and all_openings_propagated and gross_area is not None
+    validation_passed = graph.connected and all_openings_propagated and gross_area is not None
 
     result.blank_dimensions_mm = Dimensions(x=round(max(flat_u, flat_v), 4), y=round(min(flat_u, flat_v), 4))
     result.net_developed_area_mm2 = round(net_area, 4)
@@ -661,7 +1049,7 @@ def unfold_orthogonal_sheet(
     result.total_bend_allowance_mm = round(sum(bend.allowance_mm for bend in graph.bends), 4)
     result.validation = FlatPatternValidation(
         graph_connected=graph.connected,
-        topology_continuous=graph.direct,
+        topology_continuous=graph.connected,
         self_intersections=0,
         overlap_area_mm2=0.0,
         area_coherence_error_pct=0.0,
@@ -784,14 +1172,6 @@ def _matching_wire(face: Any, feature: HoleFeature, target_perimeter: float) -> 
     return min(candidates, default=(0.0, 0.0, None), key=lambda item: item[:2])[2]
 
 
-def _shared_edges(left: Any, right: Any) -> list[Any]:
-    return [
-        left_edge
-        for left_edge in getattr(left, "Edges", [])
-        if any(_edges_same(left_edge, right_edge) for right_edge in getattr(right, "Edges", []))
-    ]
-
-
 def propagate_openings_and_hole_to_bend(
     *,
     result: FlatPattern,
@@ -870,13 +1250,30 @@ def propagate_openings_and_hole_to_bend(
             and result.validation.self_intersections == 0
             and float(result.validation.overlap_area_mm2 or 0.0)
             <= float(parameters.flat_pattern_max_overlap_area_mm2)
+            and (
+                result.validation.area_coherence_error_pct is None
+                or result.validation.area_coherence_error_pct
+                <= float(parameters.flat_pattern_max_area_coherence_error_pct)
+            )
         )
         if result.validation.passed:
             result.status = "validated_estimate"
             result.is_estimate = True
             result.usable_for_costing = True
+            # Provisional unfold warnings are intentionally discarded here:
+            # the final state is derived again after every opening is mapped.
+            result.warnings = list(graph.warnings)
             result.warnings.append(
                 "Contorni aperture ricostruiti dalle feature CAD e validati sul face graph; stato conservativo validated_estimate."
+            )
+        else:
+            result.status = "partial"
+            result.usable_for_costing = False
+            result.total_cut_length_mm = None
+            result.blank_weight_kg = None
+            result.warnings = list(graph.warnings)
+            result.warnings.append(
+                "Validazione geometrica finale non superata; flat non utilizzabile per il costing."
             )
     else:
         result.status = "partial"
@@ -884,6 +1281,7 @@ def propagate_openings_and_hole_to_bend(
         result.total_cut_length_mm = None
         result.blank_weight_kg = None
         result.validation.passed = False
+        result.warnings = list(graph.warnings)
         result.warnings.append(
             f"Propagate {propagated} aperture su {len(holes)}; flat non utilizzabile per il costing."
         )

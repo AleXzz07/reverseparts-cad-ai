@@ -865,11 +865,20 @@ def generate_quote_pdf(
                 ("Validazione geometrica", "superata" if flat_validation.get("passed") else "non superata"),
                 ("Continuita topologica", "si" if flat_validation.get("topology_continuous") else "no"),
                 ("Self-intersection", flat_validation.get("self_intersections", 0)),
-                ("Errore area", _value(flat_validation.get("area_coherence_error_pct"), "%")),
-                ("Errore perimetro", _value(flat_validation.get("perimeter_coherence_error_pct"), "%")),
+                ("Errore coerenza area interna", _value(flat_validation.get("area_coherence_error_pct"), "%")),
+                ("Errore coerenza perimetro interno", _value(flat_validation.get("perimeter_coherence_error_pct"), "%")),
                 ("Aperture propagate", flat_pattern.get("propagated_opening_count", 0)),
                 ("Area diagnostica volume/spessore", _value(flat_pattern.get("diagnostic_volume_area_mm2"), "mm2")),
+                ("Differenza diagnostica volume/spessore", _value(flat_pattern.get("diagnostic_volume_area_error_pct"), "%")),
                 ("Confidence", flat_pattern.get("confidence", "low")),
+                (
+                    "Legenda Fattore K",
+                    "coefficiente che indica la posizione dell'asse neutro nello spessore della lamiera durante la piega. Influenza la bend allowance e quindi la lunghezza sviluppata. Il valore dipende da materiale, spessore, raggio e processo di piegatura.",
+                ),
+                (
+                    "Valore K corrente",
+                    f"K = {str(flat_pattern.get('k_factor', 0.40)).replace('.', ',')} {flat_pattern.get('k_factor_standard', 'ANSI')} - valore usato nel calcolo corrente, non costante universale.",
+                ),
                 (
                     "Nota",
                     "Exact significa verificato rispetto al modello geometrico e al K-factor impostato; non e una garanzia assoluta di produzione.",

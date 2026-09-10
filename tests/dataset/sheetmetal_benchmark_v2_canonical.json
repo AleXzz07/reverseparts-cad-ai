@@ -1,0 +1,1306 @@
+{
+  "dataset": "REVERSEPARTS CAD AI - SheetMetal Benchmark v2.3 canonical",
+  "version": "2.3-canonical",
+  "units": "mm",
+  "blind_test_protocol": {
+    "step_1": "Generate locally in FreeCAD SheetMetal",
+    "step_2": "Upload ONLY folded SM06-SM13 STEP files to current REVERSEPARTS",
+    "step_3": "Generate PDFs before showing ground truth to Work",
+    "step_4": "Compare PDFs with FreeCAD ground truth and UNFOLD STEP files",
+    "step_5": "Only after comparison provide failures to Work"
+  },
+  "unfold_reference": {
+    "engine": "FreeCAD SheetMetal Workbench Unfold",
+    "k_factor": 0.4,
+    "k_factor_standard": "ANSI"
+  },
+  "pending_reference_cases": [],
+  "pieces": [
+    {
+      "id": "SM06_1_piega_90_fori_base_flangia",
+      "fcstd": "SM06_1_piega_90_fori_base_flangia.FCStd",
+      "folded_step": "SM06_1_piega_90_fori_base_flangia.STEP",
+      "unfold_step": "SM06_1_piega_90_fori_base_flangia_UNFOLD.STEP",
+      "design_truth": {
+        "family": "blind_1_bend_holes_base_flange",
+        "sheet_thickness_mm": 2.0,
+        "bend_count": 1,
+        "bend_angles_deg": [
+          90.0
+        ],
+        "inner_bend_radii_mm": [
+          2.0
+        ],
+        "feature_intent": "2 circular holes on one panel + 1 on adjacent flange"
+      },
+      "freecad_folded": {
+        "bounding_box_mm": {
+          "x": 94.0,
+          "y": 65.0,
+          "z": 36.0
+        },
+        "volume_mm3": 16215.0,
+        "surface_area_mm2": 17120.0796,
+        "solid_count": 1,
+        "face_count": 17,
+        "edge_count": 37,
+        "vertex_count": 22
+      },
+      "freecad_unfold_ground_truth": {
+        "status": "success",
+        "root_face": "Face13",
+        "k_factor": 0.4,
+        "k_factor_standard": "ANSI",
+        "blank_dimensions_mm": {
+          "length": 126.3982,
+          "width": 65.0
+        },
+        "unfold_bbox_xyz_mm": {
+          "x": 2.0,
+          "y": 65.0,
+          "z": 126.3982
+        },
+        "thickness_bbox_mm": 2.0,
+        "material_area_from_unfold_volume_mm2": 8087.0796,
+        "largest_planar_outer_perimeter_mm": 382.7965,
+        "unfold_volume_mm3": 16174.1593,
+        "material_area_from_folded_volume_mm2": 8107.5,
+        "area_error_pct_vs_folded_volume_over_t": 0.2519,
+        "all_trials": [
+          {
+            "root_face": "Face4",
+            "status": "success",
+            "material_area_mm2": 8087.0796,
+            "area_error_pct_vs_folded_volume_over_t": 0.2519,
+            "object_name": "TrialUnfold_01"
+          },
+          {
+            "root_face": "Face5",
+            "status": "success",
+            "material_area_mm2": 8087.0796,
+            "area_error_pct_vs_folded_volume_over_t": 0.2519,
+            "object_name": "TrialUnfold_02"
+          },
+          {
+            "root_face": "Face13",
+            "status": "success",
+            "material_area_mm2": 8087.0796,
+            "area_error_pct_vs_folded_volume_over_t": 0.2519,
+            "object_name": "TrialUnfold_03"
+          },
+          {
+            "root_face": "Face14",
+            "status": "success",
+            "material_area_mm2": 8087.0796,
+            "area_error_pct_vs_folded_volume_over_t": 0.2519,
+            "object_name": "TrialUnfold_04"
+          },
+          {
+            "root_face": "Face1",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face6",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face2",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face15",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face9",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face16",
+            "status": "failed"
+          }
+        ]
+      }
+    },
+    {
+      "id": "SM07_1_piega_60_asola_vicina_piega",
+      "fcstd": "SM07_1_piega_60_asola_vicina_piega.FCStd",
+      "folded_step": "SM07_1_piega_60_asola_vicina_piega.STEP",
+      "unfold_step": "SM07_1_piega_60_asola_vicina_piega_UNFOLD.STEP",
+      "design_truth": {
+        "family": "sheetmetal_blind_1_bend_60_slot_near_bend",
+        "sheet_thickness_mm": 2.0,
+        "bend_count": 1,
+        "bend_angles_deg": [
+          60.0
+        ],
+        "inner_bend_radii_mm": [
+          3.0
+        ],
+        "slot": {
+          "total_length_mm": 24.0,
+          "width_mm": 8.0,
+          "center_xy_mm": [
+            68.0,
+            30.0
+          ]
+        },
+        "note": "Unfold FreeCAD eseguito sul modello SheetMetal; slot sul root/base panel riapplicata identicamente al flat."
+      },
+      "freecad_folded": {
+        "bounding_box_mm": {
+          "x": 108.3301,
+          "y": 60.0,
+          "z": 36.409
+        },
+        "volume_mm3": 14906.1239,
+        "surface_area_mm2": 15769.1445,
+        "solid_count": 1,
+        "face_count": 19,
+        "edge_count": 43,
+        "vertex_count": 26
+      },
+      "freecad_unfold_ground_truth": {
+        "status": "success",
+        "root_face": "Face4",
+        "k_factor": 0.4,
+        "k_factor_standard": "ANSI",
+        "blank_dimensions_mm": {
+          "length": 126.9794,
+          "width": 60.0
+        },
+        "unfold_bbox_xyz_mm": {
+          "x": 126.9794,
+          "y": 60.0,
+          "z": 2.0
+        },
+        "material_area_from_unfold_volume_mm2": 7440.4956,
+        "largest_planar_outer_perimeter_mm": 373.9587,
+        "unfold_volume_mm3": 14880.9911,
+        "material_area_from_sheetmetal_source_volume_mm2": 7631.3274,
+        "area_error_pct_before_feature_postprocess": 0.1647,
+        "all_trials": [
+          {
+            "root_face": "Face4",
+            "status": "success",
+            "area_mm2": 7618.761,
+            "area_error_pct": 0.1647
+          },
+          {
+            "root_face": "Face5",
+            "status": "success",
+            "area_mm2": 7618.761,
+            "area_error_pct": 0.1647
+          },
+          {
+            "root_face": "Face11",
+            "status": "success",
+            "area_mm2": 7618.761,
+            "area_error_pct": 0.1647
+          },
+          {
+            "root_face": "Face12",
+            "status": "success",
+            "area_mm2": 7618.761,
+            "area_error_pct": 0.1647
+          },
+          {
+            "root_face": "Face1",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face6",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face2",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face13",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face9",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face14",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face3",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face10",
+            "status": "failed"
+          }
+        ]
+      }
+    },
+    {
+      "id": "SM08_3_pieghe_assi_misti",
+      "fcstd": "SM08_3_pieghe_assi_misti.FCStd",
+      "folded_step": "SM08_3_pieghe_assi_misti.STEP",
+      "unfold_step": "SM08_3_pieghe_assi_misti_UNFOLD.STEP",
+      "design_truth": {
+        "family": "blind_3_real_bends_mixed_axes",
+        "sheet_thickness_mm": 2.0,
+        "bend_count": 3,
+        "bend_angles_deg": [
+          90.0,
+          90.0,
+          90.0
+        ],
+        "inner_bend_radii_mm": [
+          2.0,
+          2.0,
+          3.0
+        ],
+        "bend_axes_relation": "Y / X / Y",
+        "selected_bend_edge_lengths_mm": [
+          75.0,
+          100.0,
+          75.0
+        ],
+        "construction_note": "Tre pieghe su veri bordi lunghi del pannello root; nessun bordo di spessore."
+      },
+      "freecad_folded": {
+        "bounding_box_mm": {
+          "x": 109.0,
+          "y": 79.0,
+          "z": 32.0
+        },
+        "volume_mm3": 29591.8139,
+        "surface_area_mm2": 30642.6458,
+        "solid_count": 1,
+        "face_count": 30,
+        "edge_count": 60,
+        "vertex_count": 32
+      },
+      "freecad_unfold_ground_truth": {
+        "status": "success",
+        "root_face": "Face15",
+        "k_factor": 0.4,
+        "k_factor_standard": "ANSI",
+        "blank_dimensions_local_2d_mm": {
+          "length": 158.3673,
+          "width": 103.3982
+        },
+        "material_area_from_unfold_volume_mm2": 14717.3672,
+        "largest_planar_outer_perimeter_mm": 523.531,
+        "unfold_volume_mm3": 29434.7343,
+        "diagnostic_material_area_from_folded_volume_mm2": 14795.907,
+        "diagnostic_area_error_pct": 0.5308,
+        "all_trials": [
+          {
+            "root_face": "Face4",
+            "status": "success",
+            "material_area_mm2": 14717.3672,
+            "diagnostic_area_error_pct": 0.5308
+          },
+          {
+            "root_face": "Face5",
+            "status": "success",
+            "material_area_mm2": 14717.3672,
+            "diagnostic_area_error_pct": 0.5308
+          },
+          {
+            "root_face": "Face24",
+            "status": "success",
+            "material_area_mm2": 14717.3672,
+            "diagnostic_area_error_pct": 0.5308
+          },
+          {
+            "root_face": "Face25",
+            "status": "success",
+            "material_area_mm2": 14717.3672,
+            "diagnostic_area_error_pct": 0.5308
+          },
+          {
+            "root_face": "Face19",
+            "status": "success",
+            "material_area_mm2": 14717.3672,
+            "diagnostic_area_error_pct": 0.5308
+          },
+          {
+            "root_face": "Face20",
+            "status": "success",
+            "material_area_mm2": 14717.3672,
+            "diagnostic_area_error_pct": 0.5308
+          },
+          {
+            "root_face": "Face15",
+            "status": "success",
+            "material_area_mm2": 14717.3672,
+            "diagnostic_area_error_pct": 0.5308
+          },
+          {
+            "root_face": "Face16",
+            "status": "success",
+            "material_area_mm2": 14717.3672,
+            "diagnostic_area_error_pct": 0.5308
+          },
+          {
+            "root_face": "Face1",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face30",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face17",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face21",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face11",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face27",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face28",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face29",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face8",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face26",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face14",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face2",
+            "status": "failed"
+          }
+        ],
+        "blank_dimensions_mm": {
+          "length": 158.3673,
+          "width": 103.3982
+        }
+      }
+    },
+    {
+      "id": "SM09_2_pieghe_60_90_raggi_diversi",
+      "fcstd": "SM09_2_pieghe_60_90_raggi_diversi.FCStd",
+      "folded_step": "SM09_2_pieghe_60_90_raggi_diversi.STEP",
+      "unfold_step": "SM09_2_pieghe_60_90_raggi_diversi_UNFOLD.STEP",
+      "design_truth": {
+        "family": "blind_mixed_angle_mixed_radius",
+        "sheet_thickness_mm": 2.5,
+        "bend_count": 2,
+        "bend_angles_deg": [
+          60.0,
+          90.0
+        ],
+        "inner_bend_radii_mm": [
+          2.0,
+          4.0
+        ],
+        "bend_axes_relation": "parallel"
+      },
+      "freecad_folded": {
+        "bounding_box_mm": {
+          "x": 117.2498,
+          "y": 68.0,
+          "z": 54.4401
+        },
+        "volume_mm3": 28500.5124,
+        "surface_area_mm2": 23978.6603,
+        "solid_count": 1,
+        "face_count": 22,
+        "edge_count": 44,
+        "vertex_count": 24
+      },
+      "freecad_unfold_ground_truth": {
+        "status": "success",
+        "root_face": "Face12",
+        "k_factor": 0.4,
+        "k_factor_standard": "ANSI",
+        "blank_dimensions_mm": {
+          "length": 145.8724,
+          "width": 85.6629
+        },
+        "blank_dimensions_local_2d_mm": {
+          "length": 166.9956,
+          "width": 68.0
+        },
+        "unfold_bbox_xyz_mm": {
+          "x": 85.6629,
+          "y": 68.0,
+          "z": 145.8724
+        },
+        "thickness_bbox_mm": 68.0,
+        "material_area_from_unfold_volume_mm2": 11355.6991,
+        "largest_planar_outer_perimeter_mm": 469.9911,
+        "unfold_volume_mm3": 28389.2476,
+        "material_area_from_folded_volume_mm2": 11400.2049,
+        "area_error_pct_vs_folded_volume_over_t": 0.3904,
+        "all_trials": [
+          {
+            "root_face": "Face4",
+            "status": "success",
+            "material_area_mm2": 11355.6991,
+            "area_error_pct_vs_folded_volume_over_t": 0.3904,
+            "object_name": "TrialUnfold_01"
+          },
+          {
+            "root_face": "Face5",
+            "status": "success",
+            "material_area_mm2": 11355.6991,
+            "area_error_pct_vs_folded_volume_over_t": 0.3904,
+            "object_name": "TrialUnfold_02"
+          },
+          {
+            "root_face": "Face11",
+            "status": "success",
+            "material_area_mm2": 11355.6991,
+            "area_error_pct_vs_folded_volume_over_t": 0.3904,
+            "object_name": "TrialUnfold_03"
+          },
+          {
+            "root_face": "Face12",
+            "status": "success",
+            "material_area_mm2": 11355.6991,
+            "area_error_pct_vs_folded_volume_over_t": 0.3904,
+            "object_name": "TrialUnfold_04"
+          },
+          {
+            "root_face": "Face19",
+            "status": "success",
+            "material_area_mm2": 11355.6991,
+            "area_error_pct_vs_folded_volume_over_t": 0.3904,
+            "object_name": "TrialUnfold_05"
+          },
+          {
+            "root_face": "Face20",
+            "status": "success",
+            "material_area_mm2": 11355.6991,
+            "area_error_pct_vs_folded_volume_over_t": 0.3904,
+            "object_name": "TrialUnfold_06"
+          },
+          {
+            "root_face": "Face1",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face6",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face2",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face21",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face9",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face14",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face17",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face22",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face18",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face13",
+            "status": "failed"
+          }
+        ]
+      }
+    },
+    {
+      "id": "SM10_irregolare_2_pieghe",
+      "fcstd": "SM10_irregolare_2_pieghe.FCStd",
+      "folded_step": "SM10_irregolare_2_pieghe.STEP",
+      "unfold_step": "SM10_irregolare_2_pieghe_UNFOLD.STEP",
+      "design_truth": {
+        "family": "blind_irregular_outline_2_real_bends",
+        "sheet_thickness_mm": 2.0,
+        "bend_count": 2,
+        "bend_angles_deg": [
+          90.0,
+          75.0
+        ],
+        "inner_bend_radii_mm": [
+          2.0,
+          3.0
+        ],
+        "bend_axes_relation": "perpendicular",
+        "outer_profile": "irregular polygon",
+        "circular_holes": [
+          {
+            "diameter_mm": 10.0
+          }
+        ],
+        "selected_bend_edge_lengths_mm": [
+          55.0,
+          68.0
+        ],
+        "construction_note": "Entrambe le pieghe sono applicate a veri bordi del pannello root."
+      },
+      "freecad_folded": {
+        "bounding_box_mm": {
+          "x": 109.0,
+          "y": 81.4884,
+          "z": 28.0
+        },
+        "volume_mm3": 20592.3775,
+        "surface_area_mm2": 21527.6547,
+        "solid_count": 1,
+        "face_count": 25,
+        "edge_count": 53,
+        "vertex_count": 30
+      },
+      "freecad_unfold_ground_truth": {
+        "status": "success",
+        "root_face": "Face20",
+        "k_factor": 0.4,
+        "k_factor_standard": "ANSI",
+        "blank_dimensions_local_2d_mm": {
+          "length": 133.3982,
+          "width": 94.9742
+        },
+        "material_area_from_unfold_volume_mm2": 10261.1076,
+        "largest_planar_outer_perimeter_mm": 435.0707,
+        "unfold_volume_mm3": 20522.2153,
+        "diagnostic_material_area_from_folded_volume_mm2": 10296.1887,
+        "diagnostic_area_error_pct": 0.3407,
+        "all_trials": [
+          {
+            "root_face": "Face4",
+            "status": "success",
+            "material_area_mm2": 10261.1076,
+            "diagnostic_area_error_pct": 0.3407
+          },
+          {
+            "root_face": "Face5",
+            "status": "success",
+            "material_area_mm2": 10261.1076,
+            "diagnostic_area_error_pct": 0.3407
+          },
+          {
+            "root_face": "Face16",
+            "status": "success",
+            "material_area_mm2": 10261.1076,
+            "diagnostic_area_error_pct": 0.3407
+          },
+          {
+            "root_face": "Face17",
+            "status": "success",
+            "material_area_mm2": 10261.1076,
+            "diagnostic_area_error_pct": 0.3407
+          },
+          {
+            "root_face": "Face20",
+            "status": "success",
+            "material_area_mm2": 10261.1076,
+            "diagnostic_area_error_pct": 0.3407
+          },
+          {
+            "root_face": "Face21",
+            "status": "success",
+            "material_area_mm2": 10261.1076,
+            "diagnostic_area_error_pct": 0.3407
+          },
+          {
+            "root_face": "Face1",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face25",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face18",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face2",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face6",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face10",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face9",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face23",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face22",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face24",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face14",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face19",
+            "status": "failed"
+          }
+        ],
+        "blank_dimensions_mm": {
+          "length": 133.3982,
+          "width": 94.9742
+        }
+      }
+    },
+    {
+      "id": "SM11_miter_relief",
+      "fcstd": "SM11_miter_relief.FCStd",
+      "folded_step": "SM11_miter_relief.STEP",
+      "unfold_step": "SM11_miter_relief_UNFOLD.STEP",
+      "design_truth": {
+        "family": "blind_adjacent_real_flanges_automiter",
+        "sheet_thickness_mm": 2.0,
+        "bend_count": 2,
+        "bend_angles_deg": [
+          90.0,
+          90.0
+        ],
+        "inner_bend_radii_mm": [
+          2.0,
+          2.0
+        ],
+        "bend_axes_relation": "perpendicular",
+        "auto_miter": true,
+        "relief_opening": {
+          "type": "circular",
+          "diameter_mm": 6.0,
+          "center_xy_mm": [
+            84.0,
+            64.0
+          ]
+        },
+        "selected_bend_edge_lengths_mm": [
+          80.0,
+          100.0
+        ],
+        "construction_note": "Due flange AutoMiter applicate a bordi root lunghi; nessun bordo di spessore."
+      },
+      "freecad_folded": {
+        "bounding_box_mm": {
+          "x": 104.0,
+          "y": 84.0,
+          "z": 34.0
+        },
+        "volume_mm3": 28439.9114,
+        "surface_area_mm2": 29475.3096,
+        "solid_count": 1,
+        "face_count": 23,
+        "edge_count": 47,
+        "vertex_count": 26
+      },
+      "freecad_unfold_ground_truth": {
+        "status": "success",
+        "root_face": "Face4",
+        "k_factor": 0.4,
+        "k_factor_standard": "ANSI",
+        "blank_dimensions_local_2d_mm": {
+          "length": 134.3982,
+          "width": 114.3982
+        },
+        "material_area_from_unfold_volume_mm2": 14163.407,
+        "largest_planar_outer_perimeter_mm": 497.5929,
+        "unfold_volume_mm3": 28326.814,
+        "diagnostic_material_area_from_folded_volume_mm2": 14219.9557,
+        "diagnostic_area_error_pct": 0.3977,
+        "all_trials": [
+          {
+            "root_face": "Face4",
+            "status": "success",
+            "material_area_mm2": 14163.407,
+            "diagnostic_area_error_pct": 0.3977
+          },
+          {
+            "root_face": "Face5",
+            "status": "success",
+            "material_area_mm2": 14163.407,
+            "diagnostic_area_error_pct": 0.3977
+          },
+          {
+            "root_face": "Face19",
+            "status": "success",
+            "material_area_mm2": 14163.407,
+            "diagnostic_area_error_pct": 0.3977
+          },
+          {
+            "root_face": "Face20",
+            "status": "success",
+            "material_area_mm2": 14163.407,
+            "diagnostic_area_error_pct": 0.3977
+          },
+          {
+            "root_face": "Face15",
+            "status": "success",
+            "material_area_mm2": 14163.407,
+            "diagnostic_area_error_pct": 0.3977
+          },
+          {
+            "root_face": "Face16",
+            "status": "success",
+            "material_area_mm2": 14163.407,
+            "diagnostic_area_error_pct": 0.3977
+          },
+          {
+            "root_face": "Face1",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face21",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face2",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face17",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face9",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face13",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face22",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face23",
+            "status": "failed"
+          }
+        ],
+        "blank_dimensions_mm": {
+          "length": 134.3982,
+          "width": 114.3982
+        }
+      }
+    },
+    {
+      "id": "SM12_6_pieghe",
+      "fcstd": "SM12_6_pieghe.FCStd",
+      "folded_step": "SM12_6_pieghe.STEP",
+      "unfold_step": "SM12_6_pieghe_UNFOLD.STEP",
+      "design_truth": {
+        "family": "sheetmetal_blind_6_bends_box_with_returns",
+        "sheet_thickness_mm": 2.0,
+        "bend_count": 6,
+        "bend_angles_deg": [
+          90.0,
+          90.0,
+          90.0,
+          90.0,
+          90.0,
+          90.0
+        ],
+        "inner_bend_radii_mm": [
+          2.0,
+          2.0,
+          2.0,
+          2.0,
+          2.0,
+          2.0
+        ],
+        "construction": "4 perimeter flanges + 2 return flanges",
+        "note": "Sostituisce il vecchio profilo aperto SM12."
+      },
+      "freecad_folded": {
+        "bounding_box_mm": {
+          "x": 140.0,
+          "y": 78.0,
+          "z": 34.0
+        },
+        "volume_mm3": 38523.8934,
+        "surface_area_mm2": 39812.9908,
+        "solid_count": 1,
+        "face_count": 54,
+        "edge_count": 108,
+        "vertex_count": 56
+      },
+      "freecad_unfold_ground_truth": {
+        "status": "success",
+        "root_face": "Face34",
+        "k_factor": 0.4,
+        "k_factor_standard": "ANSI",
+        "blank_dimensions_mm": {
+          "length": 197.5929,
+          "width": 122.7965
+        },
+        "unfold_bbox_xyz_mm": {
+          "x": 197.5929,
+          "y": 2.0,
+          "z": 122.7965
+        },
+        "material_area_from_unfold_volume_mm2": 19111.1503,
+        "largest_planar_outer_perimeter_mm": 640.7788,
+        "unfold_volume_mm3": 38222.3005,
+        "material_area_from_sheetmetal_source_volume_mm2": 19261.9467,
+        "area_error_pct_before_feature_postprocess": 0.7829,
+        "all_trials": [
+          {
+            "root_face": "Face7",
+            "status": "success",
+            "area_mm2": 19111.1503,
+            "area_error_pct": 0.7829
+          },
+          {
+            "root_face": "Face9",
+            "status": "success",
+            "area_mm2": 19111.1503,
+            "area_error_pct": 0.7829
+          },
+          {
+            "root_face": "Face24",
+            "status": "success",
+            "area_mm2": 19111.1503,
+            "area_error_pct": 0.7829
+          },
+          {
+            "root_face": "Face25",
+            "status": "success",
+            "area_mm2": 19111.1503,
+            "area_error_pct": 0.7829
+          },
+          {
+            "root_face": "Face34",
+            "status": "success",
+            "area_mm2": 19111.1503,
+            "area_error_pct": 0.7829
+          },
+          {
+            "root_face": "Face37",
+            "status": "success",
+            "area_mm2": 19111.1503,
+            "area_error_pct": 0.7829
+          },
+          {
+            "root_face": "Face8",
+            "status": "success",
+            "area_mm2": 19111.1503,
+            "area_error_pct": 0.7829
+          },
+          {
+            "root_face": "Face10",
+            "status": "success",
+            "area_mm2": 19111.1503,
+            "area_error_pct": 0.7829
+          },
+          {
+            "root_face": "Face32",
+            "status": "success",
+            "area_mm2": 19111.1503,
+            "area_error_pct": 0.7829
+          },
+          {
+            "root_face": "Face36",
+            "status": "success",
+            "area_mm2": 19111.1503,
+            "area_error_pct": 0.7829
+          },
+          {
+            "root_face": "Face35",
+            "status": "success",
+            "area_mm2": 19111.1503,
+            "area_error_pct": 0.7829
+          },
+          {
+            "root_face": "Face38",
+            "status": "success",
+            "area_mm2": 19111.1503,
+            "area_error_pct": 0.7829
+          },
+          {
+            "root_face": "Face50",
+            "status": "success",
+            "area_mm2": 19111.1503,
+            "area_error_pct": 0.7829
+          },
+          {
+            "root_face": "Face51",
+            "status": "success",
+            "area_mm2": 19111.1503,
+            "area_error_pct": 0.7829
+          },
+          {
+            "root_face": "Face26",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face41",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face40",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face54",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face5",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face16",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face43",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face44",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face13",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face28",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face39",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face46",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face27",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face42",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face52",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face53",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face14",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face1",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face4",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face6",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face23",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face29",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face30",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face33",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face48",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face15",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face31",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face49",
+            "status": "failed"
+          }
+        ]
+      }
+    },
+    {
+      "id": "SM13_4_pieghe_multi_feature",
+      "folded_step": "SM13_4_pieghe_multi_feature.STEP",
+      "unfold_step": "SM13_4_pieghe_multi_feature_UNFOLD.STEP",
+      "design_truth": {
+        "sheet_thickness_mm": 1.5,
+        "bend_count": 4,
+        "bend_angles_deg": [
+          90.0,
+          90.0,
+          75.0,
+          90.0
+        ],
+        "inner_bend_radii_mm": [
+          1.5,
+          1.5,
+          2.5,
+          1.5
+        ],
+        "features": {
+          "circular_holes": [
+            {
+              "diameter_mm": 6.0
+            },
+            {
+              "diameter_mm": 10.0
+            }
+          ],
+          "slots": [
+            {
+              "total_length_mm": 22.0,
+              "width_mm": 7.0
+            }
+          ]
+        }
+      },
+      "freecad_folded": {
+        "bounding_box_mm": {
+          "x": 102.0,
+          "y": 79.5224,
+          "z": 27.0
+        },
+        "volume_mm3": 20643.0961,
+        "surface_area_mm2": 28448.0844,
+        "solid_count": 1,
+        "face_count": 45,
+        "edge_count": 97,
+        "vertex_count": 54
+      },
+      "freecad_unfold_ground_truth": {
+        "status": "success",
+        "root_face": "Face29",
+        "k_factor": 0.4,
+        "k_factor_standard": "ANSI",
+        "blank_dimensions_local_2d_mm": {
+          "length": 146.5973,
+          "width": 109.3566
+        },
+        "material_area_from_unfold_volume_mm2": 13688.5508,
+        "largest_planar_net_area_mm2": 13688.5508,
+        "largest_planar_gross_area_mm2": 13938.8495,
+        "aperture_area_mm2": 250.2987,
+        "outer_perimeter_mm": 511.9078,
+        "inner_perimeter_mm": 102.2566,
+        "total_cut_length_mm": 614.1644,
+        "opening_wire_count": 3,
+        "unfold_volume_mm3": 20532.8262,
+        "diagnostic_material_area_from_folded_volume_mm2": 13762.0641,
+        "diagnostic_area_error_pct": 0.5342,
+        "all_trials": [
+          {
+            "root_face": "Face7",
+            "status": "success",
+            "material_area_mm2": 13688.5508,
+            "diagnostic_area_error_pct": 0.5342,
+            "opening_wire_count": 3
+          },
+          {
+            "root_face": "Face9",
+            "status": "success",
+            "material_area_mm2": 13688.5508,
+            "diagnostic_area_error_pct": 0.5342,
+            "opening_wire_count": 3
+          },
+          {
+            "root_face": "Face37",
+            "status": "success",
+            "material_area_mm2": 13688.5508,
+            "diagnostic_area_error_pct": 0.5342,
+            "opening_wire_count": 3
+          },
+          {
+            "root_face": "Face39",
+            "status": "success",
+            "material_area_mm2": 13688.5508,
+            "diagnostic_area_error_pct": 0.5342,
+            "opening_wire_count": 3
+          },
+          {
+            "root_face": "Face35",
+            "status": "success",
+            "material_area_mm2": 13688.5508,
+            "diagnostic_area_error_pct": 0.5342,
+            "opening_wire_count": 3
+          },
+          {
+            "root_face": "Face38",
+            "status": "success",
+            "material_area_mm2": 13688.5508,
+            "diagnostic_area_error_pct": 0.5342,
+            "opening_wire_count": 3
+          },
+          {
+            "root_face": "Face29",
+            "status": "success",
+            "material_area_mm2": 13688.5508,
+            "diagnostic_area_error_pct": 0.5342,
+            "opening_wire_count": 3
+          },
+          {
+            "root_face": "Face30",
+            "status": "success",
+            "material_area_mm2": 13688.5508,
+            "diagnostic_area_error_pct": 0.5342,
+            "opening_wire_count": 3
+          },
+          {
+            "root_face": "Face8",
+            "status": "success",
+            "material_area_mm2": 13688.5508,
+            "diagnostic_area_error_pct": 0.5342,
+            "opening_wire_count": 3
+          },
+          {
+            "root_face": "Face10",
+            "status": "success",
+            "material_area_mm2": 13688.5508,
+            "diagnostic_area_error_pct": 0.5342,
+            "opening_wire_count": 3
+          },
+          {
+            "root_face": "Face31",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face41",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face14",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face44",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face42",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face43",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face5",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face16",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face32",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face45",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face13",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face40",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face21",
+            "status": "failed"
+          },
+          {
+            "root_face": "Face23",
+            "status": "failed"
+          }
+        ],
+        "blank_dimensions_mm": {
+          "length": 146.5973,
+          "width": 109.3566
+        },
+        "largest_planar_outer_perimeter_mm": 511.9078
+      },
+      "sha256": {
+        "folded_step": "31fde247fc5316bfd955820ca908a6c84164270feaa4b06c7169975073963e1e",
+        "unfold_step": "d0f1340f2d5d1bb336c62b3e49f7367059e5c0ea8c17cab9dc477c778118d9d7"
+      }
+    }
+  ],
+  "canonical_sources": {
+    "SM06": "v2",
+    "SM07": "v2.1 patch",
+    "SM08": "v2.2 patch",
+    "SM09": "v2",
+    "SM10": "v2.2 patch",
+    "SM11": "v2.2 patch",
+    "SM12": "v2.1 patch",
+    "SM13": "v2.3 patch"
+  }
+}

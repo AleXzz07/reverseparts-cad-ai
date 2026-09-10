@@ -23,6 +23,7 @@ from .schemas import (
 )
 from .sheetmetal_unfolder import (
     propagate_openings_and_hole_to_bend,
+    singleton_bend_adjacent_faces,
     unfold_sheet,
 )
 
@@ -1933,7 +1934,11 @@ def _append_unique_bend(bends: list[BendFeature], candidate: BendFeature) -> Non
                     for left, right in zip(existing.center or [], candidate.center or [])
                 )
             )
-            existing.confidence = "high"
+            existing.confidence = (
+                "high"
+                if existing.confidence == "high" or candidate.confidence == "high"
+                else "medium"
+            )
             return
     bends.append(candidate)
 
@@ -1987,7 +1992,7 @@ def _detect_bends(
     thickness_reference = detected_thickness_mm
     min_radius = max(1.0, thickness_reference * 0.75)
     max_radius = max(12.0, thickness_reference * 6.0)
-    candidates: list[BendFeature] = []
+    candidates: list[tuple[object, BendFeature]] = []
 
     for face in shape.Faces:
         surface = face.Surface
@@ -2008,7 +2013,7 @@ def _detect_bends(
         angle_deg = _cylindrical_face_angle_deg(face)
 
         candidates.append(
-            BendFeature(
+            (face, BendFeature(
                 type="simple flange",
                 radius_mm=round(radius, 2),
                 length_mm=round(length, 2),
@@ -2016,14 +2021,16 @@ def _detect_bends(
                 axis=_rounded_vector(axis),
                 center=_rounded_vector(_vector_tuple(surface.Center)),
                 confidence="medium",
-            ),
+            )),
         )
 
     bends: list[BendFeature] = []
-    for left_index, left in enumerate(candidates):
-        for right in candidates[left_index + 1 :]:
+    paired_faces: set[int] = set()
+    for left_index, (left_face, left) in enumerate(candidates):
+        for right_face, right in candidates[left_index + 1 :]:
             if not _bend_pair_matches(left, right, thickness_reference, parameters):
                 continue
+            paired_faces.update((id(left_face), id(right_face)))
 
             inner, outer = sorted(
                 (left, right),
@@ -2045,6 +2052,24 @@ def _detect_bends(
                     confidence="high",
                 ),
             )
+
+    # Lower-confidence fallback for STEP exports where AutoMiter/trimming has
+    # removed or segmented one cylindrical skin.  Radius and angle alone are
+    # never sufficient: the helper requires two distinct sheet panels, shared
+    # axial tangent edges and rejects complete cylinders/holes explicitly.
+    for face, candidate in candidates:
+        if id(face) in paired_faces:
+            continue
+        adjacent_faces = singleton_bend_adjacent_faces(
+            face,
+            shape,
+            thickness_reference,
+            parameters,
+        )
+        if len(adjacent_faces) != 2:
+            continue
+        candidate.confidence = "medium"
+        _append_unique_bend(bends, candidate)
 
     bends.sort(key=lambda bend: bend.center or [])
     return bends

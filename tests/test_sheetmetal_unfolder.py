@@ -30,8 +30,10 @@ class FakeVertex:
 
 
 class FakeEdge:
-    def __init__(self, edge_id):
+    def __init__(self, edge_id, points=()):
         self.edge_id = edge_id
+        self.Vertexes = [FakeVertex(point) for point in points]
+        self.Length = math.dist(points[0], points[-1]) if len(points) >= 2 else 0.0
 
     def isSame(self, other):
         return self.edge_id == other.edge_id
@@ -153,6 +155,43 @@ def _orthogonal_bend_shape():
     return SimpleNamespace(Faces=faces, Volume=21850.7078)
 
 
+def _trimmed_single_skin_bend_shape():
+    root_edge = FakeEdge("root", [(2, 0, 0), (2, 60, 0)])
+    flange_edge = FakeEdge("flange", [(0, 0, 2), (0, 60, 2)])
+    root0 = [(0, 0, 0), (80, 0, 0), (80, 60, 0), (0, 60, 0)]
+    root2 = [(0, 0, 2), (80, 0, 2), (80, 60, 2), (0, 60, 2)]
+    flange0 = [(0, 0, 0), (0, 60, 0), (0, 60, 30), (0, 0, 30)]
+    flange2 = [(2, 0, 0), (2, 60, 0), (2, 60, 30), (2, 0, 30)]
+    faces = [
+        FakeFace(FakePlane((0, 0, 1), (0, 0, 0)), root0, 4800, [root_edge]),
+        FakeFace(FakePlane((0, 0, 1), (0, 0, 2)), root2, 4800),
+        FakeFace(FakePlane((1, 0, 0), (0, 0, 0)), flange0, 1800, [flange_edge]),
+        FakeFace(FakePlane((1, 0, 0), (2, 0, 0)), flange2, 1800),
+        FakeFace(
+            FakeCylinder(2, center=(2, 0, 2)),
+            [(2, 0, 0), (2, 60, 0), (0, 0, 2), (0, 60, 2)],
+            math.pi * 2 * 60 / 2,
+            [root_edge, flange_edge],
+            (0, math.pi / 2, 0, 60),
+        ),
+    ]
+    return SimpleNamespace(Faces=faces, Volume=13765.4867)
+
+
+def _depth_two_graph_shape():
+    shape = _orthogonal_bend_shape()
+    root_faces = shape.Faces[0:2]
+    first_flange_faces = shape.Faces[2:4]
+    second_bend_faces = shape.Faces[8:10]
+    for root_face in root_faces:
+        root_face.Edges = [edge for edge in root_face.Edges if not edge.edge_id.startswith("ry-")]
+    first_flange_faces[0].Edges.append(second_bend_faces[0].Edges[0])
+    first_flange_faces[1].Edges.append(second_bend_faces[1].Edges[0])
+    second_bend_faces[0].Surface.Axis = FakeVector(0, 0, 1)
+    second_bend_faces[1].Surface.Axis = FakeVector(0, 0, 1)
+    return shape
+
+
 def test_canonical_sheetmetal_benchmark_applies_sm02_override():
     path = PROJECT_ROOT / "tests" / "dataset" / "sheetmetal_benchmark_v1.json"
     raw = path.read_text(encoding="utf-8")
@@ -182,6 +221,45 @@ def test_face_graph_has_deterministic_largest_root_and_direct_bend():
     assert len(graph.bends) == 1
     assert graph.root_panel_id == next(panel.id for panel in graph.panels if panel.area_mm2 == 4800)
     assert graph.bends[0].panel_ids == [panel.id for panel in graph.panels]
+
+
+def test_trimmed_single_cylinder_fallback_requires_two_tangent_sheet_panels():
+    graph = build_sheet_face_graph(
+        _trimmed_single_skin_bend_shape(),
+        thickness_mm=2.0,
+        k_factor=0.4,
+        parameters=load_analysis_config(),
+    )
+
+    assert graph.connected is True
+    assert graph.direct is False
+    assert len(graph.bends) == 1
+    assert graph.bends[0].outer_face is None
+    assert len(graph.bends[0].panel_ids) == 2
+
+
+def test_recursive_unfold_traverses_a_panel_tree_beyond_root_leaves():
+    shape = _depth_two_graph_shape()
+    graph = build_sheet_face_graph(shape, 2.0, 0.4, load_analysis_config())
+    root = graph.root_panel_id
+
+    assert graph.connected is True
+    assert any(root not in bend.panel_ids for bend in graph.bends)
+    result = unfold_orthogonal_sheet(
+        shape=shape,
+        thickness_mm=2.0,
+        thickness_confidence="high",
+        holes=[],
+        density_g_cm3=7.85,
+        k_factor=0.4,
+        parameters=load_analysis_config(),
+    )
+
+    assert result is not None
+    assert result.status == "validated_estimate"
+    assert result.usable_for_costing is True
+    assert result.panel_count == 3
+    assert result.bend_zone_count == 2
 
 
 def test_parallel_geometric_unfold_matches_sm01_reference():
@@ -233,6 +311,9 @@ def test_opening_is_propagated_and_hole_to_bend_uses_flat_bend_zone():
     shape = _single_bend_shape()
     opening = FakeWire("opening", math.pi * 8.0, center=(40, 30, 0), distance_to_edge=10.0)
     shape.Faces[0].Wires.append(opening)
+    # OCC planar-face Area is already net of inner wires on both sheet skins.
+    shape.Faces[0].Area -= math.pi * 4.0**2
+    shape.Faces[1].Area -= math.pi * 4.0**2
     hole = HoleFeature(
         feature_id="hole_001",
         diameter_mm=8.0,
@@ -275,6 +356,8 @@ def test_opening_is_propagated_and_hole_to_bend_uses_flat_bend_zone():
     assert minimum == pytest.approx(12.1991, abs=0.0001)
     assert hole.flat_contour_propagated is True
     assert hole.flat_bend_distance_mm == pytest.approx(12.1991, abs=0.0001)
+    assert not any("aperture saranno propagate" in warning.lower() for warning in result.warnings)
+    assert not any("non utilizzabile" in warning.lower() for warning in result.warnings)
 
 
 def test_orthogonal_automiter_unfold_matches_sm04_reference():

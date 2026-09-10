@@ -23,6 +23,7 @@ COPY app ./app
 COPY frontend ./frontend
 COPY config ./config
 COPY tests ./tests
+COPY scripts ./scripts
 
 EXPOSE 8000
 

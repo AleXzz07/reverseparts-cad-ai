@@ -201,6 +201,10 @@ def test_frontend_returns_html():
     assert 'id="flat-pattern-data"' in response.text
     assert "Sviluppo piano e grezzo" in response.text
     assert "Dimensioni grezzo sviluppato" in response.text
+    assert "coefficiente che indica la posizione dell’asse neutro" in response.text
+    assert "valore usato nel calcolo corrente, non costante universale" in response.text
+    assert "Errore coerenza area interna" in response.text
+    assert "Differenza diagnostica volume/spessore" in response.text
     assert "Area lorda grezzo" in response.text
     assert "Peso grezzo" in response.text
     assert "applyCadViewerAppearance" in response.text
@@ -803,6 +807,10 @@ def test_quote_pdf_includes_flat_pattern_data(monkeypatch):
     assert rows["Area lorda grezzo"] == "9887 mm2"
     assert rows["Perimetro esterno sviluppato"] == "491.78 mm"
     assert rows["Confidence"] == "medium"
+    assert "posizione dell'asse neutro" in rows["Legenda Fattore K"]
+    assert "non costante universale" in rows["Valore K corrente"]
+    assert "Errore coerenza area interna" in rows
+    assert "Differenza diagnostica volume/spessore" in rows
 
 
 def test_quote_pdf_includes_unknown_hole_verification_warning():

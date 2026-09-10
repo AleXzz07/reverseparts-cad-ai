@@ -1252,6 +1252,13 @@
     function buildLegend() {
       document.getElementById("parameter-legend").innerHTML = `
         <div class="legend-grid">
+          <section class="legend-section">
+            <h3>Sviluppo lamiera</h3>
+            <dl class="legend-list">
+              <div><dt>Fattore K</dt><dd>coefficiente che indica la posizione dell’asse neutro nello spessore della lamiera durante la piega. Influenza la bend allowance e quindi la lunghezza sviluppata. Il valore dipende da materiale, spessore, raggio e processo di piegatura.</dd></div>
+              <div><dt>Valore corrente</dt><dd>K = 0,40 ANSI — valore usato nel calcolo corrente, non costante universale.</dd></div>
+            </dl>
+          </section>
           ${Object.entries(parameterGroups).map(([section, parameters]) => `
             <section class="legend-section">
               <h3>${parameterSectionNames[section]}</h3>
@@ -1464,12 +1471,15 @@
         ["Sviluppo totale zone di piega", number(flatPattern.total_bend_allowance_mm, "mm")],
         ["Fattore K", number(flatPattern.k_factor)],
         ["Standard K", flatPattern.k_factor_standard || "ANSI"],
+        ["Nota Fattore K", `K = ${Number(flatPattern.k_factor ?? 0.40).toFixed(2).replace(".", ",")} ${flatPattern.k_factor_standard || "ANSI"} — valore usato nel calcolo corrente, non costante universale.`],
         ["Utilizzabile per costing", flatPattern.usable_for_costing ? "Sì" : "No"],
         ["Root pannello", flatPattern.root_panel_id || "-"],
         ["Pannelli / zone piega", `${flatPattern.panel_count ?? 0} / ${flatPattern.bend_zone_count ?? 0}`],
         ["Validazione geometrica", flatPattern.validation?.passed ? "Superata" : "Non superata"],
         ["Aperture propagate", `${flatPattern.propagated_opening_count ?? 0} / ${holes.total_holes ?? 0}`],
         ["Area diagnostica volume/spessore", number(flatPattern.diagnostic_volume_area_mm2, "mm²")],
+        ["Errore coerenza area interna", number(flatPattern.validation?.area_coherence_error_pct, "%")],
+        ["Differenza diagnostica volume/spessore", number(flatPattern.diagnostic_volume_area_error_pct, "%")],
         ["Confidence", confidenceText(flatPattern.confidence)]
       ]);
 

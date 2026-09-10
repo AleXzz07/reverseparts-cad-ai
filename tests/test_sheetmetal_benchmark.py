@@ -15,6 +15,14 @@ BENCHMARK_DATA = json.loads(
     )
 )
 PIECES = {piece["id"]: piece for piece in BENCHMARK_DATA["pieces"]}
+BLIND_ROOT = PROJECT_ROOT / "tests" / "dataset" / "sheetmetal_benchmark_v2"
+BLIND_DATA = json.loads(
+    (PROJECT_ROOT / "tests" / "dataset" / "sheetmetal_benchmark_v2_canonical.json").read_text(
+        encoding="utf-8"
+    )
+)
+BLIND_PIECES = {piece["id"]: piece for piece in BLIND_DATA["pieces"]}
+PENDING_REFERENCE_CASES = set(BLIND_DATA.get("pending_reference_cases", []))
 
 
 def _require_freecad():
@@ -104,3 +112,101 @@ def test_sm04_perpendicular_automiter_unfold_benchmark():
     assert _within_target(dimensions["y"], expected_dimensions["width"], 0.5, 0.5)
     assert _within_target(flat["net_developed_area_mm2"], truth["material_area_from_unfold_volume_mm2"], 0.5, 0.0)
     assert _within_target(flat["outer_perimeter_mm"], truth["largest_planar_outer_perimeter_mm"], 1.0, 0.0)
+
+
+def test_blind_benchmark_uses_only_the_approved_canonical_sources():
+    assert BLIND_DATA["version"] == "2.3-canonical"
+    assert BLIND_DATA["canonical_sources"] == {
+        "SM06": "v2",
+        "SM07": "v2.1 patch",
+        "SM08": "v2.2 patch",
+        "SM09": "v2",
+        "SM10": "v2.2 patch",
+        "SM11": "v2.2 patch",
+        "SM12": "v2.1 patch",
+        "SM13": "v2.3 patch",
+    }
+    assert PENDING_REFERENCE_CASES == set()
+    sm09_truth = BLIND_PIECES["SM09_2_pieghe_60_90_raggi_diversi"][
+        "freecad_unfold_ground_truth"
+    ]
+    assert sm09_truth["blank_dimensions_local_2d_mm"] == {
+        "length": 166.9956,
+        "width": 68.0,
+    }
+
+
+def test_blind_v22_replacements_have_verified_final_geometry_truth():
+    expected = {
+        "SM08_3_pieghe_assi_misti": (3, 158.3673, 103.3982, 14717.3672, 523.5310),
+        "SM10_irregolare_2_pieghe": (2, 133.3982, 94.9742, 10261.1076, 435.0707),
+        "SM11_miter_relief": (2, 134.3982, 114.3982, 14163.4070, 497.5929),
+    }
+    for piece_id, (bends, length, width, area, perimeter) in expected.items():
+        piece = BLIND_PIECES[piece_id]
+        truth = piece["freecad_unfold_ground_truth"]
+        assert piece["design_truth"]["bend_count"] == bends
+        assert truth["blank_dimensions_mm"] == {"length": length, "width": width}
+        assert truth["material_area_from_unfold_volume_mm2"] == area
+        assert truth["largest_planar_outer_perimeter_mm"] == perimeter
+
+
+def test_sm13_v23_reference_contains_propagated_openings():
+    piece = BLIND_PIECES["SM13_4_pieghe_multi_feature"]
+    truth = piece["freecad_unfold_ground_truth"]
+    assert truth["blank_dimensions_local_2d_mm"] == {
+        "length": 146.5973,
+        "width": 109.3566,
+    }
+    assert truth["material_area_from_unfold_volume_mm2"] == 13688.5508
+    assert truth["largest_planar_gross_area_mm2"] == 13938.8495
+    assert truth["aperture_area_mm2"] == 250.2987
+    assert truth["opening_wire_count"] == 3
+    assert truth["largest_planar_outer_perimeter_mm"] == 511.9078
+
+
+@pytest.mark.parametrize(
+    ("case_dir", "piece_id"),
+    tuple(
+        (f"SM{number:02d}", next(key for key in BLIND_PIECES if key.startswith(f"SM{number:02d}_")))
+        for number in range(6, 14)
+    ),
+)
+def test_blind_sheetmetal_v2_canonical_benchmark(case_dir, piece_id):
+    _require_freecad()
+    expected = BLIND_PIECES[piece_id]
+    truth = expected["freecad_unfold_ground_truth"]
+    step_path = BLIND_ROOT / case_dir / "folded.step"
+    actual = analyze_step_file(
+        file_bytes=step_path.read_bytes(),
+        source_file=step_path.name,
+        material="acciaio",
+        density_g_cm3=7.85,
+    ).model_dump()
+    flat = actual["flat_pattern"]
+    dimensions = flat["blank_dimensions_mm"]
+    expected_dimensions = truth.get(
+        "blank_dimensions_local_2d_mm",
+        truth["blank_dimensions_mm"],
+    )
+
+    assert actual["bends"]["count"] == expected["design_truth"]["bend_count"]
+    assert flat["status"] in {"exact", "validated_estimate"}
+    assert flat["usable_for_costing"] is True
+    assert flat["validation"]["passed"] is True
+    if case_dir in PENDING_REFERENCE_CASES:
+        assert flat["blank_dimensions_mm"] is not None
+        assert flat["net_developed_area_mm2"] is not None
+        assert _within_target(
+            flat["outer_perimeter_mm"],
+            truth["largest_planar_outer_perimeter_mm"],
+            1.0,
+            0.0,
+        )
+        assert "benchmark_error_pct" not in flat
+        return
+    assert _within_target(dimensions["x"], expected_dimensions["length"], 0.5, 0.5)
+    assert _within_target(dimensions["y"], expected_dimensions["width"], 0.5, 0.5)
+    assert _within_target(flat["net_developed_area_mm2"], truth["material_area_from_unfold_volume_mm2"], 0.5, 0.0)
+    assert _within_target(flat["outer_perimeter_mm"], truth["largest_planar_outer_perimeter_mm"], 1.0, 0.0)
+    assert "benchmark_error_pct" not in flat

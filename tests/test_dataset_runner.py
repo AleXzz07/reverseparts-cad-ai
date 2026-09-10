@@ -432,13 +432,10 @@ def test_real_cad_analysis_matches_dataset_ground_truth(case_name, tmp_path):
         assert holes["polygonal"] == []
         assert holes["unknown"] == []
         assert holes["total_holes"] == 4
-        assert actual["flat_pattern"]["status"] in {"partial", "unavailable"}
-        assert actual["flat_pattern"]["usable_for_costing"] is False
-        assert actual["cutting"]["outer_cut_length_mm"] is None
-        assert actual["cutting"]["inner_cut_length_mm"] is None
-        assert actual["cutting"]["total_cut_length_mm"] is None
-        assert actual["cutting"]["source"] == "unavailable"
-        assert any(
-            "sviluppo piano non ha superato" in warning
-            for warning in actual["cutting"]["warnings"]
-        )
+        assert actual["flat_pattern"]["status"] in {"exact", "validated_estimate"}
+        assert actual["flat_pattern"]["usable_for_costing"] is True
+        assert actual["flat_pattern"]["validation"]["passed"] is True
+        assert actual["cutting"]["outer_cut_length_mm"] is not None
+        assert actual["cutting"]["inner_cut_length_mm"] is not None
+        assert actual["cutting"]["total_cut_length_mm"] is not None
+        assert actual["cutting"]["source"] == "validated_flat_pattern"
