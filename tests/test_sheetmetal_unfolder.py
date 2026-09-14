@@ -5,10 +5,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.cad_analyzer import load_analysis_config
+from app.cad_analyzer import _detect_bends, load_analysis_config
 from app.sheetmetal_unfolder import (
+    _pair_bend_faces,
     build_sheet_face_graph,
+    build_sheet_topology_context,
     propagate_openings_and_hole_to_bend,
+    singleton_bend_adjacent_faces,
     unfold_orthogonal_sheet,
     unfold_parallel_sheet,
 )
@@ -79,6 +82,10 @@ class FakeCylinder:
         self.Center = FakeVector(*center)
 
 
+class FakeBSplineSurface:
+    TypeId = "Part::GeomBSplineSurface"
+
+
 class FakeFace:
     def __init__(self, surface, points, area, edges=(), parameter_range=None):
         self.Surface = surface
@@ -93,6 +100,14 @@ class FakeFace:
         self.Wires = [self.OuterWire]
         center = tuple(sum(point[index] for point in points) / len(points) for index in range(3))
         self.CenterOfMass = FakeVector(*center)
+        x_values = [point[0] for point in points]
+        y_values = [point[1] for point in points]
+        z_values = [point[2] for point in points]
+        self.BoundBox = SimpleNamespace(
+            XLength=max(x_values) - min(x_values),
+            YLength=max(y_values) - min(y_values),
+            ZLength=max(z_values) - min(z_values),
+        )
         if parameter_range is not None:
             self.ParameterRange = parameter_range
 
@@ -178,6 +193,28 @@ def _trimmed_single_skin_bend_shape():
     return SimpleNamespace(Faces=faces, Volume=13765.4867)
 
 
+def _coaxial_cylinder_pair_shape(*, outer_axis_interval):
+    inner = FakeFace(
+        FakeCylinder(2, axis=(0, 1, 0), center=(0, 0, 0)),
+        [(0, 0, 0), (0, 10, 0), (2, 0, 2), (2, 10, 2)],
+        math.pi * 2 * 10 / 2,
+        parameter_range=(0, math.pi / 2, 0, 10),
+    )
+    outer_start, outer_end = outer_axis_interval
+    outer = FakeFace(
+        FakeCylinder(4, axis=(0, 1, 0), center=(0, 0, 0)),
+        [
+            (0, outer_start, 0),
+            (0, outer_end, 0),
+            (4, outer_start, 4),
+            (4, outer_end, 4),
+        ],
+        math.pi * 4 * (outer_end - outer_start) / 2,
+        parameter_range=(0, math.pi / 2, outer_start, outer_end),
+    )
+    return SimpleNamespace(Faces=[inner, outer])
+
+
 def _depth_two_graph_shape():
     shape = _orthogonal_bend_shape()
     root_faces = shape.Faces[0:2]
@@ -221,6 +258,228 @@ def test_face_graph_has_deterministic_largest_root_and_direct_bend():
     assert len(graph.bends) == 1
     assert graph.root_panel_id == next(panel.id for panel in graph.panels if panel.area_mm2 == 4800)
     assert graph.bends[0].panel_ids == [panel.id for panel in graph.panels]
+
+
+def test_bend_pair_rejects_coaxial_cylinders_with_disjoint_axial_intervals():
+    bends = _pair_bend_faces(
+        _coaxial_cylinder_pair_shape(outer_axis_interval=(20, 30)),
+        thickness_mm=2.0,
+        k_factor=0.4,
+        parameters=load_analysis_config(),
+    )
+
+    assert bends == []
+
+
+def test_bend_pair_accepts_coaxial_cylinders_with_positive_axial_overlap():
+    shape = _coaxial_cylinder_pair_shape(outer_axis_interval=(5, 15))
+    bends = _pair_bend_faces(
+        shape,
+        thickness_mm=2.0,
+        k_factor=0.4,
+        parameters=load_analysis_config(),
+    )
+
+    assert len(bends) == 1
+    assert bends[0].inner_face is shape.Faces[0]
+    assert bends[0].outer_face is shape.Faces[1]
+
+
+def test_per_analysis_topology_context_reuses_planar_pairs_and_face_graph(monkeypatch):
+    import app.sheetmetal_unfolder as unfolder
+
+    shape = _single_bend_shape()
+    parameters = load_analysis_config()
+    original = unfolder._pair_planar_faces
+    calls = 0
+
+    def counted(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(unfolder, "_pair_planar_faces", counted)
+    context = build_sheet_topology_context(shape, 2.0, 0.4, parameters)
+    first_graph = build_sheet_face_graph(
+        shape,
+        2.0,
+        0.4,
+        parameters,
+        topology_context=context,
+    )
+    graph_snapshot = (
+        tuple(panel.id for panel in first_graph.panels),
+        tuple((bend.id, tuple(bend.panel_ids)) for bend in first_graph.bends),
+        tuple(first_graph.warnings),
+    )
+    result = unfold_parallel_sheet(
+        shape=shape,
+        thickness_mm=2.0,
+        thickness_confidence="high",
+        holes=[],
+        density_g_cm3=2.7,
+        k_factor=0.4,
+        parameters=parameters,
+        topology_context=context,
+    )
+    second_graph = build_sheet_face_graph(
+        shape,
+        2.0,
+        0.4,
+        parameters,
+        topology_context=context,
+    )
+    for face in context.cylindrical_faces:
+        singleton_bend_adjacent_faces(
+            face,
+            shape,
+            2.0,
+            parameters,
+            topology_context=context,
+        )
+
+    assert result is not None
+    assert first_graph is second_graph
+    assert graph_snapshot == (
+        tuple(panel.id for panel in second_graph.panels),
+        tuple((bend.id, tuple(bend.panel_ids)) for bend in second_graph.bends),
+        tuple(second_graph.warnings),
+    )
+    assert calls == 1
+
+
+def test_cached_topology_context_preserves_bends_and_flat_output():
+    shape = _single_bend_shape()
+    parameters = load_analysis_config()
+    uncached_bends = _detect_bends(shape, 2.0, parameters)
+    uncached_flat = unfold_parallel_sheet(
+        shape=shape,
+        thickness_mm=2.0,
+        thickness_confidence="high",
+        holes=[],
+        density_g_cm3=2.7,
+        k_factor=0.4,
+        parameters=parameters,
+    )
+
+    context = build_sheet_topology_context(shape, 2.0, 0.4, parameters)
+    cached_bends = _detect_bends(
+        shape,
+        2.0,
+        parameters,
+        topology_context=context,
+    )
+    cached_flat = unfold_parallel_sheet(
+        shape=shape,
+        thickness_mm=2.0,
+        thickness_confidence="high",
+        holes=[],
+        density_g_cm3=2.7,
+        k_factor=0.4,
+        parameters=parameters,
+        topology_context=context,
+    )
+
+    assert [bend.model_dump() for bend in cached_bends] == [
+        bend.model_dump() for bend in uncached_bends
+    ]
+    assert cached_flat is not None
+    assert uncached_flat is not None
+    assert cached_flat.model_dump() == uncached_flat.model_dump()
+
+
+def test_singleton_bend_detection_does_not_recompute_planar_pairs(monkeypatch):
+    import app.sheetmetal_unfolder as unfolder
+
+    shape = _trimmed_single_skin_bend_shape()
+    parameters = load_analysis_config()
+    original = unfolder._pair_planar_faces
+    calls = 0
+
+    def counted(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(unfolder, "_pair_planar_faces", counted)
+    context = build_sheet_topology_context(shape, 2.0, 0.4, parameters)
+    bends = _detect_bends(
+        shape,
+        2.0,
+        parameters,
+        topology_context=context,
+    )
+    result = unfold_parallel_sheet(
+        shape=shape,
+        thickness_mm=2.0,
+        thickness_confidence="high",
+        holes=[],
+        density_g_cm3=2.7,
+        k_factor=0.4,
+        parameters=parameters,
+        topology_context=context,
+    )
+
+    assert len(bends) == 1
+    assert result is not None
+    assert calls == 1
+
+
+def test_bspline_surface_is_ignored_without_disabling_topology_context(monkeypatch):
+    import app.sheetmetal_unfolder as unfolder
+
+    parameters = load_analysis_config()
+    baseline_shape = _trimmed_single_skin_bend_shape()
+    baseline_bends = _detect_bends(baseline_shape, 2.0, parameters)
+    baseline_flat = unfold_parallel_sheet(
+        shape=baseline_shape,
+        thickness_mm=2.0,
+        thickness_confidence="high",
+        holes=[],
+        density_g_cm3=2.7,
+        k_factor=0.4,
+        parameters=parameters,
+    )
+
+    shape = _trimmed_single_skin_bend_shape()
+    bspline = FakeFace(
+        FakeBSplineSurface(),
+        [(10, 10, 1), (20, 10, 1), (20, 20, 2), (10, 20, 2)],
+        100.0,
+    )
+    shape.Faces.append(bspline)
+    original = unfolder._pair_planar_faces
+    calls = 0
+
+    def counted(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(unfolder, "_pair_planar_faces", counted)
+    context = build_sheet_topology_context(shape, 2.0, 0.4, parameters)
+    bends = _detect_bends(shape, 2.0, parameters, topology_context=context)
+    flat = unfold_parallel_sheet(
+        shape=shape,
+        thickness_mm=2.0,
+        thickness_confidence="high",
+        holes=[],
+        density_g_cm3=2.7,
+        k_factor=0.4,
+        parameters=parameters,
+        topology_context=context,
+    )
+
+    assert bspline not in context.planar_faces
+    assert bspline not in context.cylindrical_faces
+    assert id(bspline) not in context.descriptors
+    assert calls == 1
+    assert [bend.model_dump() for bend in bends] == [
+        bend.model_dump() for bend in baseline_bends
+    ]
+    assert flat is not None
+    assert baseline_flat is not None
+    assert flat.model_dump() == baseline_flat.model_dump()
 
 
 def test_trimmed_single_cylinder_fallback_requires_two_tangent_sheet_panels():

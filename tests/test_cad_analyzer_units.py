@@ -46,6 +46,14 @@ def _bbox(x_length, y_length, z_length=0.0, *, x_min=0.0, y_min=0.0, z_min=0.0):
     )
 
 
+def _valid_closed_solid(volume):
+    return SimpleNamespace(
+        Volume=volume,
+        isValid=lambda: True,
+        isClosed=lambda: True,
+    )
+
+
 class _Wire:
     def __init__(self, edges, *, length, bbox, closed=True, edge_distance=None):
         self.Edges = edges
@@ -331,8 +339,35 @@ def test_full_cylindrical_hole_surfaces_are_not_bends():
     ) == []
 
 
+def test_detect_bends_passes_per_analysis_topology_context_to_singleton(monkeypatch):
+    face = _full_cylinder_face(2.0, 30.0)
+    face.ParameterRange = (0.0, 3.141592653589793 / 2.0, 0.0, 30.0)
+    shape = SimpleNamespace(Faces=[face])
+    topology_context = SimpleNamespace(faces=tuple(shape.Faces))
+    received = []
+
+    def fake_singleton(*_args, **kwargs):
+        received.append(kwargs.get("topology_context"))
+        return []
+
+    monkeypatch.setattr(
+        "app.cad_analyzer.singleton_bend_adjacent_faces",
+        fake_singleton,
+    )
+
+    assert _detect_bends(
+        shape,
+        detected_thickness_mm=2.0,
+        parameters=load_analysis_config(),
+        part_category="sheet_metal",
+        topology_context=topology_context,
+    ) == []
+    assert received == [topology_context]
+
+
 def test_compact_solid_without_sheet_thickness_is_non_sheet_metal():
     shape = SimpleNamespace(
+        Solids=[_valid_closed_solid(45423.894)],
         Volume=45423.894,
         Area=9673.3628,
         BoundBox=_bbox(60.0, 40.0, 20.0),
@@ -341,6 +376,36 @@ def test_compact_solid_without_sheet_thickness_is_non_sheet_metal():
     result = _classify_part_geometry(shape, None, "low")
 
     assert result.category == "non_sheet_metal"
+    assert result.confidence == "high"
+
+
+def test_shape_without_solids_is_unknown_even_when_thickness_was_detected():
+    shape = SimpleNamespace(
+        Solids=[],
+        Shells=[object()],
+        Volume=1000.0,
+        Area=2000.0,
+        BoundBox=_bbox(100.0, 50.0, 2.0),
+    )
+
+    result = _classify_part_geometry(shape, 2.0, "high")
+
+    assert result.category == "unknown"
+    assert result.confidence == "low"
+    assert "non contiene solidi chiusi validi" in result.reason
+
+
+def test_one_valid_closed_solid_keeps_normal_sheet_metal_classification():
+    shape = SimpleNamespace(
+        Solids=[_valid_closed_solid(10000.0)],
+        Volume=10000.0,
+        Area=12000.0,
+        BoundBox=_bbox(100.0, 50.0, 2.0),
+    )
+
+    result = _classify_part_geometry(shape, 2.0, "high")
+
+    assert result.category == "sheet_metal"
     assert result.confidence == "high"
 
 
@@ -717,7 +782,11 @@ def test_planar_wire_area_fails_safely_for_an_invalid_wire(monkeypatch):
 
 def test_flat_pattern_reports_exact_planar_blank():
     result = _estimate_flat_pattern(
-        shape=SimpleNamespace(Volume=11774.0, BoundBox=_bbox(100.0, 60.0, 2.0)),
+        shape=SimpleNamespace(
+            Solids=[_valid_closed_solid(11774.0)],
+            Volume=11774.0,
+            BoundBox=_bbox(100.0, 60.0, 2.0),
+        ),
         thickness_mm=2.0,
         thickness_confidence="high",
         bends=[],
@@ -742,7 +811,11 @@ def test_flat_pattern_reports_exact_planar_blank():
 
 def test_flat_pattern_restores_countersink_removal_before_area_projection():
     result = _estimate_flat_pattern(
-        shape=SimpleNamespace(Volume=30410.4425, BoundBox=_bbox(110.0, 70.0, 4.0)),
+        shape=SimpleNamespace(
+            Solids=[_valid_closed_solid(30410.4425)],
+            Volume=30410.4425,
+            BoundBox=_bbox(110.0, 70.0, 4.0),
+        ),
         thickness_mm=4.0,
         thickness_confidence="high",
         bends=[],
@@ -787,6 +860,29 @@ def test_multi_solid_flat_pattern_is_unavailable_even_with_thickness():
     assert any("piu solidi" in warning for warning in result.warnings)
 
 
+def test_zero_solid_flat_pattern_is_unavailable_even_with_high_confidence_thickness():
+    result = _estimate_flat_pattern(
+        shape=SimpleNamespace(
+            Solids=[],
+            Volume=5000.0,
+            BoundBox=_bbox(100.0, 50.0, 2.0),
+        ),
+        thickness_mm=2.0,
+        thickness_confidence="high",
+        bends=[],
+        holes=[],
+        cutting_outer_perimeter_mm=300.0,
+        density_g_cm3=7.85,
+        parameters=load_analysis_config(),
+        part_category="sheet_metal",
+    )
+
+    assert result.status == "unavailable"
+    assert result.usable_for_costing is False
+    assert result.blank_weight_kg is None
+    assert any("solido chiuso valido" in warning for warning in result.warnings)
+
+
 def test_flat_pattern_never_uses_volume_rectangle_without_face_graph():
     bend_items = [
         BendFeature(
@@ -799,7 +895,11 @@ def test_flat_pattern_never_uses_volume_rectangle_without_face_graph():
         for _ in range(2)
     ]
     result = _estimate_flat_pattern(
-        shape=SimpleNamespace(Volume=18488.0, BoundBox=_bbox(102.0, 50.0, 51.0)),
+        shape=SimpleNamespace(
+            Solids=[_valid_closed_solid(18488.0)],
+            Volume=18488.0,
+            BoundBox=_bbox(102.0, 50.0, 51.0),
+        ),
         thickness_mm=2.0,
         thickness_confidence="high",
         bends=bend_items,
@@ -821,7 +921,11 @@ def test_flat_pattern_never_uses_volume_rectangle_without_face_graph():
 
 def test_flat_pattern_keeps_complex_non_parallel_part_partial():
     result = _estimate_flat_pattern(
-        shape=SimpleNamespace(Volume=20000.0, BoundBox=_bbox(100.0, 80.0, 50.0)),
+        shape=SimpleNamespace(
+            Solids=[_valid_closed_solid(20000.0)],
+            Volume=20000.0,
+            BoundBox=_bbox(100.0, 80.0, 50.0),
+        ),
         thickness_mm=2.0,
         thickness_confidence="high",
         bends=[

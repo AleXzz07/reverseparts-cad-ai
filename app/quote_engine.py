@@ -789,9 +789,17 @@ def quote_from_cad(
         total_cut_length_mm = flat_pattern.get("total_cut_length_mm")
     flat_pattern_status = flat_pattern.get("status", "unavailable")
     flat_validation = flat_pattern.get("validation", {}) or {}
+    geometry = cad_data.get("geometry")
+    reported_solid_count = (
+        geometry.get("solid_count")
+        if isinstance(geometry, dict) and "solid_count" in geometry
+        else None
+    )
+    single_solid_topology_supported = reported_solid_count in {None, 1}
     flat_usable_for_costing = bool(flat_pattern.get("usable_for_costing")) and (
         flat_pattern_status in {"exact", "validated_estimate"}
         and bool(flat_validation.get("passed"))
+        and single_solid_topology_supported
     )
     laser_costing_available = not quote_not_applicable and flat_usable_for_costing
     if not laser_costing_available:

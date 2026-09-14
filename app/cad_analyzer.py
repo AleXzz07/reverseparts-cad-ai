@@ -22,6 +22,8 @@ from .schemas import (
     WeldEvidence,
 )
 from .sheetmetal_unfolder import (
+    SheetTopologyContext,
+    build_sheet_topology_context,
     propagate_openings_and_hole_to_bend,
     singleton_bend_adjacent_faces,
     unfold_sheet,
@@ -1986,6 +1988,7 @@ def _detect_bends(
     detected_thickness_mm: float | None,
     parameters: AnalysisParameters,
     part_category: str = "sheet_metal",
+    topology_context: SheetTopologyContext | None = None,
 ) -> list[BendFeature]:
     if detected_thickness_mm is None or part_category != "sheet_metal":
         return []
@@ -1994,7 +1997,8 @@ def _detect_bends(
     max_radius = max(12.0, thickness_reference * 6.0)
     candidates: list[tuple[object, BendFeature]] = []
 
-    for face in shape.Faces:
+    faces = topology_context.faces if topology_context is not None else shape.Faces
+    for face in faces:
         surface = face.Surface
         if getattr(surface, "TypeId", "") != "Part::GeomCylinder":
             continue
@@ -2065,6 +2069,7 @@ def _detect_bends(
             shape,
             thickness_reference,
             parameters,
+            topology_context=topology_context,
         )
         if len(adjacent_faces) != 2:
             continue
@@ -2176,6 +2181,7 @@ def _estimate_flat_pattern(
     density_g_cm3: float | None,
     parameters: AnalysisParameters,
     part_category: str = "sheet_metal",
+    topology_context: SheetTopologyContext | None = None,
 ) -> FlatPattern:
     result = FlatPattern(
         thickness_mm=thickness_mm,
@@ -2184,6 +2190,11 @@ def _estimate_flat_pattern(
     if part_category == "multi_solid":
         result.warnings.append(
             "Sviluppo piano globale non disponibile: lo STEP contiene piu solidi/componenti."
+        )
+        return result
+    if not _has_exactly_one_valid_closed_solid(shape):
+        result.warnings.append(
+            "Sviluppo piano non disponibile: il CAD non contiene esattamente un solido chiuso valido."
         )
         return result
     if thickness_mm is None or thickness_mm <= 0:
@@ -2211,6 +2222,7 @@ def _estimate_flat_pattern(
             density_g_cm3=density_g_cm3,
             k_factor=parameters.flat_pattern_k_factor,
             parameters=parameters,
+            topology_context=topology_context,
         )
         if geometric_result is not None:
             if holes:
@@ -2221,6 +2233,7 @@ def _estimate_flat_pattern(
                     holes=holes,
                     k_factor=parameters.flat_pattern_k_factor,
                     parameters=parameters,
+                    topology_context=topology_context,
                 )
             return geometric_result
 
@@ -2480,6 +2493,18 @@ def _detect_sheet_thickness(
     return dominant_value, confidence
 
 
+def _has_exactly_one_valid_closed_solid(shape) -> bool:
+    solids = list(getattr(shape, "Solids", []) or [])
+    if len(solids) != 1:
+        return False
+    solid = solids[0]
+    try:
+        volume = float(solid.Volume)
+        return bool(solid.isValid()) and bool(solid.isClosed()) and math.isfinite(volume) and volume > 0.0
+    except (AttributeError, RuntimeError, TypeError, ValueError):
+        return False
+
+
 def _classify_part_geometry(
     shape,
     detected_thickness_mm: float | None,
@@ -2494,6 +2519,24 @@ def _classify_part_geometry(
             reason=(
                 f"Lo STEP contiene {solid_count} solidi/componenti distinti; "
                 "non e un singolo pezzo lamiera preventivabile come unita."
+            ),
+        )
+    if solid_count == 0:
+        return PartClassification(
+            category="unknown",
+            confidence="low",
+            reason=(
+                "Il CAD non contiene solidi chiusi validi; geometrie Compound/Shell "
+                "non sono classificabili con affidabilita come lamiera."
+            ),
+        )
+    if not _has_exactly_one_valid_closed_solid(shape):
+        return PartClassification(
+            category="unknown",
+            confidence="low",
+            reason=(
+                "Il CAD contiene un solido non valido o non chiuso; la classificazione "
+                "lamiera richiede un unico solido chiuso valido."
             ),
         )
     if detected_thickness_mm is not None:
@@ -3210,11 +3253,30 @@ def analyze_step_file(
         if response.holes.unknown_holes > 0:
             response.warnings.append(UNKNOWN_HOLE_WARNING)
 
+        topology_context: SheetTopologyContext | None = None
+        if (
+            response.part_classification.category == "sheet_metal"
+            and detected_thickness is not None
+        ):
+            try:
+                topology_context = build_sheet_topology_context(
+                    shape,
+                    detected_thickness,
+                    analysis_parameters.flat_pattern_k_factor,
+                    analysis_parameters,
+                )
+            except (AttributeError, RuntimeError, TypeError, ValueError):
+                # Preserve the existing best-effort behavior for unsupported
+                # topology: bend detection and flat-pattern code can still run
+                # through their uncached paths and return a conservative result.
+                topology_context = None
+
         response.bends.items = _detect_bends(
             shape,
             detected_thickness,
             analysis_parameters,
             response.part_classification.category,
+            topology_context=topology_context,
         )
         if response.bends.items:
             response.bends.count = len(response.bends.items)
@@ -3292,6 +3354,7 @@ def analyze_step_file(
             density_g_cm3=response.density_g_cm3,
             parameters=analysis_parameters,
             part_category=response.part_classification.category,
+            topology_context=topology_context,
         )
 
         if response.part_classification.category == "sheet_metal":

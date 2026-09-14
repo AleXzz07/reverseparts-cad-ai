@@ -70,6 +70,16 @@ def _projection_span(points: list[Vector3], axis: Vector3) -> float:
     return max(values) - min(values) if values else 0.0
 
 
+def _projection_interval(
+    points: list[Vector3],
+    axis: Vector3,
+) -> tuple[float, float] | None:
+    values = [_dot(point, axis) for point in points]
+    if not values:
+        return None
+    return min(values), max(values)
+
+
 def _face_points(face: Any) -> list[Vector3]:
     wire = getattr(face, "OuterWire", None)
     ordered = getattr(wire, "OrderedVertexes", None)
@@ -99,8 +109,11 @@ def _face_signature(face: Any) -> tuple[Any, ...]:
     surface = face.Surface
     center = _face_center(face)
     type_id = _surface_type(face)
-    normal_or_axis = _canonical_axis(_vector(surface.Axis))
-    radius = float(getattr(surface, "Radius", 0.0))
+    if type_id in {"Part::GeomPlane", "Part::GeomCylinder"}:
+        normal_or_axis = _canonical_axis(_vector(surface.Axis))
+    else:
+        normal_or_axis = (0.0, 0.0, 0.0)
+    radius = float(surface.Radius) if type_id == "Part::GeomCylinder" else 0.0
     return (
         type_id,
         round(float(face.Area), 6),
@@ -188,11 +201,12 @@ def _has_opposite_sheet_skin(
     shape: Any,
     thickness_mm: float,
     tolerance_mm: float,
+    candidate_faces: tuple[Any, ...] | None = None,
 ) -> bool:
     normal = _normalize(_vector(face.Surface.Axis))
     offset = _plane_offset(normal, _vector(face.Surface.Position))
     face_points = _face_points(face)
-    for other in getattr(shape, "Faces", []):
+    for other in candidate_faces if candidate_faces is not None else getattr(shape, "Faces", []):
         if other is face or _surface_type(other) != "Part::GeomPlane":
             continue
         other_normal = _normalize(_vector(other.Surface.Axis))
@@ -236,44 +250,94 @@ def singleton_bend_adjacent_faces(
     shape: Any,
     thickness_mm: float,
     parameters: Any,
+    topology_context: SheetTopologyContext | None = None,
 ) -> list[Any]:
     """Return the two tangent sheet skins supporting a safe one-cylinder fallback.
 
     A full cylinder/hole and radius-only matches are deliberately rejected.  The
     returned evidence is used only after complete R/R+t pairing has run.
     """
-    if _surface_type(face) != "Part::GeomCylinder":
-        return []
-    span = _cylinder_span_deg(face)
+    cache_key = id(face)
+    if topology_context is not None and cache_key in topology_context.singleton_adjacency_cache:
+        return list(topology_context.singleton_adjacency_cache[cache_key])
+
+    def finish(value: list[Any]) -> list[Any]:
+        if topology_context is not None:
+            topology_context.singleton_adjacency_cache[cache_key] = tuple(value)
+        return value
+
+    descriptor = topology_context.descriptor(face) if topology_context is not None else None
+    if (
+        descriptor.surface_type if descriptor is not None else _surface_type(face)
+    ) != "Part::GeomCylinder":
+        return finish([])
+    span = descriptor.cylinder_span_deg if descriptor is not None else _cylinder_span_deg(face)
     if span is None or not 1.0 <= span < 350.0:
-        return []
-    axis = _canonical_axis(_vector(face.Surface.Axis))
+        return finish([])
+    axis = descriptor.axis if descriptor is not None else _canonical_axis(_vector(face.Surface.Axis))
     radius = float(face.Surface.Radius)
-    center = _vector(face.Surface.Center)
+    center = (
+        descriptor.surface_center
+        if descriptor is not None and descriptor.surface_center is not None
+        else _vector(face.Surface.Center)
+    )
     tolerance = max(
         float(parameters.flat_pattern_edge_match_tolerance_mm),
         float(parameters.flat_pattern_face_pair_distance_tolerance_mm),
     )
-    paired_panel_signatures = {
-        _face_signature(panel_face)
-        for panel in _pair_planar_faces(shape, thickness_mm, parameters)
-        for panel_face in panel.faces
-    }
-    cylinder_length = _cylinder_length(face, axis)
+    if topology_context is None:
+        paired_panel_signatures = {
+            _face_signature(panel_face)
+            for panel in _pair_planar_faces(shape, thickness_mm, parameters)
+            for panel_face in panel.faces
+        }
+        candidate_faces = getattr(shape, "Faces", [])
+    else:
+        paired_panel_signatures = topology_context.paired_planar_signatures
+        candidate_faces = topology_context.faces
+    cylinder_length = (
+        descriptor.cylinder_length_mm
+        if descriptor is not None and descriptor.cylinder_length_mm is not None
+        else _cylinder_length(face, axis)
+    )
     matches: list[tuple[Any, float]] = []
-    for panel_face in getattr(shape, "Faces", []):
-        if _surface_type(panel_face) != "Part::GeomPlane":
+    for panel_face in candidate_faces:
+        panel_surface_type = _surface_type(panel_face)
+        if panel_surface_type != "Part::GeomPlane":
             continue
+        panel_descriptor = (
+            topology_context.descriptor(panel_face)
+            if topology_context is not None
+            else None
+        )
+        panel_signature = (
+            panel_descriptor.signature
+            if panel_descriptor is not None
+            else _face_signature(panel_face)
+        )
         if (
-            _face_signature(panel_face) not in paired_panel_signatures
-            and not _has_opposite_sheet_skin(panel_face, shape, thickness_mm, tolerance)
+            panel_signature not in paired_panel_signatures
+            and not (
+                topology_context.has_opposite_sheet_skin(panel_face, tolerance)
+                if topology_context is not None
+                else _has_opposite_sheet_skin(panel_face, shape, thickness_mm, tolerance)
+            )
         ):
             continue
-        normal = _normalize(_vector(panel_face.Surface.Axis))
+        normal = (
+            panel_descriptor.axis
+            if panel_descriptor is not None
+            else _normalize(_vector(panel_face.Surface.Axis))
+        )
         if abs(_dot(normal, axis)) > 0.05:
             continue
         tangent_edges = []
-        for edge in _shared_edges(panel_face, face):
+        shared_edges = (
+            topology_context.shared_edges(panel_face, face)
+            if topology_context is not None
+            else _shared_edges(panel_face, face)
+        )
+        for edge in shared_edges:
             direction_and_length = _edge_direction_and_length(edge)
             if direction_and_length is None:
                 continue
@@ -299,13 +363,13 @@ def singleton_bend_adjacent_faces(
         if not any(abs(_dot(normal, existing[0])) >= 0.995 for existing in directions):
             directions.append((normal, panel_face, tangent_length))
     if len(directions) != 2 or cylinder_length <= 0:
-        return []
+        return finish([])
     tangent_lengths = [float(item[2]) for item in directions]
     if min(tangent_lengths) < max(cylinder_length * 0.20, float(parameters.bend_min_length_mm)):
-        return []
+        return finish([])
     if abs(tangent_lengths[0] - tangent_lengths[1]) > max(1.0, cylinder_length * 0.65):
-        return []
-    return [item[1] for item in directions]
+        return finish([])
+    return finish([item[1] for item in directions])
 
 
 @dataclass
@@ -318,36 +382,179 @@ class SheetFaceGraph:
     warnings: list[str] = field(default_factory=list)
 
 
-def _pair_planar_faces(shape: Any, thickness_mm: float, parameters: Any) -> list[SheetPanel]:
-    faces = sorted(
-        [face for face in shape.Faces if _surface_type(face) == "Part::GeomPlane"],
-        key=_face_signature,
+@dataclass(frozen=True)
+class SheetFaceDescriptor:
+    face: Any
+    surface_type: str
+    signature: tuple[Any, ...]
+    area_mm2: float
+    center: Vector3
+    axis: Vector3 | None
+    surface_position: Vector3 | None = None
+    surface_center: Vector3 | None = None
+    cylinder_span_deg: float | None = None
+    cylinder_length_mm: float | None = None
+
+
+@dataclass
+class SheetTopologyContext:
+    """Per-analysis OCC topology cache; never shared across STEP files."""
+
+    shape: Any
+    thickness_mm: float
+    k_factor: float
+    parameters: Any
+    faces: tuple[Any, ...]
+    descriptors: dict[int, SheetFaceDescriptor]
+    planar_faces: tuple[Any, ...]
+    cylindrical_faces: tuple[Any, ...]
+    panels: list[SheetPanel] = field(default_factory=list)
+    bends: list[SheetBendZone] = field(default_factory=list)
+    graph: SheetFaceGraph | None = None
+    paired_planar_signatures: frozenset[tuple[Any, ...]] = frozenset()
+    opposite_skin_cache: dict[tuple[int, float], bool] = field(default_factory=dict)
+    shared_edges_cache: dict[tuple[int, int], tuple[Any, ...]] = field(default_factory=dict)
+    singleton_adjacency_cache: dict[int, tuple[Any, ...]] = field(default_factory=dict)
+
+    def descriptor(self, face: Any) -> SheetFaceDescriptor:
+        descriptor = self.descriptors.get(id(face))
+        if descriptor is None:
+            descriptor = _make_face_descriptor(face)
+            self.descriptors[id(face)] = descriptor
+        return descriptor
+
+    def has_opposite_sheet_skin(self, face: Any, tolerance_mm: float) -> bool:
+        key = (id(face), round(float(tolerance_mm), 9))
+        if key not in self.opposite_skin_cache:
+            self.opposite_skin_cache[key] = _has_opposite_sheet_skin(
+                face,
+                self.shape,
+                self.thickness_mm,
+                tolerance_mm,
+                candidate_faces=self.faces,
+            )
+        return self.opposite_skin_cache[key]
+
+    def shared_edges(self, left: Any, right: Any | None) -> tuple[Any, ...]:
+        if right is None:
+            return ()
+        key = (id(left), id(right))
+        if key not in self.shared_edges_cache:
+            self.shared_edges_cache[key] = tuple(_shared_edges(left, right))
+        return self.shared_edges_cache[key]
+
+    def faces_share_edge(self, left: Any, right: Any) -> bool:
+        return bool(self.shared_edges(left, right))
+
+
+def _make_face_descriptor(face: Any) -> SheetFaceDescriptor:
+    surface = face.Surface
+    surface_type = _surface_type(face)
+    center = _face_center(face)
+    axis: Vector3 | None = None
+    surface_position: Vector3 | None = None
+    surface_center: Vector3 | None = None
+    radius = 0.0
+    span: float | None = None
+    length: float | None = None
+    if surface_type == "Part::GeomPlane":
+        axis = _canonical_axis(_vector(surface.Axis))
+        surface_position = _vector(surface.Position)
+    elif surface_type == "Part::GeomCylinder":
+        axis = _canonical_axis(_vector(surface.Axis))
+        surface_center = _vector(surface.Center)
+        radius = float(surface.Radius)
+        span = _cylinder_span_deg(face)
+        length = _cylinder_length(face, axis)
+    signature_axis = axis if axis is not None else (0.0, 0.0, 0.0)
+    signature = (
+        surface_type,
+        round(float(face.Area), 6),
+        *(round(value, 6) for value in center),
+        *(round(value, 6) for value in signature_axis),
+        round(radius, 6),
     )
+    return SheetFaceDescriptor(
+        face=face,
+        surface_type=surface_type,
+        signature=signature,
+        area_mm2=float(face.Area),
+        center=center,
+        axis=axis,
+        surface_position=surface_position,
+        surface_center=surface_center,
+        cylinder_span_deg=span,
+        cylinder_length_mm=length,
+    )
+
+
+def _pair_planar_faces(
+    shape: Any,
+    thickness_mm: float,
+    parameters: Any,
+    topology_context: SheetTopologyContext | None = None,
+) -> list[SheetPanel]:
+    if topology_context is None:
+        faces = sorted(
+            [face for face in shape.Faces if _surface_type(face) == "Part::GeomPlane"],
+            key=_face_signature,
+        )
+        descriptor = None
+    else:
+        faces = sorted(
+            topology_context.planar_faces,
+            key=lambda face: topology_context.descriptor(face).signature,
+        )
+        descriptor = topology_context.descriptor
     candidates: list[tuple[float, float, int, int]] = []
     tolerance = float(parameters.flat_pattern_face_pair_distance_tolerance_mm)
     for left_index, left in enumerate(faces):
-        left_normal = _normalize(_vector(left.Surface.Axis))
-        left_offset = _plane_offset(left_normal, _vector(left.Surface.Position))
+        left_descriptor = descriptor(left) if descriptor is not None else None
+        left_normal = (
+            left_descriptor.axis
+            if left_descriptor is not None
+            else _normalize(_vector(left.Surface.Axis))
+        )
+        left_position = (
+            left_descriptor.surface_position
+            if left_descriptor is not None
+            else _vector(left.Surface.Position)
+        )
+        left_offset = _plane_offset(left_normal, left_position)
+        left_area = left_descriptor.area_mm2 if left_descriptor is not None else float(left.Area)
+        left_center = left_descriptor.center if left_descriptor is not None else _face_center(left)
         for right_index in range(left_index + 1, len(faces)):
             right = faces[right_index]
-            right_normal = _normalize(_vector(right.Surface.Axis))
+            right_descriptor = descriptor(right) if descriptor is not None else None
+            right_normal = (
+                right_descriptor.axis
+                if right_descriptor is not None
+                else _normalize(_vector(right.Surface.Axis))
+            )
             alignment = _dot(left_normal, right_normal)
             if abs(alignment) < 0.995:
                 continue
-            right_offset = _plane_offset(right_normal, _vector(right.Surface.Position))
+            right_position = (
+                right_descriptor.surface_position
+                if right_descriptor is not None
+                else _vector(right.Surface.Position)
+            )
+            right_offset = _plane_offset(right_normal, right_position)
             distance = abs(left_offset - right_offset) if alignment > 0 else abs(left_offset + right_offset)
             if abs(distance - thickness_mm) > tolerance:
                 continue
-            area_ratio = min(float(left.Area), float(right.Area)) / max(float(left.Area), float(right.Area), 1e-9)
+            right_area = right_descriptor.area_mm2 if right_descriptor is not None else float(right.Area)
+            area_ratio = min(left_area, right_area) / max(left_area, right_area, 1e-9)
             if area_ratio < 0.65:
                 continue
-            center_delta = _sub(_face_center(right), _face_center(left))
+            right_center = right_descriptor.center if right_descriptor is not None else _face_center(right)
+            center_delta = _sub(right_center, left_center)
             lateral = _sub(center_delta, _scale(left_normal, _dot(center_delta, left_normal)))
             lateral_error = _norm(lateral)
-            scale = max(math.sqrt(float(left.Area)), math.sqrt(float(right.Area)), thickness_mm)
+            scale = max(math.sqrt(left_area), math.sqrt(right_area), thickness_mm)
             if lateral_error > max(tolerance * 4.0, scale * 0.03):
                 continue
-            candidates.append((area_ratio, min(float(left.Area), float(right.Area)), left_index, right_index))
+            candidates.append((area_ratio, min(left_area, right_area), left_index, right_index))
 
     used: set[int] = set()
     selected: list[tuple[Any, Any]] = []
@@ -357,18 +564,33 @@ def _pair_planar_faces(shape: Any, thickness_mm: float, parameters: Any) -> list
         used.update((left_index, right_index))
         selected.append((faces[left_index], faces[right_index]))
 
-    selected.sort(key=lambda pair: min(_face_signature(pair[0]), _face_signature(pair[1])))
+    selected.sort(
+        key=lambda pair: min(
+            descriptor(pair[0]).signature if descriptor is not None else _face_signature(pair[0]),
+            descriptor(pair[1]).signature if descriptor is not None else _face_signature(pair[1]),
+        )
+    )
     panels: list[SheetPanel] = []
     for index, pair in enumerate(selected, start=1):
         left, right = pair
-        normal = _canonical_axis(_vector(left.Surface.Axis))
+        left_descriptor = descriptor(left) if descriptor is not None else None
+        right_descriptor = descriptor(right) if descriptor is not None else None
+        normal = (
+            left_descriptor.axis
+            if left_descriptor is not None
+            else _canonical_axis(_vector(left.Surface.Axis))
+        )
+        left_center = left_descriptor.center if left_descriptor is not None else _face_center(left)
+        right_center = right_descriptor.center if right_descriptor is not None else _face_center(right)
+        left_area = left_descriptor.area_mm2 if left_descriptor is not None else float(left.Area)
+        right_area = right_descriptor.area_mm2 if right_descriptor is not None else float(right.Area)
         panels.append(
             SheetPanel(
                 id=f"panel_{index:03d}",
                 faces=pair,
                 normal=normal,
-                center=_scale(_add(_face_center(left), _face_center(right)), 0.5),
-                area_mm2=(float(left.Area) + float(right.Area)) / 2.0,
+                center=_scale(_add(left_center, right_center), 0.5),
+                area_mm2=(left_area + right_area) / 2.0,
             )
         )
     return panels
@@ -391,34 +613,88 @@ def _cylinder_length(face: Any, axis: Vector3) -> float:
     return _projection_span(_face_points(face), axis)
 
 
-def _pair_bend_faces(shape: Any, thickness_mm: float, k_factor: float, parameters: Any) -> list[SheetBendZone]:
-    faces = sorted(
-        [face for face in shape.Faces if _surface_type(face) == "Part::GeomCylinder"],
-        key=_face_signature,
-    )
+def _pair_bend_faces(
+    shape: Any,
+    thickness_mm: float,
+    k_factor: float,
+    parameters: Any,
+    topology_context: SheetTopologyContext | None = None,
+) -> list[SheetBendZone]:
+    if topology_context is None:
+        faces = sorted(
+            [face for face in shape.Faces if _surface_type(face) == "Part::GeomCylinder"],
+            key=_face_signature,
+        )
+        descriptor = None
+    else:
+        faces = sorted(
+            topology_context.cylindrical_faces,
+            key=lambda face: topology_context.descriptor(face).signature,
+        )
+        descriptor = topology_context.descriptor
     tolerance = float(parameters.bend_radius_pair_tolerance_mm)
+    axial_overlap_tolerance = float(parameters.flat_pattern_edge_match_tolerance_mm)
+    face_points = {id(face): _face_points(face) for face in faces}
     candidates: list[tuple[float, int, int]] = []
     for left_index, left in enumerate(faces):
-        left_span = _cylinder_span_deg(left)
+        left_descriptor = descriptor(left) if descriptor is not None else None
+        left_span = (
+            left_descriptor.cylinder_span_deg
+            if left_descriptor is not None
+            else _cylinder_span_deg(left)
+        )
         if left_span is None or not 1.0 <= left_span <= 180.0:
             continue
-        left_axis = _canonical_axis(_vector(left.Surface.Axis))
+        left_axis = (
+            left_descriptor.axis
+            if left_descriptor is not None
+            else _canonical_axis(_vector(left.Surface.Axis))
+        )
         for right_index in range(left_index + 1, len(faces)):
             right = faces[right_index]
-            right_span = _cylinder_span_deg(right)
+            right_descriptor = descriptor(right) if descriptor is not None else None
+            right_span = (
+                right_descriptor.cylinder_span_deg
+                if right_descriptor is not None
+                else _cylinder_span_deg(right)
+            )
             if right_span is None or abs(left_span - right_span) > 0.2:
                 continue
-            right_axis = _canonical_axis(_vector(right.Surface.Axis))
+            right_axis = (
+                right_descriptor.axis
+                if right_descriptor is not None
+                else _canonical_axis(_vector(right.Surface.Axis))
+            )
             if abs(_dot(left_axis, right_axis)) < 0.995:
                 continue
             radius_delta = abs(float(left.Surface.Radius) - float(right.Surface.Radius))
             if abs(radius_delta - thickness_mm) > tolerance:
                 continue
-            left_center = _vector(left.Surface.Center)
-            right_center = _vector(right.Surface.Center)
+            left_center = (
+                left_descriptor.surface_center
+                if left_descriptor is not None and left_descriptor.surface_center is not None
+                else _vector(left.Surface.Center)
+            )
+            right_center = (
+                right_descriptor.surface_center
+                if right_descriptor is not None and right_descriptor.surface_center is not None
+                else _vector(right.Surface.Center)
+            )
             center_delta = _sub(left_center, right_center)
             radial_delta = _sub(center_delta, _scale(left_axis, _dot(center_delta, left_axis)))
             if _norm(radial_delta) > float(parameters.bend_center_tolerance_mm):
+                continue
+            left_interval = _projection_interval(face_points[id(left)], left_axis)
+            right_interval = _projection_interval(face_points[id(right)], left_axis)
+            if left_interval is None or right_interval is None:
+                continue
+            axial_overlap = min(left_interval[1], right_interval[1]) - max(
+                left_interval[0],
+                right_interval[0],
+            )
+            # Proximity between disjoint intervals is not sufficient evidence
+            # that two cylindrical skins belong to the same physical bend.
+            if axial_overlap <= axial_overlap_tolerance:
                 continue
             candidates.append((min(float(left.Area), float(right.Area)), left_index, right_index))
 
@@ -430,23 +706,59 @@ def _pair_bend_faces(shape: Any, thickness_mm: float, k_factor: float, parameter
         used.update((left_index, right_index))
         left, right = faces[left_index], faces[right_index]
         pairs.append(tuple(sorted((left, right), key=lambda face: float(face.Surface.Radius))))
-    pairs.sort(key=lambda pair: _face_signature(pair[0]))
+    pairs.sort(
+        key=lambda pair: (
+            descriptor(pair[0]).signature
+            if descriptor is not None
+            else _face_signature(pair[0])
+        )
+    )
 
     bends: list[SheetBendZone] = []
     for index, (inner, outer) in enumerate(pairs, start=1):
-        axis = _canonical_axis(_vector(inner.Surface.Axis))
-        angle = _cylinder_span_deg(inner)
+        inner_descriptor = descriptor(inner) if descriptor is not None else None
+        outer_descriptor = descriptor(outer) if descriptor is not None else None
+        axis = (
+            inner_descriptor.axis
+            if inner_descriptor is not None
+            else _canonical_axis(_vector(inner.Surface.Axis))
+        )
+        angle = (
+            inner_descriptor.cylinder_span_deg
+            if inner_descriptor is not None
+            else _cylinder_span_deg(inner)
+        )
         if angle is None:
             continue
-        length = max(_cylinder_length(inner, axis), _cylinder_length(outer, axis))
+        inner_length = (
+            inner_descriptor.cylinder_length_mm
+            if inner_descriptor is not None and inner_descriptor.cylinder_length_mm is not None
+            else _cylinder_length(inner, axis)
+        )
+        outer_length = (
+            outer_descriptor.cylinder_length_mm
+            if outer_descriptor is not None and outer_descriptor.cylinder_length_mm is not None
+            else _cylinder_length(outer, axis)
+        )
+        length = max(inner_length, outer_length)
         radius = float(inner.Surface.Radius)
+        inner_center = (
+            inner_descriptor.surface_center
+            if inner_descriptor is not None and inner_descriptor.surface_center is not None
+            else _vector(inner.Surface.Center)
+        )
+        outer_center = (
+            outer_descriptor.surface_center
+            if outer_descriptor is not None and outer_descriptor.surface_center is not None
+            else _vector(outer.Surface.Center)
+        )
         bends.append(
             SheetBendZone(
                 id=f"bend_{index:03d}",
                 inner_face=inner,
                 outer_face=outer,
                 axis=axis,
-                center=_scale(_add(_vector(inner.Surface.Center), _vector(outer.Surface.Center)), 0.5),
+                center=_scale(_add(inner_center, outer_center), 0.5),
                 inner_radius_mm=radius,
                 angle_deg=angle,
                 length_mm=length,
@@ -459,7 +771,12 @@ def _pair_bend_faces(shape: Any, thickness_mm: float, k_factor: float, parameter
     for face_index, face in enumerate(faces):
         if face_index in used:
             continue
-        span = _cylinder_span_deg(face)
+        face_descriptor = descriptor(face) if descriptor is not None else None
+        span = (
+            face_descriptor.cylinder_span_deg
+            if face_descriptor is not None
+            else _cylinder_span_deg(face)
+        )
         if span is None or not 1.0 <= span <= 180.0:
             continue
         radius = float(face.Surface.Radius)
@@ -467,11 +784,25 @@ def _pair_bend_faces(shape: Any, thickness_mm: float, k_factor: float, parameter
         max_radius = max(12.0, thickness_mm * 6.0)
         if not min_radius <= radius <= max_radius:
             continue
-        adjacent_faces = singleton_bend_adjacent_faces(face, shape, thickness_mm, parameters)
+        adjacent_faces = singleton_bend_adjacent_faces(
+            face,
+            shape,
+            thickness_mm,
+            parameters,
+            topology_context=topology_context,
+        )
         if len(adjacent_faces) != 2:
             continue
-        axis = _canonical_axis(_vector(face.Surface.Axis))
-        length = _cylinder_length(face, axis)
+        axis = (
+            face_descriptor.axis
+            if face_descriptor is not None
+            else _canonical_axis(_vector(face.Surface.Axis))
+        )
+        length = (
+            face_descriptor.cylinder_length_mm
+            if face_descriptor is not None and face_descriptor.cylinder_length_mm is not None
+            else _cylinder_length(face, axis)
+        )
         if length < float(parameters.bend_min_length_mm):
             continue
         bends.append(
@@ -480,7 +811,11 @@ def _pair_bend_faces(shape: Any, thickness_mm: float, k_factor: float, parameter
                 inner_face=face,
                 outer_face=None,
                 axis=axis,
-                center=_vector(face.Surface.Center),
+                center=(
+                    face_descriptor.surface_center
+                    if face_descriptor is not None and face_descriptor.surface_center is not None
+                    else _vector(face.Surface.Center)
+                ),
                 inner_radius_mm=radius,
                 angle_deg=span,
                 length_mm=length,
@@ -488,7 +823,13 @@ def _pair_bend_faces(shape: Any, thickness_mm: float, k_factor: float, parameter
                 direct=False,
             )
         )
-    bends.sort(key=lambda bend: _face_signature(bend.inner_face))
+    bends.sort(
+        key=lambda bend: (
+            descriptor(bend.inner_face).signature
+            if descriptor is not None
+            else _face_signature(bend.inner_face)
+        )
+    )
     for index, bend in enumerate(bends, start=1):
         bend.id = f"bend_{index:03d}"
     return bends
@@ -515,16 +856,26 @@ def _graph_connected(panels: list[SheetPanel], bends: list[SheetBendZone]) -> bo
     return len(visited) == len(panels)
 
 
-def build_sheet_face_graph(shape: Any, thickness_mm: float, k_factor: float, parameters: Any) -> SheetFaceGraph:
-    panels = _pair_planar_faces(shape, thickness_mm, parameters)
-    bends = _pair_bend_faces(shape, thickness_mm, k_factor, parameters)
+def _assemble_sheet_face_graph(
+    panels: list[SheetPanel],
+    bends: list[SheetBendZone],
+    topology_context: SheetTopologyContext | None = None,
+) -> SheetFaceGraph:
     warnings: list[str] = []
     for bend in bends:
         bend_faces = tuple(face for face in (bend.inner_face, bend.outer_face) if face is not None)
         bend.panel_ids = [
             panel.id
             for panel in panels
-            if any(_faces_share_edge(panel_face, bend_face) for panel_face in panel.faces for bend_face in bend_faces)
+            if any(
+                (
+                    topology_context.faces_share_edge(panel_face, bend_face)
+                    if topology_context is not None
+                    else _faces_share_edge(panel_face, bend_face)
+                )
+                for panel_face in panel.faces
+                for bend_face in bend_faces
+            )
         ]
         if len(bend.panel_ids) != 2:
             warnings.append(
@@ -544,6 +895,75 @@ def build_sheet_face_graph(shape: Any, thickness_mm: float, k_factor: float, par
         direct=connected and not warnings and all(bend.direct for bend in bends),
         warnings=warnings,
     )
+
+
+def build_sheet_topology_context(
+    shape: Any,
+    thickness_mm: float,
+    k_factor: float,
+    parameters: Any,
+) -> SheetTopologyContext:
+    faces = tuple(getattr(shape, "Faces", []) or [])
+    context = SheetTopologyContext(
+        shape=shape,
+        thickness_mm=thickness_mm,
+        k_factor=k_factor,
+        parameters=parameters,
+        faces=faces,
+        descriptors={},
+        planar_faces=tuple(face for face in faces if _surface_type(face) == "Part::GeomPlane"),
+        cylindrical_faces=tuple(
+            face for face in faces if _surface_type(face) == "Part::GeomCylinder"
+        ),
+    )
+    for face in (*context.planar_faces, *context.cylindrical_faces):
+        context.descriptor(face)
+    context.panels = _pair_planar_faces(
+        shape,
+        thickness_mm,
+        parameters,
+        topology_context=context,
+    )
+    context.paired_planar_signatures = frozenset(
+        context.descriptor(panel_face).signature
+        for panel in context.panels
+        for panel_face in panel.faces
+    )
+    context.bends = _pair_bend_faces(
+        shape,
+        thickness_mm,
+        k_factor,
+        parameters,
+        topology_context=context,
+    )
+    context.graph = _assemble_sheet_face_graph(
+        context.panels,
+        context.bends,
+        topology_context=context,
+    )
+    return context
+
+
+def build_sheet_face_graph(
+    shape: Any,
+    thickness_mm: float,
+    k_factor: float,
+    parameters: Any,
+    topology_context: SheetTopologyContext | None = None,
+) -> SheetFaceGraph:
+    context = topology_context or build_sheet_topology_context(
+        shape,
+        thickness_mm,
+        k_factor,
+        parameters,
+    )
+    if context.graph is None:
+        context.graph = _assemble_sheet_face_graph(
+            context.panels,
+            context.bends,
+            topology_context=context,
+        )
+    return context.graph
 
 
 def _panel_spans(panel: SheetPanel, bend_axis: Vector3, bend_faces: tuple[Any, Any] | None = None) -> tuple[float, float]:
@@ -770,10 +1190,17 @@ def unfold_parallel_sheet(
     density_g_cm3: float | None,
     k_factor: float,
     parameters: Any,
+    topology_context: SheetTopologyContext | None = None,
 ) -> FlatPattern | None:
     if not hasattr(shape, "Faces"):
         return None
-    graph = build_sheet_face_graph(shape, thickness_mm, k_factor, parameters)
+    graph = build_sheet_face_graph(
+        shape,
+        thickness_mm,
+        k_factor,
+        parameters,
+        topology_context=topology_context,
+    )
     if not graph.bends or not _all_axes_parallel(graph.bends):
         return None
     result = FlatPattern(
@@ -961,10 +1388,17 @@ def unfold_orthogonal_sheet(
     density_g_cm3: float | None,
     k_factor: float,
     parameters: Any,
+    topology_context: SheetTopologyContext | None = None,
 ) -> FlatPattern | None:
     if not hasattr(shape, "Faces"):
         return None
-    graph = build_sheet_face_graph(shape, thickness_mm, k_factor, parameters)
+    graph = build_sheet_face_graph(
+        shape,
+        thickness_mm,
+        k_factor,
+        parameters,
+        topology_context=topology_context,
+    )
     if len(graph.bends) < 2 or _all_axes_parallel(graph.bends):
         return None
     if any(
@@ -1089,6 +1523,7 @@ def unfold_sheet(
     density_g_cm3: float | None,
     k_factor: float,
     parameters: Any,
+    topology_context: SheetTopologyContext | None = None,
 ) -> FlatPattern | None:
     parallel = unfold_parallel_sheet(
         shape=shape,
@@ -1098,6 +1533,7 @@ def unfold_sheet(
         density_g_cm3=density_g_cm3,
         k_factor=k_factor,
         parameters=parameters,
+        topology_context=topology_context,
     )
     if parallel is not None:
         return parallel
@@ -1109,6 +1545,7 @@ def unfold_sheet(
         density_g_cm3=density_g_cm3,
         k_factor=k_factor,
         parameters=parameters,
+        topology_context=topology_context,
     )
 
 
@@ -1180,10 +1617,17 @@ def propagate_openings_and_hole_to_bend(
     holes: list[HoleFeature],
     k_factor: float,
     parameters: Any,
+    topology_context: SheetTopologyContext | None = None,
 ) -> tuple[FlatPattern, float | None, int]:
     if not holes or result.status not in {"partial", "exact", "validated_estimate"}:
         return result, None, 0
-    graph = build_sheet_face_graph(shape, thickness_mm, k_factor, parameters)
+    graph = build_sheet_face_graph(
+        shape,
+        thickness_mm,
+        k_factor,
+        parameters,
+        topology_context=topology_context,
+    )
     if not graph.connected:
         result.status = "partial"
         result.usable_for_costing = False
@@ -1225,7 +1669,15 @@ def propagate_openings_and_hole_to_bend(
         for bend in graph.bends:
             if panel.id not in bend.panel_ids:
                 continue
-            shared = _shared_edges(face, bend.inner_face) or _shared_edges(face, bend.outer_face)
+            shared = (
+                topology_context.shared_edges(face, bend.inner_face)
+                if topology_context is not None
+                else _shared_edges(face, bend.inner_face)
+            ) or (
+                topology_context.shared_edges(face, bend.outer_face)
+                if topology_context is not None
+                else _shared_edges(face, bend.outer_face)
+            )
             for edge in shared:
                 try:
                     tangent_distance = float(wire.distToShape(edge)[0])

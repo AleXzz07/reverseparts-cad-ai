@@ -157,6 +157,39 @@ def test_multi_solid_blocks_single_sheet_quote():
     assert quote["welding_quote"]["scope"] == "welding_only"
 
 
+def test_zero_solid_topology_cannot_enable_laser_or_blank_weight():
+    cad_data = {
+        "part_name": "shell compound",
+        "declared_material": "acciaio",
+        "detected_thickness_mm": 2.0,
+        "geometry": {"solid_count": 0, "shell_count": 28},
+        "part_classification": {
+            "category": "sheet_metal",
+            "confidence": "high",
+            "reason": "Payload incoerente usato per verificare il gate indipendente.",
+        },
+        "holes": {"physical_openings_total": 0},
+        "bends": {"count": 0, "items": []},
+        "cutting": {"total_cut_length_mm": 400.0},
+        "flat_pattern": {
+            "status": "exact",
+            "usable_for_costing": True,
+            "validation": {"passed": True},
+            "confidence": "high",
+            "gross_blank_area_mm2": 5000.0,
+            "total_cut_length_mm": 400.0,
+        },
+    }
+
+    quote = quote_from_cad(cad_data, material="acciaio")
+
+    assert quote["laser_applicability"]["status"] == "not_available"
+    assert quote["material"]["blank_weight_kg"] is None
+    assert quote["material"]["estimated_weight_kg"] is None
+    assert quote["estimated_times_min"]["laser_cutting"] is None
+    assert quote["estimated_internal_cost_eur"]["laser"] is None
+
+
 def _assembly_with_weld_candidates(*candidate_ids: str) -> dict:
     return {
         "part_name": "15 piastra collarino saldato",
