@@ -5,7 +5,7 @@ import json
 import math
 import os
 import tempfile
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from .schemas import (
@@ -521,8 +521,8 @@ def _detect_circular_holes(
         surface = face.Surface
         if getattr(surface, "TypeId", "") != "Part::GeomPlane":
             continue
-        for wire_index, wire in enumerate(face.Wires):
-            if wire_index == 0 or not wire.isClosed():
+        for wire in _face_inner_wires(face):
+            if not wire.isClosed():
                 continue
             edges = list(wire.Edges)
             if not edges or any(_curve_type(edge) != "Part::GeomCircle" for edge in edges):
@@ -874,6 +874,762 @@ def _face_inner_wires(face) -> list:
     if outer_wire is None:
         return []
     return [wire for wire in wires if not _wires_are_same(wire, outer_wire)]
+
+
+def _is_supported_boundary_opening_wall(face) -> bool:
+    """Recognize the existing bounded polygonal cut-wall representation.
+
+    Some STEP exporters represent an open-to-boundary cutout as a small planar
+    through-thickness wall, rather than as an inner wire on either sheet skin.
+    These are the same geometric limits used by the historical polygon
+    detector; physical identity adds the stronger two-skin topology check.
+    """
+
+    outer_wire = _face_outer_wire(face)
+    if outer_wire is None:
+        return False
+    try:
+        if not outer_wire.isClosed():
+            return False
+        edges = list(outer_wire.Edges)
+        return (
+            len(edges) == 6
+            and all(_curve_type(edge) == "Part::GeomLine" for edge in edges)
+            and 20.0 <= float(outer_wire.Length) <= 40.0
+            and float(face.Area) <= 100.0
+        )
+    except (AttributeError, RuntimeError, TypeError, ValueError):
+        return False
+
+
+@dataclass(frozen=True)
+class OpeningContourEvidence:
+    """One CAD contour that may represent one skin of a physical opening."""
+
+    component_id: str
+    panel_id: str | None
+    face: object
+    wire: object
+    face_index: int
+    wire_index: int
+    center: tuple[float, float, float]
+    normal: tuple[float, float, float]
+    plane_offset: float
+    perimeter_mm: float
+    bbox_dimensions_mm: tuple[float, float, float]
+    edge_types: tuple[str, ...]
+    area_mm2: float | None
+    wall_face_indices: tuple[int, ...] = ()
+
+
+@dataclass
+class PhysicalOpeningIdentity:
+    """All B-Rep entities proven to describe one physical passage."""
+
+    id: str
+    component_id: str
+    panel_id: str | None
+    contours: tuple[OpeningContourEvidence, ...]
+    wall_faces: tuple[object, ...]
+    center: tuple[float, float, float]
+    axis: tuple[float, float, float]
+    evidence: str
+    confidence: str
+
+
+@dataclass
+class PhysicalOpeningContext:
+    """Per-analysis opening identity context; never shared between STEP files."""
+
+    identities: list[PhysicalOpeningIdentity] = field(default_factory=list)
+    raw_contour_count: int = 0
+    accepted_merges: list[dict] = field(default_factory=list)
+    rejected_merges: list[dict] = field(default_factory=list)
+
+
+def _topology_same(left, right) -> bool:
+    if left is right:
+        return True
+    try:
+        return bool(left.isSame(right))
+    except (AttributeError, RuntimeError, TypeError):
+        return False
+
+
+def _topology_hash(item) -> int:
+    """Return an OCC topology hash without relying on Python wrapper identity."""
+
+    try:
+        return int(item.hashCode())
+    except TypeError:
+        try:
+            return int(item.hashCode(2_147_483_647))
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            return id(item)
+    except (AttributeError, RuntimeError, ValueError):
+        return id(item)
+
+
+def _physical_panel_id(face, topology_context: SheetTopologyContext | None) -> str | None:
+    if topology_context is None:
+        return None
+    for panel in topology_context.panels:
+        if any(_topology_same(face, panel_face) for panel_face in panel.faces):
+            return panel.id
+    return None
+
+
+def _is_topology_bend_face(face, topology_context: SheetTopologyContext | None) -> bool:
+    if topology_context is None:
+        return False
+    return any(
+        bend_face is not None and _topology_same(face, bend_face)
+        for bend in topology_context.bends
+        for bend_face in (bend.inner_face, bend.outer_face)
+    )
+
+
+def _panels_share_skin_planes(
+    left,
+    right,
+    parameters: AnalysisParameters,
+) -> bool:
+    """Return whether two topology panels are coplanar skin fragments.
+
+    A boundary cut can split both sheet skins into multiple planar faces, so
+    the topology graph may expose more than one ``panel_id`` for one physical
+    panel.  Equivalence here is deliberately limited to a one-to-one match of
+    the same two supporting planes; parallel panels at a different offset and
+    panels with a different direction remain distinct.
+    """
+
+    left_faces = tuple(getattr(left, "faces", ()) or ())
+    right_faces = tuple(getattr(right, "faces", ()) or ())
+    if len(left_faces) != 2 or len(right_faces) != 2:
+        return False
+
+    unmatched_right = list(right_faces)
+    plane_tolerance = float(parameters.flat_pattern_face_pair_distance_tolerance_mm)
+    for left_face in left_faces:
+        left_reference = _planar_face_reference(left_face)
+        if left_reference is None:
+            return False
+        left_normal, left_offset = left_reference
+        match_index = None
+        for index, right_face in enumerate(unmatched_right):
+            right_reference = _planar_face_reference(right_face)
+            if right_reference is None:
+                continue
+            right_normal, right_offset = right_reference
+            # This is the same parallel-plane criterion used by planar skin
+            # pairing; no new angular or distance tolerance is introduced.
+            if abs(_dot(left_normal, right_normal)) < 0.995:
+                continue
+            if (
+                _parallel_plane_distance(
+                    left_normal,
+                    left_offset,
+                    right_normal,
+                    right_offset,
+                )
+                > plane_tolerance
+            ):
+                continue
+            match_index = index
+            break
+        if match_index is None:
+            return False
+        unmatched_right.pop(match_index)
+    return not unmatched_right
+
+
+def _contour_profiles_compatible(
+    left: OpeningContourEvidence,
+    right: OpeningContourEvidence,
+) -> bool:
+    if left.edge_types != right.edge_types:
+        return False
+    perimeter_tolerance = max(0.5, max(left.perimeter_mm, right.perimeter_mm) * 0.015)
+    if abs(left.perimeter_mm - right.perimeter_mm) > perimeter_tolerance:
+        return False
+    left_dimensions = sorted(value for value in left.bbox_dimensions_mm if value > 1e-6)
+    right_dimensions = sorted(value for value in right.bbox_dimensions_mm if value > 1e-6)
+    if len(left_dimensions) != len(right_dimensions):
+        return False
+    return all(
+        abs(left_value - right_value)
+        <= max(0.5, max(left_value, right_value) * 0.02)
+        for left_value, right_value in zip(left_dimensions, right_dimensions)
+    )
+
+
+def _contours_can_be_opposite_skins(
+    left: OpeningContourEvidence,
+    right: OpeningContourEvidence,
+    *,
+    thickness_mm: float | None,
+    parameters: AnalysisParameters,
+    topology_context: SheetTopologyContext | None,
+    direct_wall_evidence: bool,
+) -> tuple[bool, str, float, float]:
+    if left.component_id != right.component_id or left.face_index == right.face_index:
+        return False, "different_component_or_same_face", 0.0, 0.0
+    if not _axis_aligned(
+        left.normal,
+        right.normal,
+        tolerance=_axis_tolerance(parameters.hole_axis_angle_tolerance_deg),
+    ):
+        return False, "non_parallel_skins", 0.0, 0.0
+    if topology_context is not None:
+        if left.panel_id is None or right.panel_id is None or left.panel_id != right.panel_id:
+            return False, "different_or_unresolved_physical_panel", 0.0, 0.0
+    elif not direct_wall_evidence:
+        return False, "physical_panel_unresolved_without_direct_wall", 0.0, 0.0
+
+    center_delta = tuple(
+        right_value - left_value
+        for left_value, right_value in zip(left.center, right.center)
+    )
+    signed_normal_offset = _dot(center_delta, left.normal)
+    normal_offset = abs(signed_normal_offset)
+    radial_offset = _vector_norm(
+        tuple(
+            component - signed_normal_offset * axis_component
+            for component, axis_component in zip(center_delta, left.normal)
+        )
+    )
+    if radial_offset > parameters.hole_center_tolerance_mm:
+        return False, "in_plane_offset", normal_offset, radial_offset
+
+    plane_separation = _parallel_plane_distance(
+        left.normal,
+        left.plane_offset,
+        right.normal,
+        right.plane_offset,
+    )
+    if thickness_mm is not None:
+        thickness_tolerance = max(0.25, thickness_mm * 0.15)
+        if abs(plane_separation - thickness_mm) > thickness_tolerance:
+            return False, "separation_not_sheet_thickness", plane_separation, radial_offset
+    elif not direct_wall_evidence or plane_separation <= 0.1:
+        return False, "thickness_unavailable_without_direct_wall", plane_separation, radial_offset
+
+    if not direct_wall_evidence and not _contour_profiles_compatible(left, right):
+        return False, "profile_mismatch_without_direct_wall", plane_separation, radial_offset
+    return True, "direct_wall" if direct_wall_evidence else "opposite_skin_profile", plane_separation, radial_offset
+
+
+def _build_physical_opening_context(
+    shape,
+    parameters: AnalysisParameters,
+    thickness_mm: float | None,
+    *,
+    topology_context: SheetTopologyContext | None = None,
+    component_id: str = "component_001",
+) -> PhysicalOpeningContext:
+    """Build physical passages before assigning circular/slot/etc. categories."""
+
+    faces = tuple(
+        topology_context.faces
+        if topology_context is not None and topology_context.shape is shape
+        else (getattr(shape, "Faces", []) or [])
+    )
+    contours: list[OpeningContourEvidence] = []
+    for face_index, face in enumerate(faces, start=1):
+        surface = getattr(face, "Surface", None)
+        if getattr(surface, "TypeId", "") != "Part::GeomPlane":
+            continue
+        try:
+            normal = _normalize_vector(surface.Axis)
+            plane_offset = _plane_offset(normal, _vector_tuple(surface.Position))
+        except (AttributeError, TypeError, ValueError):
+            continue
+        inner_wires = _face_inner_wires(face)
+        for wire_index, wire in enumerate(getattr(face, "Wires", []) or []):
+            if not any(_wires_are_same(wire, inner_wire) for inner_wire in inner_wires):
+                continue
+            try:
+                if not wire.isClosed():
+                    continue
+                center = _wire_center(wire)
+                perimeter = float(wire.Length)
+                dimensions = _wire_bbox_dimensions(wire)
+            except (AttributeError, RuntimeError, TypeError, ValueError):
+                continue
+            if not _is_planar_opening_size_valid(
+                dimension_mm=max(dimensions),
+                perimeter_mm=perimeter,
+                parameters=parameters,
+            ):
+                continue
+            contours.append(
+                OpeningContourEvidence(
+                    component_id=component_id,
+                    panel_id=_physical_panel_id(face, topology_context),
+                    face=face,
+                    wire=wire,
+                    face_index=face_index,
+                    wire_index=wire_index,
+                    center=center,
+                    normal=normal,
+                    plane_offset=plane_offset,
+                    perimeter_mm=perimeter,
+                    bbox_dimensions_mm=dimensions,
+                    edge_types=tuple(sorted(_curve_type(edge) for edge in wire.Edges)),
+                    # Area is evaluated only by the selected classifier.  The
+                    # identity pass stays topological and does not duplicate
+                    # OCC face construction for every raw contour.
+                    area_mm2=None,
+                )
+            )
+
+    context = PhysicalOpeningContext(raw_contour_count=len(contours))
+
+    eligible_wall_faces = []
+    for face_index, face in enumerate(faces, start=1):
+        surface_type = getattr(getattr(face, "Surface", None), "TypeId", "")
+        if _is_topology_bend_face(face, topology_context):
+            continue
+        if surface_type == "Part::GeomPlane":
+            # A planar sidewall is valid for polygonal/slot openings only when
+            # the topology context proves that it is not one of the two skins.
+            if topology_context is None or _physical_panel_id(face, topology_context) is not None:
+                continue
+        eligible_wall_faces.append((face_index, face))
+    wall_by_index = dict(eligible_wall_faces)
+    wall_edge_buckets: dict[int, list[tuple[int, object]]] = {}
+    for face_index, face in eligible_wall_faces:
+        for edge in getattr(face, "Edges", []) or []:
+            wall_edge_buckets.setdefault(_topology_hash(edge), []).append((face_index, edge))
+
+    contour_wall_indices: list[set[int]] = []
+    updated_contours: list[OpeningContourEvidence] = []
+    for contour in contours:
+        adjacent: set[int] = set()
+        for wire_edge in getattr(contour.wire, "Edges", []) or []:
+            for face_index, face_edge in wall_edge_buckets.get(_topology_hash(wire_edge), []):
+                if _topology_same(wire_edge, face_edge):
+                    adjacent.add(face_index)
+        contour_wall_indices.append(adjacent)
+        updated_contours.append(replace(contour, wall_face_indices=tuple(sorted(adjacent))))
+    contours = updated_contours
+
+    wall_adjacency: dict[int, set[int]] = {index: set() for index in wall_by_index}
+    for bucket in wall_edge_buckets.values():
+        for left_position, (left_index, left_edge) in enumerate(bucket):
+            for right_index, right_edge in bucket[left_position + 1 :]:
+                if left_index != right_index and _topology_same(left_edge, right_edge):
+                    wall_adjacency[left_index].add(right_index)
+                    wall_adjacency[right_index].add(left_index)
+
+    wall_component_by_index: dict[int, int] = {}
+    wall_components: dict[int, set[int]] = {}
+    for face_index in sorted(wall_by_index):
+        if face_index in wall_component_by_index:
+            continue
+        component_number = len(wall_components)
+        pending = [face_index]
+        wall_component_by_index[face_index] = component_number
+        component_faces: set[int] = set()
+        while pending:
+            current = pending.pop()
+            component_faces.add(current)
+            for adjacent in wall_adjacency[current]:
+                if adjacent not in wall_component_by_index:
+                    wall_component_by_index[adjacent] = component_number
+                    pending.append(adjacent)
+        wall_components[component_number] = component_faces
+
+    contour_components = [
+        {wall_component_by_index[index] for index in indexes if index in wall_component_by_index}
+        for indexes in contour_wall_indices
+    ]
+    pair_candidates: list[tuple[int, float, float, int, int, str]] = []
+    rejected_keys: set[tuple[int, int, str]] = set()
+    for left_index, left in enumerate(contours):
+        for right_index in range(left_index + 1, len(contours)):
+            right = contours[right_index]
+            shared_components = contour_components[left_index] & contour_components[right_index]
+            direct = bool(shared_components)
+            matches, reason, separation, radial = _contours_can_be_opposite_skins(
+                left,
+                right,
+                thickness_mm=thickness_mm,
+                parameters=parameters,
+                topology_context=topology_context,
+                direct_wall_evidence=direct,
+            )
+            if matches:
+                pair_candidates.append(
+                    (
+                        0 if direct else 1,
+                        radial,
+                        abs(separation - thickness_mm) if thickness_mm is not None else 0.0,
+                        left_index,
+                        right_index,
+                        reason,
+                    )
+                )
+            elif reason in {
+                "different_or_unresolved_physical_panel",
+                "in_plane_offset",
+                "profile_mismatch_without_direct_wall",
+                "separation_not_sheet_thickness",
+            }:
+                key = (left_index, right_index, reason)
+                if key not in rejected_keys:
+                    rejected_keys.add(key)
+                    context.rejected_merges.append(
+                        {
+                            "contours": [
+                                f"face_{left.face_index}_wire_{left.wire_index}",
+                                f"face_{right.face_index}_wire_{right.wire_index}",
+                            ],
+                            "reason": reason,
+                        }
+                    )
+
+    used_contours: set[int] = set()
+    pending_identities: list[PhysicalOpeningIdentity] = []
+    for _, radial, separation_error, left_index, right_index, reason in sorted(pair_candidates):
+        if left_index in used_contours or right_index in used_contours:
+            continue
+        left = contours[left_index]
+        right = contours[right_index]
+        shared_components = contour_components[left_index] & contour_components[right_index]
+        component_face_indices = set().union(
+            *(wall_components[number] for number in shared_components)
+        ) if shared_components else set()
+        identity_center = tuple(
+            (left_value + right_value) / 2.0
+            for left_value, right_value in zip(left.center, right.center)
+        )
+        pending_identities.append(
+            PhysicalOpeningIdentity(
+                id="",
+                component_id=component_id,
+                panel_id=left.panel_id or right.panel_id,
+                contours=(left, right),
+                wall_faces=tuple(wall_by_index[index] for index in sorted(component_face_indices)),
+                center=identity_center,
+                axis=left.normal,
+                evidence=reason,
+                confidence="high",
+            )
+        )
+        used_contours.update((left_index, right_index))
+        context.accepted_merges.append(
+            {
+                "contours": [
+                    f"face_{left.face_index}_wire_{left.wire_index}",
+                    f"face_{right.face_index}_wire_{right.wire_index}",
+                ],
+                "reason": reason,
+                "radial_offset_mm": round(radial, 6),
+                "thickness_error_mm": round(separation_error, 6),
+            }
+        )
+
+    # A complete through-wall may legitimately expose only one imported rim.
+    # This remains direct topology evidence; partial cylinders are not enough.
+    for contour_index, contour in enumerate(contours):
+        if contour_index in used_contours:
+            continue
+        full_wall_faces: list[object] = []
+        for face_index in contour.wall_face_indices:
+            face = wall_by_index.get(face_index)
+            if face is None:
+                continue
+            surface = getattr(face, "Surface", None)
+            if getattr(surface, "TypeId", "") != "Part::GeomCylinder":
+                continue
+            span = _cylindrical_surface_span_deg(face)
+            if span is None or span < 350.0:
+                continue
+            axis = _normalize_vector(surface.Axis)
+            depth = _candidate_depth_from_bbox(face.BoundBox, axis)
+            if thickness_mm is not None and abs(depth - thickness_mm) > max(0.25, thickness_mm * 0.15):
+                continue
+            full_wall_faces.append(face)
+        if not full_wall_faces:
+            continue
+        pending_identities.append(
+            PhysicalOpeningIdentity(
+                id="",
+                component_id=component_id,
+                panel_id=contour.panel_id,
+                contours=(contour,),
+                wall_faces=tuple(full_wall_faces),
+                center=contour.center,
+                axis=contour.normal,
+                evidence="complete_internal_wall",
+                confidence="high",
+            )
+        )
+
+    # Some open-to-boundary cutouts have no inner wire.  Preserve that
+    # supported representation only when the bounded wall directly bridges
+    # both opposite skins of exactly one already-established physical panel.
+    # This is identity evidence, not a proximity or filename-based fallback.
+    if topology_context is not None:
+        identity_wall_faces = [
+            wall_face
+            for identity in pending_identities
+            for wall_face in identity.wall_faces
+        ]
+        for face_index, face in eligible_wall_faces:
+            if not _is_supported_boundary_opening_wall(face):
+                continue
+            if any(_topology_same(face, wall_face) for wall_face in identity_wall_faces):
+                continue
+            touching_panels = [
+                panel
+                for panel in topology_context.panels
+                if all(
+                    topology_context.faces_share_edge(face, skin_face)
+                    for skin_face in panel.faces
+                )
+            ]
+            if not touching_panels:
+                continue
+            panel = min(
+                touching_panels,
+                key=lambda candidate: (
+                    -max(
+                        (float(face.Area) for face in candidate.faces),
+                        default=0.0,
+                    ),
+                    candidate.id,
+                ),
+            )
+            if any(
+                not _panels_share_skin_planes(panel, other_panel, parameters)
+                for other_panel in touching_panels
+                if other_panel is not panel
+            ):
+                continue
+            outer_wire = _face_outer_wire(face)
+            if outer_wire is None:
+                continue
+            surface = getattr(face, "Surface", None)
+            try:
+                normal = _normalize_vector(surface.Axis)
+                plane_offset = _plane_offset(normal, _vector_tuple(surface.Position))
+                center = _wire_center(outer_wire)
+                perimeter = float(outer_wire.Length)
+                dimensions = _wire_bbox_dimensions(outer_wire)
+            except (AttributeError, RuntimeError, TypeError, ValueError):
+                continue
+            boundary_contour = OpeningContourEvidence(
+                component_id=component_id,
+                panel_id=panel.id,
+                face=face,
+                wire=outer_wire,
+                face_index=face_index,
+                wire_index=0,
+                center=center,
+                normal=normal,
+                plane_offset=plane_offset,
+                perimeter_mm=perimeter,
+                bbox_dimensions_mm=dimensions,
+                edge_types=tuple(sorted(_curve_type(edge) for edge in outer_wire.Edges)),
+                area_mm2=None,
+            )
+            pending_identities.append(
+                PhysicalOpeningIdentity(
+                    id="",
+                    component_id=component_id,
+                    panel_id=panel.id,
+                    contours=(boundary_contour,),
+                    wall_faces=(),
+                    center=center,
+                    axis=normal,
+                    evidence="through_thickness_boundary_wall",
+                    confidence="high",
+                )
+            )
+
+    pending_identities.sort(
+        key=lambda item: (
+            item.component_id,
+            item.panel_id or "",
+            tuple(round(value, 6) for value in item.center),
+            tuple((contour.face_index, contour.wire_index) for contour in item.contours),
+        )
+    )
+    for index, identity in enumerate(pending_identities, start=1):
+        identity.id = f"opening_{index:04d}"
+    context.identities = pending_identities
+    return context
+
+
+class _OpeningFaceView:
+    def __init__(self, face, wires: list[object]):
+        self._face = face
+        self.Surface = face.Surface
+        self.OuterWire = _face_outer_wire(face)
+        self.Wires = [self.OuterWire, *wires] if self.OuterWire is not None else list(wires)
+
+    def __getattr__(self, name):
+        return getattr(self._face, name)
+
+
+@dataclass
+class _OpeningShapeView:
+    Faces: list[object]
+    Edges: list[object] = field(default_factory=list)
+
+
+def _identity_shape_view(identity: PhysicalOpeningIdentity) -> _OpeningShapeView:
+    contours_by_face: list[tuple[object, list[object]]] = []
+    for contour in identity.contours:
+        for existing_face, wires in contours_by_face:
+            if _topology_same(existing_face, contour.face):
+                wires.append(contour.wire)
+                break
+        else:
+            contours_by_face.append((contour.face, [contour.wire]))
+    planar_views = [_OpeningFaceView(face, wires) for face, wires in contours_by_face]
+    return _OpeningShapeView(Faces=[*planar_views, *identity.wall_faces])
+
+
+def _feature_sort_key(feature: HoleFeature) -> tuple[float, float, tuple[float, ...]]:
+    size = next(
+        (
+            float(value)
+            for value in (
+                feature.diameter_mm,
+                feature.width_mm,
+                feature.max_dimension_mm,
+                feature.overall_length_mm,
+                feature.perimeter_mm,
+            )
+            if value is not None
+        ),
+        math.inf,
+    )
+    return (
+        float(feature.area_mm2) if feature.area_mm2 is not None else math.inf,
+        size,
+        tuple(float(value) for value in (feature.center or [])),
+    )
+
+
+def _normalize_identity_feature(
+    feature: HoleFeature,
+    identity: PhysicalOpeningIdentity,
+    thickness_mm: float | None,
+) -> HoleFeature:
+    result = feature.model_copy(deep=True)
+    result.center = _rounded_vector(identity.center)
+    result.axis = _rounded_vector(identity.axis)
+    if result.depth_mm is None and thickness_mm is not None:
+        result.depth_mm = round(float(thickness_mm), 3)
+    if len(identity.contours) >= 2:
+        result.confidence = "high"
+    return result
+
+
+def _fallback_unknown_from_identity(identity: PhysicalOpeningIdentity) -> HoleFeature:
+    contour = min(identity.contours, key=lambda item: (item.perimeter_mm, item.face_index, item.wire_index))
+    dimensions = contour.bbox_dimensions_mm
+    return HoleFeature(
+        type="unknown opening",
+        reason=UNKNOWN_HOLE_REASON,
+        max_dimension_mm=round(max(dimensions), 2),
+        bounding_box_mm=Dimensions(
+            x=round(dimensions[0], 3),
+            y=round(dimensions[1], 3),
+            z=round(dimensions[2], 3),
+        ),
+        perimeter_mm=round(contour.perimeter_mm, 2),
+        area_mm2=contour.area_mm2 if contour.area_mm2 is not None else _planar_wire_area(contour.wire),
+        center=_rounded_vector(identity.center),
+        axis=_rounded_vector(identity.axis),
+        confidence="medium" if identity.confidence == "high" else "low",
+    )
+
+
+def _classify_physical_opening(
+    identity: PhysicalOpeningIdentity,
+    parameters: AnalysisParameters,
+    thickness_mm: float | None,
+) -> tuple[str, HoleFeature, int]:
+    identity_shape = _identity_shape_view(identity)
+    circular, cylindrical_evidence = _detect_circular_holes(
+        identity_shape,
+        parameters,
+        thickness_mm,
+    )
+    classification_candidates: tuple[str, list[HoleFeature]]
+    if circular:
+        classification_candidates = ("circular", circular)
+    else:
+        elongated = _detect_elongated_holes(identity_shape, parameters, thickness_mm)
+        if elongated:
+            classification_candidates = ("elongated", elongated)
+        else:
+            rounded_rectangular = _detect_rounded_rectangular_holes(
+                identity_shape,
+                parameters,
+                thickness_mm,
+            )
+            if rounded_rectangular:
+                classification_candidates = ("rounded_rectangular", rounded_rectangular)
+            else:
+                polygonal = _detect_polygonal_holes(identity_shape, parameters, thickness_mm)
+                if polygonal:
+                    classification_candidates = ("polygonal", polygonal)
+                else:
+                    formed = _detect_formed_holes(identity_shape, parameters)
+                    if formed:
+                        classification_candidates = ("formed", formed)
+                    else:
+                        unknown = _detect_unknown_holes(
+                            identity_shape,
+                            [],
+                            parameters,
+                            thickness_mm,
+                        )
+                        classification_candidates = (
+                            "unknown",
+                            unknown or [_fallback_unknown_from_identity(identity)],
+                        )
+    group_name, candidates = classification_candidates
+    selected = _normalize_identity_feature(
+        min(candidates, key=_feature_sort_key),
+        identity,
+        thickness_mm,
+    )
+    return group_name, selected, cylindrical_evidence
+
+
+def _detect_physical_openings(
+    shape,
+    opening_context: PhysicalOpeningContext,
+    parameters: AnalysisParameters,
+    thickness_mm: float | None,
+) -> tuple[Holes, int]:
+    """Classify each pre-built physical identity exactly once."""
+
+    holes = Holes()
+    raw_cylindrical_evidence = 0
+    for identity in opening_context.identities:
+        group_name, selected, cylindrical_evidence = _classify_physical_opening(
+            identity,
+            parameters,
+            thickness_mm,
+        )
+        raw_cylindrical_evidence += cylindrical_evidence
+        getattr(holes, group_name).append(selected)
+
+    holes.circular.sort(key=lambda feature: (feature.diameter_mm or 0.0, feature.center or []))
+    holes.elongated.sort(key=lambda feature: feature.center or [])
+    holes.rounded_rectangular.sort(key=lambda feature: feature.center or [])
+    holes.polygonal.sort(key=lambda feature: feature.center or [])
+    holes.formed.sort(key=lambda feature: feature.center or [])
+    holes.unknown.sort(key=lambda feature: feature.center or [])
+    return holes, raw_cylindrical_evidence
 
 
 def _planar_face_reference(face) -> tuple[tuple[float, float, float], float] | None:
@@ -1410,15 +2166,10 @@ def _detect_polygonal_holes(
                 ),
             )
 
+        if not _is_supported_boundary_opening_wall(face):
+            continue
         outer_wire = _face_outer_wire(face)
-        if outer_wire is None or not outer_wire.isClosed():
-            continue
-        outer_edges = list(outer_wire.Edges)
-        if len(outer_edges) != 6:
-            continue
-        if any(_curve_type(edge) != "Part::GeomLine" for edge in outer_edges):
-            continue
-        if not 20.0 <= float(outer_wire.Length) <= 40.0 or float(face.Area) > 100.0:
+        if outer_wire is None:
             continue
 
         bbox = outer_wire.BoundBox
@@ -1461,8 +2212,8 @@ def _detect_formed_holes(
         surface = face.Surface
         if getattr(surface, "TypeId", "") != "Part::GeomPlane":
             continue
-        for wire_index, wire in enumerate(face.Wires):
-            if wire_index == 0 or not wire.isClosed():
+        for wire in _face_inner_wires(face):
+            if not wire.isClosed():
                 continue
             edge_types = {_curve_type(edge) for edge in wire.Edges}
             if "Part::GeomBSplineCurve" not in edge_types:
@@ -2635,31 +3386,21 @@ def _detect_component_holes(
     parameters: AnalysisParameters,
     thickness_mm: float | None,
 ) -> Holes:
-    holes = Holes()
-    holes.circular, _ = _detect_circular_holes(solid, parameters, thickness_mm)
+    opening_context = _build_physical_opening_context(
+        solid,
+        parameters,
+        thickness_mm,
+        component_id=component_id,
+    )
+    holes, _ = _detect_physical_openings(
+        solid,
+        opening_context,
+        parameters,
+        thickness_mm,
+    )
     holes.countersunk_holes = _annotate_countersunk_holes(
         solid,
         holes.circular,
-        parameters,
-        thickness_mm,
-    )
-    holes.elongated = _detect_elongated_holes(solid, parameters, thickness_mm)
-    holes.rounded_rectangular = _detect_rounded_rectangular_holes(
-        solid,
-        parameters,
-        thickness_mm,
-    )
-    holes.polygonal = _detect_polygonal_holes(solid, parameters, thickness_mm)
-    holes.formed = _detect_formed_holes(solid, parameters)
-    holes.unknown = _detect_unknown_holes(
-        solid,
-        [
-            *holes.circular,
-            *holes.elongated,
-            *holes.rounded_rectangular,
-            *holes.polygonal,
-            *holes.formed,
-        ],
         parameters,
         thickness_mm,
     )
@@ -3145,48 +3886,46 @@ def analyze_step_file(
             thickness_confidence,
         )
 
-        response.holes.circular, raw_circular_candidate_count = _detect_circular_holes(
-            shape,
-            analysis_parameters,
-            detected_thickness,
-        )
-        response.holes.countersunk_holes = _annotate_countersunk_holes(
-            shape,
-            response.holes.circular,
-            analysis_parameters,
-            detected_thickness,
-        )
-        response.holes.elongated = _detect_elongated_holes(
-            shape,
-            analysis_parameters,
-            detected_thickness,
-        )
-        response.holes.rounded_rectangular = _detect_rounded_rectangular_holes(
-            shape,
-            analysis_parameters,
-            detected_thickness,
-        )
-        response.holes.polygonal = _detect_polygonal_holes(
-            shape,
-            analysis_parameters,
-            detected_thickness,
-        )
-        response.holes.formed = _detect_formed_holes(shape, analysis_parameters)
-        response.holes.unknown = _detect_unknown_holes(
-            shape,
-            [
-                *response.holes.circular,
-                *response.holes.elongated,
-                *response.holes.rounded_rectangular,
-                *response.holes.polygonal,
-                *response.holes.formed,
-            ],
-            analysis_parameters,
-            detected_thickness,
-        )
+        topology_context: SheetTopologyContext | None = None
+        if (
+            response.part_classification.category == "sheet_metal"
+            and detected_thickness is not None
+        ):
+            try:
+                topology_context = build_sheet_topology_context(
+                    shape,
+                    detected_thickness,
+                    analysis_parameters.flat_pattern_k_factor,
+                    analysis_parameters,
+                )
+            except (AttributeError, RuntimeError, TypeError, ValueError):
+                # Unsupported topology remains conservative: physical opening
+                # identities can still use direct wall evidence without panels.
+                topology_context = None
+
+        raw_circular_candidate_count = 0
         if response.part_classification.category == "multi_solid":
             response.assembly = _analyze_assembly(shape, analysis_parameters)
             response.holes = _aggregate_component_holes(response.assembly.components)
+        elif response.geometry.solid_count == 1:
+            opening_context = _build_physical_opening_context(
+                shape,
+                analysis_parameters,
+                detected_thickness,
+                topology_context=topology_context,
+            )
+            response.holes, raw_circular_candidate_count = _detect_physical_openings(
+                shape,
+                opening_context,
+                analysis_parameters,
+                detected_thickness,
+            )
+            response.holes.countersunk_holes = _annotate_countersunk_holes(
+                shape,
+                response.holes.circular,
+                analysis_parameters,
+                detected_thickness,
+            )
         response.holes.circular_holes = len(response.holes.circular)
         response.holes.elongated_holes = len(response.holes.elongated)
         response.holes.rounded_rectangular_holes = len(
@@ -3252,24 +3991,6 @@ def analyze_step_file(
             )
         if response.holes.unknown_holes > 0:
             response.warnings.append(UNKNOWN_HOLE_WARNING)
-
-        topology_context: SheetTopologyContext | None = None
-        if (
-            response.part_classification.category == "sheet_metal"
-            and detected_thickness is not None
-        ):
-            try:
-                topology_context = build_sheet_topology_context(
-                    shape,
-                    detected_thickness,
-                    analysis_parameters.flat_pattern_k_factor,
-                    analysis_parameters,
-                )
-            except (AttributeError, RuntimeError, TypeError, ValueError):
-                # Preserve the existing best-effort behavior for unsupported
-                # topology: bend detection and flat-pattern code can still run
-                # through their uncached paths and return a conservative result.
-                topology_context = None
 
         response.bends.items = _detect_bends(
             shape,

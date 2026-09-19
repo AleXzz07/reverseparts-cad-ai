@@ -285,6 +285,65 @@ def test_bend_pair_accepts_coaxial_cylinders_with_positive_axial_overlap():
     assert bends[0].outer_face is shape.Faces[1]
 
 
+def test_trimmed_planar_skins_pair_when_projection_fully_covers_smaller_face(monkeypatch):
+    import app.sheetmetal_unfolder as unfolder
+
+    parameters = load_analysis_config()
+    larger = FakeFace(
+        FakePlane((0, 0, 1), (0, 0, 0)),
+        [(0, 0, 0), (20, 0, 0), (20, 10, 0), (0, 10, 0)],
+        200.0,
+    )
+    smaller = FakeFace(
+        FakePlane((0, 0, 1), (0, 0, 2)),
+        [(1, 0, 2), (20, 0, 2), (20, 10, 2), (1, 10, 2)],
+        190.0,
+    )
+    monkeypatch.setattr(
+        unfolder,
+        "_projected_planar_overlap_area_mm2",
+        lambda *_args: 190.0,
+    )
+
+    panels = unfolder._pair_planar_faces(
+        SimpleNamespace(Faces=[larger, smaller]),
+        thickness_mm=2.0,
+        parameters=parameters,
+    )
+
+    assert len(panels) == 1
+    assert set(panels[0].faces) == {larger, smaller}
+
+
+def test_trimmed_planar_skins_reject_partial_projected_overlap(monkeypatch):
+    import app.sheetmetal_unfolder as unfolder
+
+    parameters = load_analysis_config()
+    left = FakeFace(
+        FakePlane((0, 0, 1), (0, 0, 0)),
+        [(0, 0, 0), (20, 0, 0), (20, 10, 0), (0, 10, 0)],
+        200.0,
+    )
+    right = FakeFace(
+        FakePlane((0, 0, 1), (0, 0, 2)),
+        [(1, 0, 2), (21, 0, 2), (21, 10, 2), (1, 10, 2)],
+        200.0,
+    )
+    monkeypatch.setattr(
+        unfolder,
+        "_projected_planar_overlap_area_mm2",
+        lambda *_args: 190.0,
+    )
+
+    panels = unfolder._pair_planar_faces(
+        SimpleNamespace(Faces=[left, right]),
+        thickness_mm=2.0,
+        parameters=parameters,
+    )
+
+    assert panels == []
+
+
 def test_per_analysis_topology_context_reuses_planar_pairs_and_face_graph(monkeypatch):
     import app.sheetmetal_unfolder as unfolder
 

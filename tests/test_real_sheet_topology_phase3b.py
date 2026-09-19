@@ -58,6 +58,18 @@ def _bend_face_pairs(shape, context) -> set[frozenset[int]]:
     }
 
 
+def _planar_face_pairs(shape, context) -> set[frozenset[int]]:
+    return {
+        frozenset(
+            (
+                _face_index(shape, panel.faces[0]),
+                _face_index(shape, panel.faces[1]),
+            )
+        )
+        for panel in context.panels
+    }
+
+
 def _analyze(file_name: str):
     path = FIXTURE_ROOT / file_name
     return analyze_step_file(
@@ -112,7 +124,7 @@ def test_moderate_sheetmetal_4_uses_local_cylinder_pairs_and_stays_partial():
     assert result.flat_pattern.usable_for_costing is False
 
 
-def test_complex_part_6_rejects_cross_pairs_but_keeps_trimmed_panels_incomplete():
+def test_complex_part_6_pairs_trimmed_panels_without_restoring_cross_pairs():
     shape = _load_shape("SWPR-Complex Sheet Metal Part 6.STEP")
     context = build_sheet_topology_context(
         shape,
@@ -140,13 +152,36 @@ def test_complex_part_6_rejects_cross_pairs_but_keeps_trimmed_panels_incomplete(
     )
     assert all(frozenset(pair) not in pairs for pair in wrong_pairs)
     assert all(frozenset(pair) in pairs for pair in local_pairs)
-    assert len(context.panels) == 17
+    assert _planar_face_pairs(shape, context) == {
+        frozenset(pair)
+        for pair in (
+            (11, 12),
+            (14, 26),
+            (19, 134),
+            (24, 25),
+            (31, 32),
+            (71, 72),
+            (122, 123),
+            (148, 150),
+            (166, 168),
+            (177, 179),
+            (196, 299),
+            (204, 205),
+            (240, 241),
+            (287, 288),
+            (313, 315),
+            (329, 331),
+            (340, 342),
+            (360, 361),
+            (365, 366),
+        )
+    }
+    assert len(context.panels) == 19
     assert len(context.bends) == 15
     anomalous = [len(bend.panel_ids) for bend in context.bends if len(bend.panel_ids) != 2]
-    assert anomalous == [1, 1]
-    assert sum(len(bend.panel_ids) == 2 for bend in context.bends) == 13
-    assert context.graph.connected is False
-    assert context.graph.direct is False
+    assert anomalous == []
+    assert sum(len(bend.panel_ids) == 2 for bend in context.bends) == 15
+    assert not any("trovate 1" in warning for warning in context.graph.warnings)
 
     result = _analyze("SWPR-Complex Sheet Metal Part 6.STEP")
     assert result.flat_pattern.status == "partial"

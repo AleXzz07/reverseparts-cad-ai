@@ -101,6 +101,58 @@ def _plane_offset(normal: Vector3, point: Vector3) -> float:
     return _dot(normal, point)
 
 
+def _planar_extents_overlap(
+    left: Any,
+    right: Any,
+    normal: Vector3,
+    tolerance_mm: float,
+) -> bool:
+    """Cheaply reject faces whose projected outer extents are disjoint."""
+
+    reference = (1.0, 0.0, 0.0) if abs(normal[0]) < 0.9 else (0.0, 1.0, 0.0)
+    first_axis = _normalize(_cross(normal, reference))
+    second_axis = _normalize(_cross(normal, first_axis))
+    left_points = _face_points(left)
+    right_points = _face_points(right)
+    for axis in (first_axis, second_axis):
+        left_interval = _projection_interval(left_points, axis)
+        right_interval = _projection_interval(right_points, axis)
+        if left_interval is None or right_interval is None:
+            return False
+        overlap = min(left_interval[1], right_interval[1]) - max(
+            left_interval[0], right_interval[0]
+        )
+        if overlap <= tolerance_mm:
+            return False
+    return True
+
+
+def _projected_planar_overlap_area_mm2(
+    left: Any,
+    right: Any,
+    left_position: Vector3,
+    right_position: Vector3,
+) -> float | None:
+    """Return the exact overlap after projecting ``left`` onto ``right``'s plane.
+
+    This is deliberately used only as a conservative fallback for parallel faces
+    that already match thickness and area checks.  Unsupported/inexact topology
+    must not make planar pairing more permissive.
+    """
+
+    try:
+        native_axis = left.Surface.Axis
+        axis = _normalize(_vector(native_axis))
+        signed_distance = _dot(_sub(right_position, left_position), axis)
+        axis_length = _norm(_vector(native_axis))
+        projected = left.copy()
+        projected.translate(native_axis * (signed_distance / axis_length))
+        overlap = projected.common(right)
+        return max(0.0, float(overlap.Area))
+    except (AttributeError, RuntimeError, TypeError, ValueError, ZeroDivisionError):
+        return None
+
+
 def _surface_type(face: Any) -> str:
     return str(getattr(getattr(face, "Surface", None), "TypeId", ""))
 
@@ -553,7 +605,27 @@ def _pair_planar_faces(
             lateral_error = _norm(lateral)
             scale = max(math.sqrt(left_area), math.sqrt(right_area), thickness_mm)
             if lateral_error > max(tolerance * 4.0, scale * 0.03):
-                continue
+                if not _planar_extents_overlap(left, right, left_normal, tolerance):
+                    continue
+                overlap_area = _projected_planar_overlap_area_mm2(
+                    left,
+                    right,
+                    left_position,
+                    right_position,
+                )
+                smaller_area = min(left_area, right_area)
+                uncovered_area = (
+                    None
+                    if overlap_area is None
+                    else max(0.0, smaller_area - overlap_area)
+                )
+                if (
+                    overlap_area is None
+                    or overlap_area <= 0.0
+                    or uncovered_area
+                    > float(parameters.flat_pattern_max_overlap_area_mm2)
+                ):
+                    continue
             candidates.append((area_ratio, min(left_area, right_area), left_index, right_index))
 
     used: set[int] = set()

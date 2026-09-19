@@ -1,0 +1,23 @@
+{
+  "source": "validated post-BSpline Phase 4 read-only audit",
+  "counts": {
+    "SWPR-Moderate- Mounting Bracket.STEP": 12,
+    "SWPR-Moderate Sheetmetal 4.STEP": 20,
+    "SWPR-moderate sheetmetal part 1.STEP": 9,
+    "SWPR-Simple Sheet Metal Part 9.STEP": 14,
+    "SWPR-Complex Sheet Metal Part 4.STEP": 30,
+    "SWPR-Complex Sheet Metal Part 6.STEP": 41,
+    "SWPR-complex sheetmetal part 2.STEP": 161,
+    "SWPR-Moderate-Correct-and-Flatten-Imported-Sheet-Metal.STEP": 0,
+    "User Library-Part1-451.STEP": 12,
+    "User Library-LogMaxEnclosure.STEP": 121
+  },
+  "manual_ground_truth": {
+    "SWPR-Simple Sheet Metal Part 9.STEP": 9
+  },
+  "notes": {
+    "SWPR-complex sheetmetal part 2.STEP": "82 OCC groups are audit evidence, not asserted ground truth.",
+    "User Library-Part1-451.STEP": "10 OCC groups are audit evidence, not asserted ground truth.",
+    "SWPR-Complex Sheet Metal Part 6.STEP": "The old count must be re-profiled on Phase 3C before adding a new numeric assertion."
+  }
+}
