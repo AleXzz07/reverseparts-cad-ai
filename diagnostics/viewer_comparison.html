@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="it">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Viewer CAD — confronto visivo locale</title>
+<style>
+  body { margin: 24px; color: #263547; font: 14px system-ui; background: #f8fafc; }
+  h1 { font-size: 20px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 18px 0; }
+  button, select { padding: 8px 11px; background: white; border: 1px solid #b9c6d2; border-radius: 5px; color: #263547; }
+  .pair { display: flex; flex-wrap: wrap; gap: 16px; }
+  figure { margin: 0; padding: 10px; background: white; border: 1px solid #cbd5e1; }
+  figcaption { font-weight: 650; margin-bottom: 8px; }
+  canvas { display: block; width: 480px; height: 420px; background: #e8edf2; }
+  #status { margin: 10px 0; }
+</style>
+<h1>Viewer CAD — V1.1 pubblicata / correzione shading</h1>
+<p>I due GLB provengono dallo stesso STEP. Camere, dimensioni e inquadrature sono identiche. Solo questa pagina diagnostica offre wireframe e normali.</p>
+<div class="controls">
+  <label>Modello <select id="case"><option value="plate">Piastra, quattro fori</option><option value="complex">Staffa complessa</option></select></label>
+  <button data-view="isometric">Isometrica</button><button data-view="top">Alto</button>
+  <button data-view="front">Frontale</button><button data-view="right">Destra</button>
+  <label><input type="checkbox" id="wireframe"> Wireframe diagnostico</label>
+  <label><input type="checkbox" id="normal-colors"> Normali diagnostiche</label>
+  <button id="capture">Scarica due PNG (stessa camera)</button>
+</div>
+<div id="status" role="status">Caricamento…</div>
+<div class="pair">
+  <figure><figcaption>Prima — Viewer V1.1</figcaption><canvas id="before" width="480" height="420"></canvas></figure>
+  <figure><figcaption>Dopo — correzione shading</figcaption><canvas id="after" width="480" height="420"></canvas></figure>
+</div>
+<script src="../frontend/vendor/three.min.js"></script>
+<script src="../frontend/vendor/GLTFLoader.js"></script>
+<script>
+  const panels = {};
+  let view = "isometric";
+  const directions = {
+    isometric: [1, .82, 1], top: [0, 1, .001],
+    front: [0, 0, 1], right: [1, 0, 0],
+  };
+  const status = document.querySelector("#status");
+  const definitions = {
+    before: { ambient: .42, hemi: 1.15, key: 2.05, fill: .9, rim: .7,
+      exposure: .95, color: 0x718397, metalness: .28, roughness: .36,
+      line: 0x33475b, opacity: .58 },
+    after: { ambient: .46, hemi: .64, key: 1.05, fill: .38, rim: .16,
+      exposure: .9, color: 0x8997a6, metalness: .02, roughness: .92,
+      line: 0x46596c, opacity: .82 },
+  };
+
+  function createPanel(name) {
+    const setting = definitions[name];
+    const renderer = new THREE.WebGLRenderer({ canvas: document.querySelector(`#${name}`),
+      antialias: true, alpha: true, preserveDrawingBuffer: true });
+    renderer.setPixelRatio(1);
+    renderer.setSize(480, 420, false);
+    renderer.setClearColor(0xe8edf2, 1);
+    renderer.outputEncoding = THREE.sRGBEncoding;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = setting.exposure;
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(34, 480 / 420, .01, 100000);
+    scene.add(new THREE.AmbientLight(0xffffff, setting.ambient));
+    scene.add(new THREE.HemisphereLight(0xf5f9ff,
+      name === "before" ? 0x536273 : 0x647384, setting.hemi));
+    for (const [color, intensity, position] of [
+      [0xffffff, setting.key, [4, 6, 5]],
+      [name === "before" ? 0x9fc5eb : 0xd9e4ef, setting.fill, [-5, 2, -4]],
+      [0xffffff, setting.rim, [1, -3, -6]],
+    ]) {
+      const light = new THREE.DirectionalLight(color, intensity);
+      light.position.set(...position);
+      scene.add(light);
+    }
+    panels[name] = { setting, renderer, scene, camera, model: null, radius: 1 };
+  }
+
+  function applyMaterials(name, model) {
+    const setting = definitions[name];
+    model.traverse(item => {
+      if (item.isMesh) {
+        item.userData.cadMaterial = new THREE.MeshStandardMaterial({
+          color: setting.color, metalness: setting.metalness,
+          roughness: setting.roughness, side: THREE.DoubleSide,
+          polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1,
+        });
+        item.userData.normalMaterial = new THREE.MeshNormalMaterial({side: THREE.DoubleSide});
+      } else if (item.isLineSegments) {
+        item.material = new THREE.LineBasicMaterial({
+          color: setting.line, transparent: true, opacity: setting.opacity,
+          depthTest: true, depthWrite: false,
+        });
+        item.renderOrder = 2;
+      }
+    });
+  }
+
+  function render() {
+    const diagnosticNormals = document.querySelector("#normal-colors").checked;
+    const wireframe = document.querySelector("#wireframe").checked;
+    for (const panel of Object.values(panels)) {
+      if (!panel.model) continue;
+      panel.model.traverse(item => {
+        if (!item.isMesh) return;
+        item.material = diagnosticNormals ? item.userData.normalMaterial : item.userData.cadMaterial;
+        item.material.wireframe = wireframe;
+        item.material.needsUpdate = true;
+      });
+      panel.renderer.render(panel.scene, panel.camera);
+    }
+  }
+
+  function setCamera() {
+    for (const panel of Object.values(panels)) {
+      const direction = new THREE.Vector3(...directions[view]).normalize();
+      const radius = panel.radius;
+      const fov = THREE.MathUtils.degToRad(panel.camera.fov);
+      const distance = Math.max(radius * 2.35, radius / Math.tan(fov / 2) * 1.18);
+      panel.camera.up.set(0, view === "top" ? 0 : 1, view === "top" ? -1 : 0);
+      panel.camera.position.copy(direction.multiplyScalar(distance));
+      panel.camera.near = Math.max(radius / 1000, .001);
+      panel.camera.far = Math.max(radius * 100, 1000);
+      panel.camera.lookAt(0, 0, 0);
+      panel.camera.updateProjectionMatrix();
+    }
+    render();
+  }
+
+  function load(url) {
+    return new Promise((resolve, reject) => new THREE.GLTFLoader().load(url, resolve,
+      undefined, reject));
+  }
+
+  async function loadCase() {
+    const chosen = document.querySelector("#case").value;
+    status.textContent = `Caricamento ${chosen}…`;
+    try {
+      for (const name of ["before", "after"]) {
+        const panel = panels[name];
+        if (panel.model) panel.scene.remove(panel.model);
+        const gltf = await load(`compare/${chosen}_${name}.glb`);
+        panel.model = gltf.scene;
+        applyMaterials(name, panel.model);
+        const box = new THREE.Box3().setFromObject(panel.model);
+        const center = box.getCenter(new THREE.Vector3());
+        panel.model.position.sub(center);
+        panel.scene.add(panel.model);
+        const centeredBox = new THREE.Box3().setFromObject(panel.model);
+        panel.radius = Math.max(centeredBox.getBoundingSphere(new THREE.Sphere()).radius, .01);
+        const size = centeredBox.getSize(new THREE.Vector3());
+        const grid = new THREE.GridHelper(Math.max(size.x, size.y, size.z, 1) * 4,
+          20, 0x8296aa, 0xc4ced8);
+        grid.position.y = centeredBox.min.y - panel.radius * .035;
+        grid.material.transparent = true;
+        grid.material.opacity = .58;
+        if (panel.grid) panel.scene.remove(panel.grid);
+        panel.grid = grid;
+        panel.scene.add(grid);
+      }
+      const commonRadius = Math.max(panels.before.radius, panels.after.radius);
+      panels.before.radius = panels.after.radius = commonRadius;
+      setCamera();
+      status.textContent = `${chosen}: due GLB caricati; vista ${view}.`;
+    } catch (error) {
+      status.textContent = `File GLB mancanti o non leggibili: ${error.message}`;
+    }
+  }
+
+  function saveCanvas(name) {
+    const link = document.createElement("a");
+    link.download = `${document.querySelector("#case").value}_${view}_${name}.png`;
+    link.href = document.querySelector(`#${name}`).toDataURL("image/png");
+    link.click();
+  }
+
+  createPanel("before");
+  createPanel("after");
+  document.querySelector("#case").addEventListener("change", loadCase);
+  document.querySelectorAll("[data-view]").forEach(button => button.addEventListener("click", () => {
+    view = button.dataset.view; setCamera();
+  }));
+  document.querySelector("#wireframe").addEventListener("change", render);
+  document.querySelector("#normal-colors").addEventListener("change", render);
+  document.querySelector("#capture").addEventListener("click", () => {
+    render(); saveCanvas("before"); saveCanvas("after");
+  });
+  loadCase();
+</script>
+</html>

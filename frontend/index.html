@@ -1024,7 +1024,7 @@
       renderer.setClearColor(0xe8edf2, 1);
       if ("outputEncoding" in renderer && THREE.sRGBEncoding) renderer.outputEncoding = THREE.sRGBEncoding;
       if (THREE.ACESFilmicToneMapping) renderer.toneMapping = THREE.ACESFilmicToneMapping;
-      renderer.toneMappingExposure = 0.95;
+      renderer.toneMappingExposure = 0.9;
 
       const scene = new THREE.Scene();
       const camera = new THREE.PerspectiveCamera(34, 1, 0.01, 100000);
@@ -1035,15 +1035,15 @@
       controls.minDistance = 0.01;
       controls.maxDistance = 100000;
 
-      scene.add(new THREE.AmbientLight(0xffffff, 0.42));
-      scene.add(new THREE.HemisphereLight(0xf5f9ff, 0x536273, 1.15));
-      const keyLight = new THREE.DirectionalLight(0xffffff, 2.05);
+      scene.add(new THREE.AmbientLight(0xffffff, 0.46));
+      scene.add(new THREE.HemisphereLight(0xf5f9ff, 0x647384, 0.64));
+      const keyLight = new THREE.DirectionalLight(0xffffff, 1.05);
       keyLight.position.set(4, 6, 5);
       scene.add(keyLight);
-      const fillLight = new THREE.DirectionalLight(0x9fc5eb, 0.9);
+      const fillLight = new THREE.DirectionalLight(0xd9e4ef, 0.38);
       fillLight.position.set(-5, 2, -4);
       scene.add(fillLight);
-      const rimLight = new THREE.DirectionalLight(0xffffff, 0.7);
+      const rimLight = new THREE.DirectionalLight(0xffffff, 0.16);
       rimLight.position.set(1, -3, -6);
       scene.add(rimLight);
 
@@ -1120,9 +1120,9 @@
         originalMaterials.filter(Boolean).forEach(material => material.dispose());
         if (item.isMesh) {
           item.material = new THREE.MeshStandardMaterial({
-            color: 0x718397,
-            metalness: 0.28,
-            roughness: 0.36,
+            color: 0x8997a6,
+            metalness: 0.02,
+            roughness: 0.92,
             side: THREE.DoubleSide,
             polygonOffset: true,
             polygonOffsetFactor: 1,
@@ -1134,9 +1134,9 @@
           // These segments come from FreeCAD B-Rep edges exported in the GLB;
           // no outline is reconstructed from tessellation triangles here.
           item.material = new THREE.LineBasicMaterial({
-            color: 0x33475b,
+            color: 0x46596c,
             transparent: true,
-            opacity: 0.58,
+            opacity: 0.82,
             depthTest: true,
             depthWrite: false,
           });

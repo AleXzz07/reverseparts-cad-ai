@@ -264,7 +264,7 @@ def test_frontend_returns_html():
     assert "new THREE.EdgesGeometry" not in response.text
     assert "item.isLineSegments" in response.text
     assert "come from FreeCAD B-Rep edges" in response.text
-    assert "color: 0x718397" in response.text
+    assert "color: 0x8997a6" in response.text
     assert "renderer.setClearColor(0xe8edf2, 1)" in response.text
 
 

@@ -97,82 +97,32 @@ def _analytic_face_normals(
 
     fallback = _vertex_normals(points, facets)
     if _is_planar_face(face):
-        # Winding-derived normals can disagree at vertices near a hole when
-        # OCC returns triangles with mixed winding. Never let that local
-        # fallback change the normal of a mathematical CAD plane.
+        # A mathematical plane has one constant analytic normal. Preserve the
+        # face-local winding alignment and fallback for each mesh vertex.
         try:
             u, v = face.Surface.parameter(source_vertices[0])
             planar_normal = _normalize(_vector(face.normalAt(u, v)))
         except Exception:
-            # A single representative winding normal is still uniform. Use
-            # the largest nondegenerate triangle when OCC is unavailable.
-            best_cross = (0.0, 0.0, 0.0)
-            best_length_sq = 0.0
-            for first, second, third in facets:
-                a, b, c = points[first], points[second], points[third]
-                ab = tuple(b[i] - a[i] for i in range(3))
-                ac = tuple(c[i] - a[i] for i in range(3))
-                cross = (
-                    ab[1] * ac[2] - ab[2] * ac[1],
-                    ab[2] * ac[0] - ab[0] * ac[2],
-                    ab[0] * ac[1] - ab[1] * ac[0],
-                )
-                length_sq = _dot(cross, cross)
-                if length_sq > best_length_sq:
-                    best_cross, best_length_sq = cross, length_sq
-            planar_normal = _normalize(best_cross)
-        return [planar_normal] * len(points)
+            return fallback
+        return [
+            tuple(-value for value in planar_normal)
+            if _dot(planar_normal, local) < 0.0 else planar_normal
+            for local in fallback
+        ]
     normals: list[Vector3] = []
     for index, vertex in enumerate(source_vertices):
         try:
             u, v = face.Surface.parameter(vertex)
             candidate = _normalize(_vector(face.normalAt(u, v)))
+            # FreeCAD surface orientation can differ from tessellation winding.
+            # Align locally with the face-only fallback without changing the
+            # analytic direction along curved surfaces.
+            if _dot(candidate, fallback[index]) < 0.0:
+                candidate = tuple(-value for value in candidate)
             normals.append(candidate)
         except Exception:
-            normals.append(None)
-    # Align only missing normals to the nearest valid OCC direction. A
-    # per-vertex alignment to triangle winding creates false discontinuities.
-    valid_indices = [index for index, item in enumerate(normals) if item is not None]
-    for index, item in enumerate(normals):
-        if item is None:
-            candidate = fallback[index]
-            if valid_indices:
-                nearest = min(valid_indices, key=lambda other: abs(other - index))
-                if _dot(candidate, normals[nearest]) < 0.0:
-                    candidate = tuple(-value for value in candidate)
-            normals[index] = candidate
+            normals.append(fallback[index])
     return normals
-
-
-def _orient_facets_to_normals(
-    points: list[Vector3],
-    facets: list[Triangle],
-    normals: list[Vector3],
-) -> list[Triangle]:
-    """Give CAD normals and triangle winding the same front-facing direction.
-
-    This only swaps indices. It never moves a vertex or changes the triangles.
-    Three.js DoubleSide otherwise reverses lighting on a back-facing triangle.
-    """
-    oriented = []
-    for first, second, third in facets:
-        a, b, c = points[first], points[second], points[third]
-        ab = tuple(b[i] - a[i] for i in range(3))
-        ac = tuple(c[i] - a[i] for i in range(3))
-        cross = (
-            ab[1] * ac[2] - ab[2] * ac[1],
-            ab[2] * ac[0] - ab[0] * ac[2],
-            ab[0] * ac[1] - ab[1] * ac[0],
-        )
-        average = tuple(
-            normals[first][i] + normals[second][i] + normals[third][i]
-            for i in range(3)
-        )
-        oriented.append(
-            (first, third, second) if _dot(cross, average) < 0.0
-            else (first, second, third)
-        )
-    return oriented
 
 
 def _is_planar_face(face: Any) -> bool:
@@ -213,14 +163,14 @@ def _tessellate_brep_faces(
             continue
         offset = len(points)
         points.extend(face_points)
-        face_normals = _analytic_face_normals(
-            face,
-            source_vertices,
-            face_points,
-            face_facets,
+        normals.extend(
+            _analytic_face_normals(
+                face,
+                source_vertices,
+                face_points,
+                face_facets,
+            )
         )
-        normals.extend(face_normals)
-        face_facets = _orient_facets_to_normals(face_points, face_facets, face_normals)
         facets.extend(
             (first + offset, second + offset, third + offset)
             for first, second, third in face_facets

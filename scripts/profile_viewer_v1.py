@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare legacy, frozen V1 and optimized V1.1 STEP-to-GLB pipelines.
+"""Compare legacy, frozen V1, published V1.1 and shading correction.
 
 This diagnostic never calls the CAD analysis, unfold, quote, or PDF paths.
 Each measurement runs in a fresh subprocess so peak RSS is attributable to a
@@ -33,6 +33,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from app import model_exporter as optimized  # noqa: E402
 from scripts import _viewer_v1_baseline as baseline  # noqa: E402
+from scripts import _viewer_v1_1_before_shading as published  # noqa: E402
 
 _configure_freecad_path = optimized._configure_freecad_path
 _vector = optimized._vector
@@ -159,6 +160,14 @@ def _glb_buffer_hashes(glb: bytes) -> dict[str, str]:
         start = binary_start + view["byteOffset"]
         end = start + view["byteLength"]
         hashes[name] = hashlib.sha256(glb[start:end]).hexdigest()
+    index_view = document["bufferViews"][2]
+    index_start = binary_start + index_view["byteOffset"]
+    index_count = document["accessors"][2]["count"]
+    index_values = struct.unpack_from(f"<{index_count}I", glb, index_start)
+    canonical = hashlib.sha256()
+    for offset in range(0, index_count, 3):
+        canonical.update(struct.pack("<3I", *sorted(index_values[offset:offset + 3])))
+    hashes["undirected_triangles"] = canonical.hexdigest()
     hashes["whole_glb"] = hashlib.sha256(glb).hexdigest()
     return hashes
 
@@ -249,7 +258,8 @@ def _v1_export(
     points = []
     facets = []
     normals = []
-    prefix = "v1" if module is baseline else "v1_1"
+    prefix = ("v1" if module is baseline else
+              "v1_1" if module is published else "shading_fix")
     mark_phase(f"{prefix}_face_tessellation_and_normals")
     tessellation_sec = 0.0
     normal_sec = 0.0
@@ -338,7 +348,8 @@ def _worker(args: argparse.Namespace) -> int:
         if args.mode == "legacy":
             metrics = _legacy_export(shape, diagonal, args.complexity, mark_phase)
         else:
-            module = baseline if args.mode == "v1" else optimized
+            module = (baseline if args.mode == "v1" else
+                      published if args.mode == "v1_1" else optimized)
             metrics = _v1_export(
                 shape, diagonal, args.complexity, mark_phase, module=module,
             )
@@ -549,11 +560,12 @@ def _equivalence(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     comparisons = []
     for case, _, _ in DEFAULT_CASES:
         by_mode = {row["mode"]: row for row in rows if row["case"] == case}
-        before, after = by_mode["v1"], by_mode["v1_1"]
+        before, after = by_mode["v1_1"], by_mode["shading_fix"]
         if before["status"] != "completed" or after["status"] != "completed":
             comparisons.append({"case": case, "status": "unavailable"})
             continue
-        keys = ("positions", "normals", "indices", "brep_edges", "whole_glb")
+        keys = ("positions", "normals", "indices", "brep_edges",
+                "undirected_triangles", "whole_glb")
         checks = {
             key: before["buffer_sha256"].get(key) == after["buffer_sha256"].get(key)
             for key in keys
@@ -562,10 +574,15 @@ def _equivalence(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             before[key] == after[key]
             for key in ("triangle_count", "vertex_count", "brep_edge_segment_count")
         )
+        geometry_equal = all(checks[key] for key in (
+            "positions", "brep_edges", "undirected_triangles",
+        ))
         comparisons.append({
             "case": case,
-            "status": "pass" if all(checks.values()) and counts_equal else "mismatch",
+            "status": "pass" if geometry_equal and counts_equal else "mismatch",
             "byte_identical": checks,
+            "geometry_equal": geometry_equal,
+            "normal_and_winding_changes_intentional": True,
             "counts_equal": counts_equal,
         })
     return comparisons
@@ -573,13 +590,13 @@ def _equivalence(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output-dir", default="viewer-v1-1-profile")
+    parser.add_argument("--output-dir", default="viewer-shading-profile")
     parser.add_argument("--timeout-sec", type=float, default=180.0)
     parser.add_argument("--worker", action="store_true")
     parser.add_argument("--case")
     parser.add_argument("--step")
     parser.add_argument("--complexity", choices=("normal", "high"), default="normal")
-    parser.add_argument("--mode", choices=("legacy", "v1", "v1_1"))
+    parser.add_argument("--mode", choices=("legacy", "v1", "v1_1", "shading_fix"))
     parser.add_argument("--worker-output")
     args = parser.parse_args()
     if args.worker:
@@ -592,7 +609,7 @@ def main() -> int:
     output_dir.mkdir(parents=True, exist_ok=True)
     rows = []
     for case, step_path, complexity in DEFAULT_CASES:
-        for mode in ("legacy", "v1", "v1_1"):
+        for mode in ("legacy", "v1", "v1_1", "shading_fix"):
             rows.append(
                 _run_one(
                     case,
@@ -603,11 +620,14 @@ def main() -> int:
                 )
             )
     report = {
-        "profile": "viewer-v1.1-three-way",
+        "profile": "viewer-shading-four-way",
         "cases": rows,
-        "v1_vs_v1_1_equivalence": _equivalence(rows),
+        "published_v1_1_vs_shading_fix": _equivalence(rows),
         "v1_baseline_sha256": hashlib.sha256(
             Path(baseline.__file__).read_bytes()
+        ).hexdigest(),
+        "published_v1_1_sha256": hashlib.sha256(
+            Path(published.__file__).read_bytes()
         ).hexdigest(),
         "limits": {
             "normal": dict(
@@ -651,19 +671,19 @@ def main() -> int:
             "Tessellation and normal phase times are split by timing the face-normal routine; normal phase includes OCC, face-local fallback and alignment.",
             "Legacy computes mesh normals inside GLB assembly and has no OCC normals or B-Rep edges.",
             "model_generation_sec includes phase markers, counters, hashing and other Python overhead; phase times need not sum exactly to it.",
-            "V1 uses an untouched copy of the input ZIP exporter. V1/V1.1 comparisons hash raw accessor buffers and the entire GLB.",
+            "V1 and published V1.1 use frozen copies of their exporters. Published V1.1 vs shading_fix gate compares raw positions, CAD edges, and triangle indices ignoring winding; normals, winding, and complete GLB hashes may change intentionally.",
             "Browser network transfer and GLTFLoader parsing are not measured in Docker.",
         ],
     }
-    json_path = output_dir / "viewer_v1_1_profile.json"
-    csv_path = output_dir / "viewer_v1_1_profile.csv"
+    json_path = output_dir / "viewer_shading_profile.json"
+    csv_path = output_dir / "viewer_shading_profile.csv"
     json_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
     _write_csv(csv_path, rows)
     print(json.dumps(report, indent=2))
     return 0 if (
         all(row["status"] == "completed" for row in rows)
         and all(item["status"] == "pass" and item["counts_equal"]
-                for item in report["v1_vs_v1_1_equivalence"])
+                for item in report["published_v1_1_vs_shading_fix"])
     ) else 1
 
 
