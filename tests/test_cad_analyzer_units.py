@@ -1,4 +1,5 @@
 import json
+import math
 from types import SimpleNamespace
 
 import pytest
@@ -11,6 +12,7 @@ from app.cad_analyzer import (
     _build_assembly_passages,
     _cylindrical_face_angle_deg,
     _classify_part_geometry,
+    _contour_is_bend_transition_boundary,
     _detect_bends,
     _detect_circular_holes,
     _detect_cutting_lengths,
@@ -22,10 +24,11 @@ from app.cad_analyzer import (
     _detect_weld_candidates,
     _estimate_flat_pattern,
     _mass_center_components,
+    _opening_context_is_complete,
     _planar_wire_area,
     load_analysis_config,
 )
-from app.schemas import AssemblyComponent, BendFeature, HoleFeature, Holes
+from app.schemas import AssemblyComponent, BendFeature, FlatPattern, HoleFeature, Holes
 
 
 def _vector(x=0.0, y=0.0, z=0.0):
@@ -720,6 +723,103 @@ def test_sheet_thickness_prefers_supported_skin_area_over_smaller_side_gap():
     assert confidence == "medium"
 
 
+@pytest.mark.parametrize("thickness", [0.5, 0.76, 1.0, 2.0, 3.0])
+def test_sheet_thickness_supports_submillimetre_and_standard_gauges(thickness):
+    area = 8000.0
+    shape = SimpleNamespace(
+        Faces=[
+            _planar_face([], position=_vector(z=0.0), area=area),
+            _planar_face([], position=_vector(z=thickness), area=area),
+        ],
+        Volume=area * thickness,
+        Area=2.0 * area,
+    )
+
+    detected, confidence = _detect_sheet_thickness(shape)
+
+    assert detected == pytest.approx(thickness, abs=0.01)
+    assert confidence == "medium"
+
+
+def test_sheet_thickness_rejects_accidental_gap_in_favour_of_physical_skin_area():
+    shape = SimpleNamespace(
+        Faces=[
+            _planar_face([], position=_vector(z=0.0), area=12000.0),
+            _planar_face([], position=_vector(z=0.76), area=12000.0),
+            _planar_face([], position=_vector(y=10.0), axis=_vector(y=1.0), area=800.0),
+            _planar_face([], position=_vector(y=11.62), axis=_vector(y=1.0), area=800.0),
+        ],
+        Volume=9120.0,
+        Area=24000.0,
+    )
+
+    detected, _ = _detect_sheet_thickness(shape)
+
+    assert detected == 0.76
+
+
+def test_sheet_thickness_rejects_close_feature_surfaces_that_are_not_sheet_skins():
+    shape = SimpleNamespace(
+        Faces=[
+            _planar_face([], position=_vector(z=0.0), area=10000.0),
+            _planar_face([], position=_vector(z=1.0), area=10000.0),
+            _planar_face([], position=_vector(y=5.0), axis=_vector(y=1.0), area=300.0),
+            _planar_face([], position=_vector(y=5.2), axis=_vector(y=1.0), area=300.0),
+        ],
+        Volume=10000.0,
+        Area=20000.0,
+    )
+
+    detected, _ = _detect_sheet_thickness(shape)
+
+    assert detected == 1.0
+
+
+def test_sheet_thickness_area_support_outweighs_isolated_topological_gap(monkeypatch):
+    shape = SimpleNamespace(
+        Faces=[
+            _planar_face([], position=_vector(z=0.0), area=12000.0),
+            _planar_face([], position=_vector(z=0.76), area=12000.0),
+            _planar_face([], position=_vector(y=10.0), axis=_vector(y=1.0), area=500.0),
+            _planar_face([], position=_vector(y=11.5), axis=_vector(y=1.0), area=500.0),
+            SimpleNamespace(Surface=SimpleNamespace(TypeId="Part::GeomBSplineSurface")),
+        ],
+        Volume=9120.0,
+        Area=24000.0,
+    )
+    monkeypatch.setattr(
+        "app.cad_analyzer._face_adjacency_from_shared_edges",
+        lambda _faces: {
+            0: set(),
+            1: set(),
+            2: {4},
+            3: {4},
+            4: {2, 3},
+        },
+    )
+
+    detected, _ = _detect_sheet_thickness(shape)
+
+    assert detected == 0.76
+
+
+def test_sheet_thickness_does_not_classify_compact_massive_block():
+    faces = [
+        _planar_face([], position=_vector(z=0.0), area=2400.0),
+        _planar_face([], position=_vector(z=20.0), area=2400.0),
+        _planar_face([], position=_vector(y=0.0), axis=_vector(y=1.0), area=1200.0),
+        _planar_face([], position=_vector(y=40.0), axis=_vector(y=1.0), area=1200.0),
+        _planar_face([], position=_vector(x=0.0), axis=_vector(x=1.0), area=800.0),
+        _planar_face([], position=_vector(x=60.0), axis=_vector(x=1.0), area=800.0),
+    ]
+    shape = SimpleNamespace(Faces=faces, Volume=48000.0, Area=8800.0)
+
+    detected, confidence = _detect_sheet_thickness(shape)
+
+    assert detected is None
+    assert confidence == "low"
+
+
 def test_cutting_length_uses_polygon_perimeter_not_max_dimension():
     outer_wire = _Wire(
         [_edge("Part::GeomLine") for _ in range(4)],
@@ -784,6 +884,7 @@ def test_flat_pattern_reports_exact_planar_blank():
     result = _estimate_flat_pattern(
         shape=SimpleNamespace(
             Solids=[_valid_closed_solid(11774.0)],
+            Faces=[_planar_face([], area=6000.0)],
             Volume=11774.0,
             BoundBox=_bbox(100.0, 60.0, 2.0),
         ),
@@ -813,6 +914,7 @@ def test_flat_pattern_restores_countersink_removal_before_area_projection():
     result = _estimate_flat_pattern(
         shape=SimpleNamespace(
             Solids=[_valid_closed_solid(30410.4425)],
+            Faces=[_planar_face([], area=7700.0)],
             Volume=30410.4425,
             BoundBox=_bbox(110.0, 70.0, 4.0),
         ),
@@ -839,6 +941,359 @@ def test_flat_pattern_restores_countersink_removal_before_area_projection():
     assert result.net_developed_area_mm2 == pytest.approx(7621.46, abs=0.02)
     assert result.opening_area_mm2 == pytest.approx(78.54, abs=0.01)
     assert result.gross_blank_area_mm2 == pytest.approx(7700.0, abs=0.02)
+
+
+def test_zero_detected_bends_do_not_make_folded_geometry_exact():
+    shape = SimpleNamespace(
+        Solids=[_valid_closed_solid(8000.0)],
+        Faces=[
+            _planar_face([], axis=_vector(z=1.0), area=5000.0),
+            _planar_face([], axis=_vector(y=1.0), area=3000.0),
+        ],
+        Volume=8000.0,
+        BoundBox=_bbox(100.0, 50.0, 40.0),
+    )
+
+    result = _estimate_flat_pattern(
+        shape=shape,
+        thickness_mm=1.0,
+        thickness_confidence="high",
+        bends=[],
+        holes=[],
+        cutting_outer_perimeter_mm=300.0,
+        density_g_cm3=7.85,
+        parameters=load_analysis_config(),
+    )
+
+    assert result.status == "partial"
+    assert result.usable_for_costing is False
+    assert result.validation.passed is False
+    assert any("Zero pieghe rilevate" in warning for warning in result.warnings)
+
+
+def test_unresolved_opening_identity_blocks_planar_costing():
+    result = _estimate_flat_pattern(
+        shape=SimpleNamespace(
+            Solids=[_valid_closed_solid(12000.0)],
+            Faces=[_planar_face([], area=6000.0)],
+            Volume=12000.0,
+            BoundBox=_bbox(100.0, 60.0, 2.0),
+        ),
+        thickness_mm=2.0,
+        thickness_confidence="high",
+        bends=[],
+        holes=[],
+        cutting_outer_perimeter_mm=320.0,
+        density_g_cm3=7.85,
+        parameters=load_analysis_config(),
+        opening_identity_complete=False,
+    )
+
+    assert result.status == "partial"
+    assert result.usable_for_costing is False
+
+
+def test_countersink_major_profile_is_resolved_by_its_through_opening_identity():
+    through_contour = SimpleNamespace(
+        face_index=1,
+        wire_index=1,
+        edge_types=("Part::GeomCircle",),
+        perimeter_mm=math.pi * 6.0,
+        normal=(0.0, 0.0, 1.0),
+        center=(10.0, 20.0, 0.0),
+    )
+    countersink_contour = SimpleNamespace(
+        face_index=2,
+        wire_index=1,
+        edge_types=("Part::GeomCircle",),
+        perimeter_mm=math.pi * 12.0,
+        normal=(0.0, 0.0, 1.0),
+        center=(10.0, 20.0, 2.0),
+    )
+    context = SimpleNamespace(
+        identities=[SimpleNamespace(contours=(through_contour,))],
+        forming_identities=[],
+        raw_contour_count=2,
+        raw_contours=[through_contour, countersink_contour],
+    )
+    countersunk = HoleFeature(
+        type="countersunk",
+        center=[10.0, 20.0, 0.0],
+        axis=[0.0, 0.0, 1.0],
+        diameter_mm=6.0,
+        countersink_major_diameter_mm=12.0,
+        countersink_depth_mm=2.0,
+    )
+
+    assert _opening_context_is_complete(
+        context,
+        [countersunk],
+        load_analysis_config(),
+    )
+
+
+def test_countersink_through_profile_is_semantically_represented_once():
+    represented_major = SimpleNamespace(face_index=1, wire_index=1)
+    unresolved_through = SimpleNamespace(
+        face_index=2,
+        wire_index=1,
+        edge_types=("Part::GeomCircle",),
+        perimeter_mm=math.pi * 6.0,
+        normal=(0.0, 0.0, 1.0),
+        center=(72.0, 35.0, 2.0),
+    )
+    context = SimpleNamespace(
+        identities=[SimpleNamespace(contours=(represented_major,))],
+        forming_identities=[],
+        raw_contour_count=2,
+        raw_contours=[represented_major, unresolved_through],
+    )
+    countersunk = HoleFeature(
+        type="countersunk",
+        center=[72.0, 35.0, 2.0],
+        axis=[0.0, 0.0, 1.0],
+        diameter_mm=6.0,
+        through_diameter_mm=6.0,
+        countersink_major_diameter_mm=12.0,
+        countersink_depth_mm=2.0,
+        depth_mm=4.0,
+    )
+
+    assert _opening_context_is_complete(
+        context,
+        [countersunk],
+        load_analysis_config(),
+    )
+
+
+def test_coaxial_profile_outside_confirmed_hole_depth_remains_unresolved():
+    unresolved = SimpleNamespace(
+        face_index=2,
+        wire_index=1,
+        edge_types=("Part::GeomCircle",),
+        perimeter_mm=math.pi * 6.0,
+        normal=(0.0, 0.0, 1.0),
+        center=(72.0, 35.0, 20.0),
+    )
+    context = SimpleNamespace(
+        identities=[],
+        forming_identities=[],
+        raw_contour_count=1,
+        raw_contours=[unresolved],
+    )
+    countersunk = HoleFeature(
+        type="countersunk",
+        center=[72.0, 35.0, 2.0],
+        axis=[0.0, 0.0, 1.0],
+        diameter_mm=6.0,
+        through_diameter_mm=6.0,
+        countersink_major_diameter_mm=12.0,
+        countersink_depth_mm=2.0,
+        depth_mm=4.0,
+    )
+
+    assert not _opening_context_is_complete(
+        context,
+        [countersunk],
+        load_analysis_config(),
+    )
+
+
+def test_bend_transition_loop_is_not_treated_as_a_missing_opening():
+    first = SimpleNamespace(Point=_vector(0.0, 0.0, 0.0))
+    last = SimpleNamespace(Point=_vector(54.0, 0.0, 0.0))
+    shared_axial_edge = SimpleNamespace(
+        Vertexes=[first, last],
+        isSame=lambda other: other is shared_axial_edge,
+    )
+    contour = SimpleNamespace(
+        panel_id="panel_root",
+        wall_face_indices=(),
+        edge_types=("Part::GeomLine",) * 4,
+        wire=SimpleNamespace(Edges=[shared_axial_edge]),
+    )
+    bend = SimpleNamespace(
+        panel_ids=["panel_root", "panel_flange"],
+        inner_face=SimpleNamespace(Edges=[shared_axial_edge]),
+        outer_face=None,
+        axis=(1.0, 0.0, 0.0),
+        length_mm=54.0,
+    )
+    topology = SimpleNamespace(bends=[bend])
+
+    assert _contour_is_bend_transition_boundary(
+        contour,
+        topology,
+        load_analysis_config(),
+    )
+
+
+def test_rectangular_cutout_without_exact_bend_edge_remains_unresolved():
+    contour_edge = SimpleNamespace(
+        Vertexes=[
+            SimpleNamespace(Point=_vector(0.0, 0.0, 0.0)),
+            SimpleNamespace(Point=_vector(54.0, 0.0, 0.0)),
+        ],
+        isSame=lambda _other: False,
+    )
+    contour = SimpleNamespace(
+        panel_id="panel_root",
+        wall_face_indices=(),
+        edge_types=("Part::GeomLine",) * 4,
+        wire=SimpleNamespace(Edges=[contour_edge]),
+    )
+    bend = SimpleNamespace(
+        panel_ids=["panel_root", "panel_flange"],
+        inner_face=SimpleNamespace(Edges=[object()]),
+        outer_face=None,
+        axis=(1.0, 0.0, 0.0),
+        length_mm=54.0,
+    )
+
+    assert not _contour_is_bend_transition_boundary(
+        contour,
+        SimpleNamespace(bends=[bend]),
+        load_analysis_config(),
+    )
+
+
+def test_unrelated_unrepresented_circle_still_blocks_opening_completeness():
+    unresolved = SimpleNamespace(
+        face_index=2,
+        wire_index=1,
+        edge_types=("Part::GeomCircle",),
+        perimeter_mm=math.pi * 10.0,
+        normal=(0.0, 0.0, 1.0),
+        center=(40.0, 20.0, 2.0),
+    )
+    context = SimpleNamespace(
+        identities=[],
+        forming_identities=[],
+        raw_contour_count=1,
+        raw_contours=[unresolved],
+    )
+    countersunk = HoleFeature(
+        type="countersunk",
+        center=[10.0, 20.0, 0.0],
+        axis=[0.0, 0.0, 1.0],
+        countersink_major_diameter_mm=10.0,
+    )
+
+    assert not _opening_context_is_complete(
+        context,
+        [countersunk],
+        load_analysis_config(),
+    )
+
+
+def _topology_zone(*, center, radius=2.0, length=20.0, angle=90.0):
+    return SimpleNamespace(
+        axis=(1.0, 0.0, 0.0),
+        center=center,
+        inner_radius_mm=radius,
+        angle_deg=angle,
+        length_mm=length,
+        outer_face=object(),
+    )
+
+
+def test_segmented_topology_zones_covered_by_one_physical_bend_remain_costable(monkeypatch):
+    geometric_result = FlatPattern(
+        status="validated_estimate",
+        available=True,
+        usable_for_costing=True,
+        blank_weight_kg=0.5,
+        confidence="high",
+    )
+    geometric_result.validation.passed = True
+    monkeypatch.setattr(
+        "app.cad_analyzer.unfold_sheet",
+        lambda **_kwargs: geometric_result,
+    )
+    topology_context = SimpleNamespace(
+        bends=[
+            _topology_zone(center=(-6.0, 0.0, 0.0), length=8.0),
+            _topology_zone(center=(6.0, 0.0, 0.0), length=8.0),
+        ]
+    )
+    detected = BendFeature(
+        radius_mm=2.0,
+        angle_deg=90.0,
+        length_mm=20.0,
+        axis=[1.0, 0.0, 0.0],
+        center=[0.0, 0.0, 0.0],
+    )
+
+    result = _estimate_flat_pattern(
+        shape=SimpleNamespace(
+            Solids=[_valid_closed_solid(12000.0)],
+            Volume=12000.0,
+            BoundBox=_bbox(100.0, 60.0, 20.0),
+        ),
+        thickness_mm=1.0,
+        thickness_confidence="high",
+        bends=[detected],
+        holes=[],
+        cutting_outer_perimeter_mm=320.0,
+        density_g_cm3=7.85,
+        parameters=load_analysis_config(),
+        topology_context=topology_context,
+    )
+
+    assert result.status == "validated_estimate"
+    assert result.usable_for_costing is True
+    assert result.validation.passed is True
+
+
+def test_topology_bends_missing_from_detection_block_geometric_flat_costing(monkeypatch):
+    geometric_result = FlatPattern(
+        status="validated_estimate",
+        available=True,
+        usable_for_costing=True,
+        blank_weight_kg=0.5,
+        confidence="high",
+    )
+    geometric_result.validation.passed = True
+    monkeypatch.setattr(
+        "app.cad_analyzer.unfold_sheet",
+        lambda **_kwargs: geometric_result,
+    )
+    topology_context = SimpleNamespace(
+        bends=[
+            _topology_zone(center=(0.0, 0.0, 0.0), radius=0.05),
+            _topology_zone(center=(30.0, 0.0, 0.0), radius=0.05),
+        ]
+    )
+
+    result = _estimate_flat_pattern(
+        shape=SimpleNamespace(
+            Solids=[_valid_closed_solid(12000.0)],
+            Volume=12000.0,
+            BoundBox=_bbox(100.0, 60.0, 20.0),
+        ),
+        thickness_mm=0.76,
+        thickness_confidence="high",
+        bends=[
+            BendFeature(
+                radius_mm=1.52,
+                angle_deg=90.0,
+                length_mm=20.0,
+                axis=[1.0, 0.0, 0.0],
+                center=[0.0, 10.0, 0.0],
+            )
+        ],
+        holes=[],
+        cutting_outer_perimeter_mm=320.0,
+        density_g_cm3=7.85,
+        parameters=load_analysis_config(),
+        topology_context=topology_context,
+    )
+
+    assert result.status == "partial"
+    assert result.usable_for_costing is False
+    assert result.blank_weight_kg is None
+    assert result.validation.passed is False
+    assert any("2 zone topologiche di piega su 2" in warning for warning in result.warnings)
 
 
 def test_multi_solid_flat_pattern_is_unavailable_even_with_thickness():

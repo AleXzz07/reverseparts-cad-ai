@@ -96,19 +96,6 @@ def _analytic_face_normals(
     """Return OCC surface normals without crossing B-Rep face boundaries."""
 
     fallback = _vertex_normals(points, facets)
-    if _is_planar_face(face):
-        # A mathematical plane has one constant analytic normal. Preserve the
-        # face-local winding alignment and fallback for each mesh vertex.
-        try:
-            u, v = face.Surface.parameter(source_vertices[0])
-            planar_normal = _normalize(_vector(face.normalAt(u, v)))
-        except Exception:
-            return fallback
-        return [
-            tuple(-value for value in planar_normal)
-            if _dot(planar_normal, local) < 0.0 else planar_normal
-            for local in fallback
-        ]
     normals: list[Vector3] = []
     for index, vertex in enumerate(source_vertices):
         try:
@@ -151,8 +138,7 @@ def _tessellate_brep_faces(
         if not _is_planar_face(face):
             face_deflection *= curved_refinement
         source_vertices, raw_facets = face.tessellate(face_deflection)
-        if not isinstance(source_vertices, list):
-            source_vertices = list(source_vertices)
+        source_vertices = list(source_vertices)
         face_points = [_vector(vertex) for vertex in source_vertices]
         face_facets = [
             tuple(int(index) for index in facet)
@@ -282,21 +268,6 @@ def _pad(data: bytes, padding: bytes) -> bytes:
     return data + padding * (4 - remainder)
 
 
-def _pack_vec3(points: list[Vector3]) -> bytes:
-    """Pack the same little-endian floats into one allocated buffer."""
-    data = bytearray(len(points) * 12)
-    for offset, point in enumerate(points):
-        struct.pack_into("<3f", data, offset * 12, *point)
-    return bytes(data)
-
-
-def _pack_facets(facets: list[Triangle]) -> bytes:
-    data = bytearray(len(facets) * 12)
-    for offset, facet in enumerate(facets):
-        struct.pack_into("<3I", data, offset * 12, *facet)
-    return bytes(data)
-
-
 def _build_glb(
     points: list[Vector3],
     facets: list[Triangle],
@@ -307,11 +278,17 @@ def _build_glb(
     active_normals = normals or _vertex_normals(points, facets)
     if len(active_normals) != len(points):
         raise ValueError("GLB normals must match the position count.")
-    positions = _pack_vec3(points)
-    normal_data = _pack_vec3(active_normals)
-    indices = _pack_facets(facets)
+    positions = b"".join(struct.pack("<3f", *point) for point in points)
+    normal_data = b"".join(
+        struct.pack("<3f", *normal) for normal in active_normals
+    )
+    indices = b"".join(
+        struct.pack("<I", index)
+        for facet in facets
+        for index in facet
+    )
     edge_points = [point for segment in (edge_segments or []) for point in segment]
-    edge_data = _pack_vec3(edge_points)
+    edge_data = b"".join(struct.pack("<3f", *point) for point in edge_points)
 
     chunks = (positions, normal_data, indices, edge_data)
     offsets: list[int] = []

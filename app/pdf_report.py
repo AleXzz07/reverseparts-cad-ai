@@ -187,6 +187,7 @@ def _part_rows(
     physical_openings_total = features.get("physical_openings_total")
     if physical_openings_total is None:
         physical_openings_total = holes.get("physical_openings_total", total_holes)
+    forming_feature_count = len(analysis.get("forming_features", []) or [])
 
     return [
         ("Nome pezzo", quote.get("part_name") or analysis.get("part_name")),
@@ -217,6 +218,7 @@ def _part_rows(
         ("Fori non riconosciuti", unknown_holes),
         ("Fori totali", total_holes),
         ("Aperture fisiche totali", physical_openings_total),
+        ("Feature di formatura chiuse (non aperture)", forming_feature_count),
         (
             "Numero pieghe",
             bends.get("count")
@@ -442,6 +444,28 @@ def _hole_group_rows(analysis: dict[str, Any]) -> list[list[Any]]:
         key = (type_name, str(row[1]))
         groups[key] = groups.get(key, 0) + 1
     return [[count, type_name, measure] for (type_name, measure), count in groups.items()]
+
+
+def _forming_feature_rows(analysis: dict[str, Any]) -> list[list[Any]]:
+    rows: list[list[Any]] = []
+    for feature in analysis.get("forming_features", []) or []:
+        measure = (
+            f"Diam. {_value(feature.get('diameter_mm'), 'mm')} / "
+            f"prof. {_value(feature.get('depth_mm'), 'mm')}"
+            if feature.get("diameter_mm") is not None
+            else _value(feature.get("max_dimension_mm"), "mm")
+        )
+        rows.append(
+            [
+                feature.get("feature_id") or "-",
+                feature.get("type") or "closed formed feature",
+                measure,
+                _vector(feature.get("center"), "mm"),
+                _vector(feature.get("axis")),
+                feature.get("confidence", "low"),
+            ]
+        )
+    return rows
 
 
 def _bend_detail_rows(analysis: dict[str, Any]) -> list[list[Any]]:
@@ -981,6 +1005,13 @@ def generate_quote_pdf(
             "Dettaglio fori",
             ["Foro", "Misura", "Perim.", "Area", "Centro", "Normale", "Orient.", "Bordo", "Altro foro", "Conf."],
             _hole_detail_rows(analysis),
+        )
+    )
+    elements.extend(
+        _detail_table(
+            "Feature di formatura chiuse (non aperture)",
+            ["ID", "Tipo", "Misura", "Centro", "Asse", "Conf."],
+            _forming_feature_rows(analysis),
         )
     )
     elements.extend(

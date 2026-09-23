@@ -13,11 +13,14 @@
     "User Library-LogMaxEnclosure.STEP": 121
   },
   "manual_ground_truth": {
-    "SWPR-Simple Sheet Metal Part 9.STEP": 9
+    "SWPR-Simple Sheet Metal Part 9.STEP": 9,
+    "SWPR-moderate sheetmetal part 1.STEP": 10,
+    "User Library-Part1-451.STEP": 8
   },
   "notes": {
     "SWPR-complex sheetmetal part 2.STEP": "82 OCC groups are audit evidence, not asserted ground truth.",
-    "User Library-Part1-451.STEP": "10 OCC groups are audit evidence, not asserted ground truth.",
-    "SWPR-Complex Sheet Metal Part 6.STEP": "The old count must be re-profiled on Phase 3C before adding a new numeric assertion."
+    "User Library-Part1-451.STEP": "OCC audit proves 8 through-openings plus 2 closed circular forming features.",
+    "SWPR-Complex Sheet Metal Part 6.STEP": "The old count must be re-profiled on Phase 3C before adding a new numeric assertion.",
+    "SWPR-moderate sheetmetal part 1.STEP": "Independent B-Rep audit proves one additional 12.70 x 6.35 mm slot crossing a 60-degree bend."
   }
 }

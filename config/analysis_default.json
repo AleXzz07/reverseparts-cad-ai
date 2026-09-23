@@ -22,6 +22,11 @@
     "passage_diameter_tolerance_mm": 0.2,
     "passage_axial_gap_tolerance_mm": 0.1
   },
+  "sheet_thickness_detection": {
+    "min_mm": 0.05,
+    "max_mm": 25.0,
+    "max_thin_solid_relative_error": 0.5
+  },
   "flat_pattern": {
     "k_factor": 0.4,
     "k_factor_standard": "ANSI",

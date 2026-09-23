@@ -19,6 +19,7 @@ from app.pdf_report import (
     FLAT_STATUS_NOTES,
     _bend_detail_rows,
     _diagnostic_volume_area_error_pct,
+    _forming_feature_rows,
     _hole_detail_rows,
     _hole_group_rows,
     _part_rows,
@@ -260,7 +261,9 @@ def test_frontend_returns_html():
     assert "Area lorda grezzo" in response.text
     assert "Peso grezzo" in response.text
     assert "applyCadViewerAppearance" in response.text
-    assert "new THREE.EdgesGeometry" in response.text
+    assert "new THREE.EdgesGeometry" not in response.text
+    assert "item.isLineSegments" in response.text
+    assert "come from FreeCAD B-Rep edges" in response.text
     assert "color: 0x718397" in response.text
     assert "renderer.setClearColor(0xe8edf2, 1)" in response.text
 
@@ -702,6 +705,30 @@ def test_quote_pdf_detail_rows_include_rounded_rectangle_dimensions():
     assert rounded_row[1] == "L 26 mm / W 16 mm / R 4 mm"
     assert rounded_row[2] == "77.13 mm"
     assert rounded_row[3] == "402.27 mm2"
+
+
+def test_quote_pdf_keeps_closed_forming_features_separate_from_openings():
+    analysis = json.loads(STAFFA_ACTUAL_FILE.read_text(encoding="utf-8"))
+    analysis["forming_features"] = [
+        {
+            "feature_id": "forming_0001",
+            "type": "closed circular draw",
+            "diameter_mm": 58.83,
+            "depth_mm": 5.0,
+            "center": [-19.742, 39.096, -38.5],
+            "axis": [0.0, 0.0, 1.0],
+            "confidence": "high",
+        }
+    ]
+    quote = json.loads(STAFFA_QUOTE_FILE.read_text(encoding="utf-8"))
+
+    part_rows = dict(_part_rows(analysis, quote))
+    forming_rows = _forming_feature_rows(analysis)
+
+    assert part_rows["Feature di formatura chiuse (non aperture)"] == 1
+    assert part_rows["Aperture fisiche totali"] == 8
+    assert forming_rows[0][0] == "forming_0001"
+    assert forming_rows[0][2] == "Diam. 58.83 mm / prof. 5 mm"
 
 
 def test_quote_pdf_weld_rows_include_origin_effective_length_and_grouped_setup():

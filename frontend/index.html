@@ -1114,32 +1114,35 @@
     }
 
     function applyCadViewerAppearance(model) {
-      const edgeMaterial = new THREE.LineBasicMaterial({
-        color: 0x33475b,
-        transparent: true,
-        opacity: 0.5,
-        depthTest: true,
-      });
       model.traverse(item => {
-        if (!item.isMesh || !item.geometry) return;
+        if (!item.geometry) return;
         const originalMaterials = Array.isArray(item.material) ? item.material : [item.material];
         originalMaterials.filter(Boolean).forEach(material => material.dispose());
-        item.material = new THREE.MeshStandardMaterial({
-          color: 0x718397,
-          metalness: 0.28,
-          roughness: 0.36,
-          side: THREE.DoubleSide,
-          polygonOffset: true,
-          polygonOffsetFactor: 1,
-          polygonOffsetUnits: 1,
-        });
-        const edges = new THREE.EdgesGeometry(item.geometry, 32);
-        const outline = new THREE.LineSegments(edges, edgeMaterial.clone());
-        outline.name = "cad-edge-overlay";
-        outline.renderOrder = 2;
-        item.add(outline);
+        if (item.isMesh) {
+          item.material = new THREE.MeshStandardMaterial({
+            color: 0x718397,
+            metalness: 0.28,
+            roughness: 0.36,
+            side: THREE.DoubleSide,
+            polygonOffset: true,
+            polygonOffsetFactor: 1,
+            polygonOffsetUnits: 1,
+          });
+          return;
+        }
+        if (item.isLineSegments) {
+          // These segments come from FreeCAD B-Rep edges exported in the GLB;
+          // no outline is reconstructed from tessellation triangles here.
+          item.material = new THREE.LineBasicMaterial({
+            color: 0x33475b,
+            transparent: true,
+            opacity: 0.58,
+            depthTest: true,
+            depthWrite: false,
+          });
+          item.renderOrder = 2;
+        }
       });
-      edgeMaterial.dispose();
     }
 
     async function displayViewerModel(payload) {
@@ -1506,6 +1509,25 @@
           <tbody>${holeRows.join("")}</tbody>
         </table></div>
       ` : '<div class="technical-empty">Nessuna apertura rilevata.</div>';
+      const formingRows = (analysis.forming_features || []).map(feature => `
+        <tr>
+          <td>${escapeHtml(feature.feature_id || "-")}</td>
+          <td>${escapeHtml(feature.type || "Feature formata chiusa")}</td>
+          <td>${escapeHtml(feature.diameter_mm != null ? number(feature.diameter_mm, "mm") : number(feature.max_dimension_mm, "mm"))}</td>
+          <td>${escapeHtml(number(feature.depth_mm, "mm"))}</td>
+          <td>${escapeHtml(vectorText(feature.center, "mm"))}</td>
+          <td>${escapeHtml(vectorText(feature.axis))}</td>
+          <td>${escapeHtml(confidenceText(feature.confidence))}</td>
+        </tr>
+      `);
+      if (formingRows.length) {
+        document.getElementById("holes-detail").innerHTML += `
+          <div class="technical-empty"><strong>Feature di formatura chiuse (non aperture)</strong></div>
+          <div class="technical-table-wrap"><table class="technical-table">
+            <thead><tr><th>ID</th><th>Tipo</th><th>Diametro/dimensione</th><th>Profondità</th><th>Posizione X/Y/Z</th><th>Asse X/Y/Z</th><th>Confidence</th></tr></thead>
+            <tbody>${formingRows.join("")}</tbody>
+          </table></div>`;
+      }
 
       const bendRows = (analysis.bends?.items || []).map((bend, index) => `
         <tr>
@@ -1856,6 +1878,7 @@
       const totalHoles = features.physical_openings_total ?? holes.physical_openings_total
         ?? features.total_holes ?? holes.total_holes
         ?? (circularHoles + elongatedHoles + roundedRectangularHoles + polygonalHoles + formedHoles + unknownHoles);
+      const formingFeatureCount = (analysis.forming_features || []).length;
       renderPreviewGallery(preview, analysis.complexity_score);
       renderTechnicalDetails(analysis, quote);
       renderWeldSection(analysis, quote.welding_quote || {}, resetWelds);
@@ -1893,6 +1916,7 @@
         ["Fori sagomati/imbutiti", formedHoles],
         ["Fori non riconosciuti", unknownHoles],
         ["Aperture fisiche totali", totalHoles],
+        ["Feature di formatura chiuse (non aperture)", formingFeatureCount],
         ["Pieghe", features.bends ?? analysis.bends?.count ?? 0],
         ["Dimensioni grezzo sviluppato", flatDimensionsText(analysis.flat_pattern?.blank_dimensions_mm)],
         ["Area lorda grezzo", number(analysis.flat_pattern?.gross_blank_area_mm2, "mm²")],

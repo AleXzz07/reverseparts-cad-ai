@@ -26,6 +26,7 @@ CSV_FIELDS = (
     "old_opening_count",
     "new_opening_count",
     "physical_identity_count",
+    "forming_feature_count",
     "raw_contour_count",
     "accepted_merge_count",
     "rejected_merge_count",
@@ -142,6 +143,7 @@ def _worker(step_path: Path) -> int:
         contexts = _component_contexts(shape, result, parameters)
         identities = [identity for context in contexts for identity in context.identities]
         mappings = []
+        forming_mappings = []
         for context in contexts:
             for identity in context.identities:
                 category, feature, _ = _classify_physical_opening(
@@ -166,6 +168,52 @@ def _worker(step_path: Path) -> int:
                         "axis": feature.axis,
                         "dimensions": _feature_dimensions(feature),
                         "panel": identity.panel_id,
+                        "panels": list(identity.panel_ids),
+                        "bend_zones": list(identity.bend_zone_ids),
+                        "grouping_reason": identity.evidence,
+                    }
+                )
+            for identity in context.forming_identities:
+                feature = next(
+                    (
+                        item
+                        for item in result.forming_features
+                        if item.feature_id == identity.id
+                        and item.component_id == identity.component_id
+                    ),
+                    None,
+                )
+                forming_mappings.append(
+                    {
+                        "forming_feature_id": identity.id,
+                        "component_id": identity.component_id,
+                        "source_contours": [
+                            {"face": contour.face_index, "wire": contour.wire_index}
+                            for contour in identity.contours
+                        ],
+                        "source_wall_face_count": len(identity.wall_faces),
+                        "center": feature.center if feature is not None else list(identity.center),
+                        "axis": feature.axis if feature is not None else list(identity.axis or ()),
+                        "dimensions": (
+                            {
+                                "diameter_mm": feature.diameter_mm,
+                                "max_dimension_mm": feature.max_dimension_mm,
+                                "length_mm": feature.length_mm,
+                                "width_mm": feature.width_mm,
+                                "depth_mm": feature.depth_mm,
+                                "cut_length_mm": feature.cut_length_mm,
+                                "connected_edge_length_mm": feature.connected_edge_length_mm,
+                                "angle_deg": feature.angle_deg,
+                            }
+                            if feature is not None
+                            else {}
+                        ),
+                        "panel": identity.panel_id,
+                        "panels": list(identity.panel_ids),
+                        "bend_zones": list(identity.bend_zone_ids),
+                        "source_face_indices": (
+                            feature.source_face_indices if feature is not None else []
+                        ),
                         "grouping_reason": identity.evidence,
                     }
                 )
@@ -176,6 +224,7 @@ def _worker(step_path: Path) -> int:
             "analyze_step_file_sec": round(elapsed, 3),
             "new_opening_count": result.holes.physical_openings_total,
             "physical_identity_count": len(identities),
+            "forming_feature_count": len(forming_mappings),
             "raw_contour_count": raw_contours,
             "accepted_merge_count": len(accepted),
             "rejected_merge_count": len(rejected),
@@ -183,7 +232,13 @@ def _worker(step_path: Path) -> int:
             "rejected_merge_reasons": dict(Counter(item["reason"] for item in rejected)),
             "unrepresented_raw_contours": max(
                 0,
-                raw_contours - sum(len(identity.contours) for identity in identities),
+                raw_contours
+                - sum(len(identity.contours) for identity in identities)
+                - sum(
+                    len(identity.contours)
+                    for context in contexts
+                    for identity in context.forming_identities
+                ),
             ),
             "classification": result.part_classification.category,
             "thickness_mm": result.detected_thickness_mm,
@@ -191,6 +246,7 @@ def _worker(step_path: Path) -> int:
             "flat_status": result.flat_pattern.status,
             "usable_for_costing": result.flat_pattern.usable_for_costing,
             "physical_openings": mappings,
+            "forming_features": forming_mappings,
         }
         print("PROFILE_RESULT " + json.dumps(payload), flush=True)
         return 0

@@ -48,6 +48,27 @@ class HoleFeature(BaseModel):
     confidence: Confidence = "low"
 
 
+class FormingFeature(BaseModel):
+    feature_id: str | None = None
+    component_id: str | None = None
+    type: str = "closed formed feature"
+    reason: str | None = None
+    center: list[float] | None = None
+    axis: list[float] | None = None
+    diameter_mm: float | None = None
+    max_dimension_mm: float | None = None
+    length_mm: float | None = None
+    width_mm: float | None = None
+    depth_mm: float | None = None
+    cut_length_mm: float | None = None
+    connected_edge_length_mm: float | None = None
+    angle_deg: float | None = None
+    bend_axis: list[float] | None = None
+    source_face_indices: list[int] = Field(default_factory=list)
+    evidence: str | None = None
+    confidence: Confidence = "low"
+
+
 class Holes(BaseModel):
     circular: list[HoleFeature] = Field(default_factory=list)
     elongated: list[HoleFeature] = Field(default_factory=list)
@@ -194,6 +215,7 @@ class AssemblyComponent(BaseModel):
     surface_area_cm2: float | None = None
     classification: PartClassification = Field(default_factory=PartClassification)
     holes: Holes = Field(default_factory=Holes)
+    forming_features: list[FormingFeature] = Field(default_factory=list)
 
 
 class AssemblyPassage(BaseModel):
@@ -274,6 +296,7 @@ class CadAnalysisResponse(BaseModel):
     detected_thickness_mm: float | None = None
     thickness_confidence: Confidence = "low"
     holes: Holes = Field(default_factory=Holes)
+    forming_features: list[FormingFeature] = Field(default_factory=list)
     bends: Bends = Field(default_factory=Bends)
     cutting: Cutting = Field(default_factory=Cutting)
     geometry: GeometryStatistics = Field(default_factory=GeometryStatistics)

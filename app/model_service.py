@@ -124,6 +124,7 @@ def generate_safe_viewer_model(
     if str(complexity_score).lower() == "high":
         environment.setdefault("VIEWER_MODEL_MAX_TRIANGLES", "50000")
         environment.setdefault("VIEWER_MODEL_TESSELLATION_RATIO", "300")
+        environment.setdefault("VIEWER_MODEL_CURVED_FACE_REFINEMENT", "0.8")
 
     command = [
         sys.executable,
