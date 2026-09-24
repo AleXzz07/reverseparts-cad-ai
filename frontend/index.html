@@ -425,12 +425,22 @@
       overflow: hidden;
       border: 1px solid #ccd7e3;
       border-radius: 11px;
-      background:
-        linear-gradient(rgba(46,80,118,.045) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(46,80,118,.045) 1px, transparent 1px),
-        #e8edf2;
-      background-size: 28px 28px;
+      background: #e8edf2;
     }
+    .viewer-frame:fullscreen, .viewer-frame.viewer-expanded {
+      position: fixed;
+      inset: 0;
+      z-index: 1000;
+      width: 100%;
+      height: 100%;
+      min-height: 0;
+      aspect-ratio: auto;
+      border: 0;
+      border-radius: 0;
+      background: #e8edf2;
+    }
+    .viewer-frame.viewer-expanded { height: 100vh; height: 100dvh; }
+    body.viewer-expanded { overflow: hidden; }
     #viewer-canvas { width: 100%; height: 100%; display: block; touch-action: none; }
     .viewer-empty {
       position: absolute;
@@ -479,6 +489,20 @@
       backdrop-filter: blur(8px);
     }
     .viewer-tool:hover { border-color: var(--accent); color: var(--accent-dark); }
+    .viewer-fullscreen {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      z-index: 4;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .viewer-fullscreen svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+    .viewer-frame:fullscreen .viewer-toolbar, .viewer-frame.viewer-expanded .viewer-toolbar {
+      top: 52px;
+      right: 10px;
+    }
     .viewer-help {
       position: absolute;
       right: 10px;
@@ -649,7 +673,7 @@
       .mode-switch { width: 100%; }
       .mode-button { flex: 1; }
       .viewer-frame { min-height: 300px; aspect-ratio: 4 / 3; }
-      .viewer-toolbar { right: 10px; }
+      .viewer-toolbar { top: 52px; right: 10px; }
       .viewer-help { display: none; }
       .pdf-view-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .technical-sections { padding-left: 12px; padding-right: 12px; }
@@ -761,6 +785,10 @@
                 <button class="viewer-tool" type="button" data-viewer-view="right">Destra</button>
                 <button class="viewer-tool" type="button" data-viewer-action="fit">Adatta</button>
               </div>
+              <button class="viewer-tool viewer-fullscreen" id="viewer-fullscreen" type="button" aria-label="Schermo intero" aria-pressed="false">
+                <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 2H2v5m11-5h5v5M2 13v5h5m11-5v5h-5"/></svg>
+                <span>Schermo intero</span>
+              </button>
               <div class="viewer-help" id="viewer-help" hidden>Ruota: trascina · Zoom: rotella · Pan: tasto destro</div>
             </div>
             <div class="viewer-actions">
@@ -965,9 +993,9 @@
       camera: null,
       controls: null,
       model: null,
-      grid: null,
       radius: 1,
       ready: false,
+      viewportAspect: null,
       resizeObserver: null,
       animationFrame: null,
     };
@@ -984,6 +1012,7 @@
 
     function showVisualPane(mode) {
       const showViewer = mode === "viewer";
+      if (!showViewer) exitViewerFullscreen();
       document.getElementById("viewer-pane").hidden = !showViewer;
       document.getElementById("preview-pane").hidden = showViewer;
       document.getElementById("viewer-tab").classList.toggle("active", showViewer);
@@ -999,12 +1028,68 @@
 
     function resizeViewer() {
       if (!viewerState.renderer || !viewerState.camera) return;
+      if (document.getElementById("viewer-pane").hidden) return;
       const frame = document.getElementById("viewer-frame");
       const width = Math.max(1, frame.clientWidth);
       const height = Math.max(1, frame.clientHeight);
+      const nextAspect = width / height;
+      if (viewerState.ready && viewerState.viewportAspect) {
+        const scale = Math.min(1, viewerState.viewportAspect) / Math.min(1, nextAspect);
+        if (Math.abs(scale - 1) > 1e-6) {
+          const target = viewerState.controls.target;
+          viewerState.camera.position.sub(target).multiplyScalar(scale).add(target);
+          viewerState.controls.update();
+        }
+      }
       viewerState.renderer.setSize(width, height, false);
-      viewerState.camera.aspect = width / height;
+      viewerState.camera.aspect = nextAspect;
       viewerState.camera.updateProjectionMatrix();
+      viewerState.viewportAspect = nextAspect;
+    }
+
+    function syncViewerFullscreen() {
+      const frame = document.getElementById("viewer-frame");
+      const expanded = document.fullscreenElement === frame || frame.classList.contains("viewer-expanded");
+      const button = document.getElementById("viewer-fullscreen");
+      const label = expanded ? "Esci da schermo intero" : "Schermo intero";
+      button.querySelector("span").textContent = label;
+      button.setAttribute("aria-label", label);
+      button.setAttribute("aria-pressed", String(expanded));
+      window.requestAnimationFrame(resizeViewer);
+    }
+
+    function useExpandedViewer() {
+      document.getElementById("viewer-frame").classList.add("viewer-expanded");
+      document.body.classList.add("viewer-expanded");
+      syncViewerFullscreen();
+    }
+
+    async function exitViewerFullscreen() {
+      const frame = document.getElementById("viewer-frame");
+      if (frame.classList.contains("viewer-expanded")) {
+        frame.classList.remove("viewer-expanded");
+        document.body.classList.remove("viewer-expanded");
+        syncViewerFullscreen();
+      }
+      if (document.fullscreenElement === frame && document.exitFullscreen) {
+        try { await document.exitFullscreen(); } catch { syncViewerFullscreen(); }
+      }
+    }
+
+    async function toggleViewerFullscreen() {
+      const frame = document.getElementById("viewer-frame");
+      if (document.fullscreenElement === frame || frame.classList.contains("viewer-expanded")) {
+        await exitViewerFullscreen();
+      } else if (frame.requestFullscreen) {
+        try {
+          await frame.requestFullscreen();
+          syncViewerFullscreen();
+        } catch {
+          useExpandedViewer();
+        }
+      } else {
+        useExpandedViewer();
+      }
     }
 
     function ensureViewer() {
@@ -1052,11 +1137,10 @@
       viewerState.camera = camera;
       viewerState.controls = controls;
       resizeViewer();
+      window.addEventListener("resize", resizeViewer);
       if (window.ResizeObserver) {
         viewerState.resizeObserver = new ResizeObserver(resizeViewer);
         viewerState.resizeObserver.observe(document.getElementById("viewer-frame"));
-      } else {
-        window.addEventListener("resize", resizeViewer);
       }
       const animate = () => {
         viewerState.animationFrame = window.requestAnimationFrame(animate);
@@ -1077,12 +1161,6 @@
       });
       viewerState.model = null;
       viewerState.ready = false;
-      if (viewerState.grid) {
-        viewerState.scene.remove(viewerState.grid);
-        viewerState.grid.geometry.dispose();
-        if (viewerState.grid.material) viewerState.grid.material.dispose();
-        viewerState.grid = null;
-      }
     }
 
     function setViewerView(viewName = "isometric") {
@@ -1095,7 +1173,9 @@
       };
       const direction = (directions[viewName] || directions.isometric).normalize();
       const fov = THREE.MathUtils.degToRad(viewerState.camera.fov);
-      const distance = Math.max(viewerState.radius * 2.35, viewerState.radius / Math.tan(fov / 2) * 1.18);
+      const aspect = Math.max(viewerState.camera.aspect, .01);
+      const distance = Math.max(viewerState.radius * 2.35,
+        viewerState.radius / Math.tan(fov / 2) * 1.18 / Math.min(1, aspect));
       viewerState.camera.up.set(0, 1, 0);
       if (viewName === "top") viewerState.camera.up.set(0, 0, -1);
       viewerState.camera.position.copy(direction.multiplyScalar(distance));
@@ -1165,17 +1245,9 @@
       model.position.sub(center);
       viewerState.scene.add(model);
       const box = new THREE.Box3().setFromObject(model);
-      const size = box.getSize(new THREE.Vector3());
       const sphere = box.getBoundingSphere(new THREE.Sphere());
       viewerState.model = model;
       viewerState.radius = Math.max(sphere.radius, .01);
-      const gridSize = Math.max(size.x, size.y, size.z, 1) * 4;
-      const grid = new THREE.GridHelper(gridSize, 20, 0x8296aa, 0xc4ced8);
-      grid.position.y = box.min.y - viewerState.radius * .035;
-      grid.material.transparent = true;
-      grid.material.opacity = .58;
-      viewerState.scene.add(grid);
-      viewerState.grid = grid;
       viewerState.ready = true;
       setViewerView("isometric");
       document.getElementById("viewer-empty").hidden = true;
@@ -2026,6 +2098,14 @@
       button.addEventListener("click", () => setViewerView(button.dataset.viewerView));
     });
     document.querySelector('[data-viewer-action="fit"]').addEventListener("click", () => setViewerView("isometric"));
+    document.getElementById("viewer-fullscreen").addEventListener("click", toggleViewerFullscreen);
+    document.addEventListener("fullscreenchange", syncViewerFullscreen);
+    document.addEventListener("keydown", event => {
+      if (event.key === "Escape" && document.getElementById("viewer-frame").classList.contains("viewer-expanded")) {
+        event.preventDefault();
+        exitViewerFullscreen();
+      }
+    });
     document.getElementById("capture-view-button").addEventListener("click", captureViewerForPdf);
 
     document.getElementById("load-viewer-button").addEventListener("click", async () => {
