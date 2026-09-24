@@ -93,10 +93,10 @@ def _analytic_face_normals(
     source_vertices: list[Any],
     points: list[Vector3],
     facets: list[Triangle],
-    uv_nodes: list[tuple[float, float] | None] | None = None,
 ) -> list[Vector3]:
     """Return OCC surface normals without crossing B-Rep face boundaries."""
 
+    fallback = _vertex_normals(points, facets)
     if _is_planar_face(face):
         # Winding-derived normals can disagree at vertices near a hole when
         # OCC returns triangles with mixed winding. Never let that local
@@ -124,30 +124,16 @@ def _analytic_face_normals(
             planar_normal = _normalize(best_cross)
         return [planar_normal] * len(points)
     normals: list[Vector3] = []
-    # FreeCAD's Surface property creates a Python wrapper. Reuse it for all
-    # projections on this face; the underlying OCC surface is unchanged.
-    surface = face.Surface
     for index, vertex in enumerate(source_vertices):
         try:
-            uv = uv_nodes[index] if uv_nodes is not None else None
-            u, v = uv if uv is not None else surface.parameter(vertex)
+            u, v = face.Surface.parameter(vertex)
             candidate = _normalize(_vector(face.normalAt(u, v)))
             normals.append(candidate)
         except Exception:
-            if uv_nodes is None or uv_nodes[index] is None:
-                normals.append(None)
-            else:
-                # A singular UV supplied by the mesher can still have a
-                # well-defined OCC normal at the projected mesh point.
-                try:
-                    u, v = surface.parameter(vertex)
-                    normals.append(_normalize(_vector(face.normalAt(u, v))))
-                except Exception:
-                    normals.append(None)
+            normals.append(None)
     # Align only missing normals to the nearest valid OCC direction. A
     # per-vertex alignment to triangle winding creates false discontinuities.
     valid_indices = [index for index, item in enumerate(normals) if item is not None]
-    fallback = _vertex_normals(points, facets) if len(valid_indices) != len(normals) else None
     for index, item in enumerate(normals):
         if item is None:
             candidate = fallback[index]
@@ -157,102 +143,6 @@ def _analytic_face_normals(
                     candidate = tuple(-value for value in candidate)
             normals[index] = candidate
     return normals
-
-
-def _spatial_candidates(
-    point: Vector3,
-    cells: dict[tuple[int, int, int], list[int]],
-    coordinates: list[Vector3],
-    radius: float,
-) -> list[tuple[float, int]]:
-    """Search nearby cells; bound work on coincident or extremely dense nodes."""
-    key = tuple(math.floor(value / radius) for value in point)
-    matches: list[tuple[float, int]] = []
-    inspected = 0
-    for dx in (-1, 0, 1):
-        for dy in (-1, 0, 1):
-            for dz in (-1, 0, 1):
-                for index in cells.get((key[0] + dx, key[1] + dy, key[2] + dz), ()):
-                    inspected += 1
-                    if inspected > 64:
-                        return []  # Too crowded to establish an unambiguous match.
-                    distance = math.dist(point, coordinates[index])
-                    if distance <= radius:
-                        matches.append((distance, index))
-    return matches
-
-
-def _unique_spatial_match(candidates: list[tuple[float, int]]) -> int | None:
-    if not candidates:
-        return None
-    candidates.sort()
-    if len(candidates) > 1:
-        closest, next_closest = candidates[0][0], candidates[1][0]
-        # Adjacent mesh nodes may be inside the *existing* positional
-        # tolerance. Require an unequivocal geometric lead: a 1 µm gap and
-        # the runner-up at least three times farther than the best match.
-        # Coincident nodes (including periodic seams) go to OCC projection.
-        if next_closest - closest <= max(1e-6, 2.0 * closest):
-            return None
-    return candidates[0][1]
-
-
-def _verified_tessellation_uv_nodes(
-    face: Any,
-    points: list[Vector3],
-    face_deflection: float,
-) -> list[tuple[float, float] | None] | None:
-    """Associate OCC mesh UVs only through reciprocal unique XYZ matches.
-
-    FreeCAD 0.19 reorders tessellate() vertices relative to getUVNodes(). A
-    27-cell search per point avoids quadratic all-pairs matching. Any ambiguous
-    or unmatched vertex is projected using the original OCC path instead.
-    No exported position, triangle, B-Rep edge or normalAt implementation moves.
-    """
-    if type(face.Surface).__name__.lower() not in {"bsplinesurface", "geombsplinesurface"}:
-        return None
-    try:
-        raw_uv = face.getUVNodes()
-        if len(raw_uv) != len(points):
-            return None
-        tolerance = min(0.1, max(1e-5, face_deflection * 0.1))
-        uv_nodes: list[tuple[float, float]] = []
-        uv_points: list[Vector3] = []
-        for pair in raw_uv:
-            u, v = float(pair[0]), float(pair[1])
-            if not (math.isfinite(u) and math.isfinite(v)):
-                return None
-            on_surface = _vector(face.valueAt(u, v))
-            if not all(math.isfinite(value) for value in on_surface):
-                return None
-            uv_nodes.append((u, v))
-            uv_points.append(on_surface)
-
-        def cells_for(coordinates: list[Vector3]) -> dict[tuple[int, int, int], list[int]]:
-            cells: dict[tuple[int, int, int], list[int]] = {}
-            for index, point in enumerate(coordinates):
-                key = tuple(math.floor(value / tolerance) for value in point)
-                cells.setdefault(key, []).append(index)
-            return cells
-
-        mesh_cells = cells_for(points)
-        uv_cells = cells_for(uv_points)
-        # The two passes must agree on the same one-to-one association.
-        mesh_preferred = [_unique_spatial_match(_spatial_candidates(
-            point, uv_cells, uv_points, tolerance,
-        )) for point in points]
-        uv_preferred = [_unique_spatial_match(_spatial_candidates(
-            point, mesh_cells, points, tolerance,
-        )) for point in uv_points]
-        aligned: list[tuple[float, float] | None] = [None] * len(points)
-        for mesh_index, uv_index in enumerate(mesh_preferred):
-            if uv_index is not None and uv_preferred[uv_index] == mesh_index:
-                aligned[mesh_index] = uv_nodes[uv_index]
-        return aligned if any(uv is not None for uv in aligned) else None
-    except Exception:
-        # Older FreeCAD builds or absent/stale UV triangulations keep the
-        # previous projection path for this entire face.
-        return None
 
 
 def _orient_facets_to_normals(
@@ -309,10 +199,6 @@ def _tessellate_brep_faces(
     points: list[Vector3] = []
     facets: list[Triangle] = []
     normals: list[Vector3] = []
-    if phase_timings is not None:
-        for key in ("uv_reused_face_count", "uv_reused_vertices", "uv_fallback_vertices",
-                    "uv_association_last_attempt_sec"):
-            phase_timings[key] = 0
     for face_index, face in enumerate(shape.Faces, start=1):
         face_deflection = deflection
         if not _is_planar_face(face):
@@ -342,22 +228,11 @@ def _tessellate_brep_faces(
             mark_phase("occ_normals", {**(phase_timings or {}),
                                        "face_index": face_index})
         phase_start = time.perf_counter()
-        uv_nodes = _verified_tessellation_uv_nodes(face, face_points, face_deflection)
-        association_sec = time.perf_counter() - phase_start
-        if phase_timings is not None:
-            phase_timings["uv_association_sec"] = phase_timings.get("uv_association_sec", 0) + association_sec
-            phase_timings["uv_association_last_attempt_sec"] += association_sec
-            if type(face.Surface).__name__.lower() in {"bsplinesurface", "geombsplinesurface"}:
-                reused = sum(uv is not None for uv in uv_nodes) if uv_nodes is not None else 0
-                phase_timings["uv_reused_face_count"] += bool(reused)
-                phase_timings["uv_reused_vertices"] += reused
-                phase_timings["uv_fallback_vertices"] += len(face_points) - reused
         face_normals = _analytic_face_normals(
             face,
             source_vertices,
             face_points,
             face_facets,
-            uv_nodes=uv_nodes,
         )
         if phase_timings is not None:
             phase_timings["occ_normals_sec"] += time.perf_counter() - phase_start
@@ -675,10 +550,7 @@ def export_step_to_glb(
     try:
         timings = {"freecad_import_sec": 0.0, "step_load_sec": 0.0,
                    "tessellation_sec": 0.0,
-                   "occ_normals_sec": 0.0, "uv_association_sec": 0.0,
-                   "uv_association_last_attempt_sec": 0.0,
-                   "uv_reused_face_count": 0, "uv_reused_vertices": 0,
-                   "uv_fallback_vertices": 0, "brep_edges_sec": 0.0,
+                   "occ_normals_sec": 0.0, "brep_edges_sec": 0.0,
                    "glb_assembly_sec": 0.0, "base64_sec": 0.0}
 
         def mark(phase: str, extra: dict[str, Any] | None = None) -> None:
