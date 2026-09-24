@@ -239,6 +239,7 @@ def generate_safe_viewer_model(
                    "freecad_import_sec", "step_load_sec", "tessellation_sec", "occ_normals_sec",
                    "uv_association_sec", "uv_association_last_attempt_sec",
                    "uv_reused_face_count", "uv_reused_vertices", "uv_fallback_vertices",
+                   "boundary_refined_faces", "boundary_unrefined_faces",
                    "brep_edges_sec", "glb_assembly_sec", "base64_sec",
                    "face_count", "edge_count", "diagonal_mm", "attempt",
                    "face_index",

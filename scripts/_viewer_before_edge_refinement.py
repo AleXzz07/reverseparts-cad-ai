@@ -290,65 +290,11 @@ def _is_planar_face(face: Any) -> bool:
     return type(face.Surface).__name__.lower() in {"plane", "geomplane"}
 
 
-def _has_round_brep_boundary(face: Any) -> bool:
-    """Limit extra meshing to the circular and elliptical hole/slot rims."""
-    try:
-        return any(type(edge.Curve).__name__.lower() in
-                   {"circle", "geomcircle", "ellipse", "geomellipse"}
-                   for edge in face.Edges)
-    except (AttributeError, TypeError):
-        return False
-
-
-def _circle_boundary_sagittas(
-    face: Any,
-    points: list[Vector3],
-    facets: list[Triangle],
-) -> tuple[float | None, ...]:
-    """Measure the maximum chord sag on each analytic circle in this face.
-
-    Only triangle edges used once belong to this face's mesh boundary. Nodes
-    must lie on the circle plane and radius; internal chords and unrelated
-    outlines cannot give false evidence that a hole became smoother.
-    """
-    counts: dict[tuple[int, int], int] = {}
-    for first, second, third in facets:
-        for a, b in ((first, second), (second, third), (third, first)):
-            edge = (min(a, b), max(a, b))
-            counts[edge] = counts.get(edge, 0) + 1
-    boundary = [edge for edge, count in counts.items() if count == 1]
-    values: list[float | None] = []
-    for edge in getattr(face, "Edges", ()):
-        curve = edge.Curve
-        if type(curve).__name__.lower() not in {"circle", "geomcircle"}:
-            continue
-        try:
-            center = _vector(curve.Center)
-            axis = _normalize(_vector(curve.Axis))
-            radius = float(curve.Radius)
-        except (AttributeError, TypeError, ValueError):
-            values.append(None)
-            continue
-        candidates = []
-        for a, b in boundary:
-            if all(abs(math.dist(points[i], center) - radius) <= .002
-                   and abs(_dot(tuple(points[i][j] - center[j]
-                                      for j in range(3)), axis)) <= .002
-                   for i in (a, b)):
-                midpoint = tuple((points[a][j] + points[b][j]) * .5
-                                 for j in range(3))
-                candidates.append(max(0., radius - math.dist(midpoint, center)))
-        values.append(max(candidates) if candidates else None)
-    return tuple(values)
-
-
 def _tessellate_brep_faces(
     shape: Any,
     deflection: float,
     *,
     curved_refinement: float,
-    boundary_deflection: float | None = None,
-    max_triangles: int | None = None,
     phase_timings: dict[str, float] | None = None,
     mark_phase: Callable[[str, dict[str, float]], None] | None = None,
 ) -> tuple[list[Vector3], list[Triangle], list[Vector3]]:
@@ -363,14 +309,9 @@ def _tessellate_brep_faces(
     points: list[Vector3] = []
     facets: list[Triangle] = []
     normals: list[Vector3] = []
-    # Retain the original face meshes for a bounded second pass. This keeps
-    # every unrefined face byte-identical when there is insufficient budget.
-    face_meshes: list[tuple[int, Any, float, list[Vector3],
-                            list[Triangle], list[Vector3], int]] = []
     if phase_timings is not None:
         for key in ("uv_reused_face_count", "uv_reused_vertices", "uv_fallback_vertices",
-                    "uv_association_last_attempt_sec", "boundary_refined_faces",
-                    "boundary_unrefined_faces"):
+                    "uv_association_last_attempt_sec"):
             phase_timings[key] = 0
     for face_index, face in enumerate(shape.Faces, start=1):
         face_deflection = deflection
@@ -422,109 +363,10 @@ def _tessellate_brep_faces(
             phase_timings["occ_normals_sec"] += time.perf_counter() - phase_start
         normals.extend(face_normals)
         face_facets = _orient_facets_to_normals(face_points, face_facets, face_normals)
-        if boundary_deflection is not None:
-            face_meshes.append((face_index, face, face_deflection, face_points,
-                                face_facets, face_normals,
-                                sum(uv is not None for uv in uv_nodes)
-                                if uv_nodes is not None else 0))
         facets.extend(
             (first + offset, second + offset, third + offset)
             for first, second, third in face_facets
         )
-    if (boundary_deflection is not None and max_triangles is not None
-            and len(facets) <= max_triangles):
-        remaining = max_triangles - len(facets)
-        improved = False
-        for index, (face_index, face, face_deflection, old_points,
-                    old_facets, old_normals, old_reused) in enumerate(face_meshes):
-            if face_deflection <= boundary_deflection or not _has_round_brep_boundary(face):
-                continue
-            old_sags = _circle_boundary_sagittas(face, old_points, old_facets)
-            if old_sags and all(value is not None and value <= .05
-                                for value in old_sags):
-                continue  # Already below the measured contour quality target.
-            accepted = None
-            # FreeCAD 0.19 may reuse OCC triangulations attached to a face.
-            # The cleaned() API returns an independent B-Rep without triangles.
-            # Keep the original face, STEP topology and its edges untouched.
-            for fresh in (False, True):
-                if mark_phase is not None:
-                    mark_phase("tessellation", {**(phase_timings or {}),
-                                                "face_index": face_index})
-                phase_start = time.perf_counter()
-                try:
-                    source = face.cleaned() if fresh else face
-                    vertices, raw_facets = source.tessellate(boundary_deflection)
-                    finer_points = [_vector(vertex) for vertex in vertices]
-                    finer_facets = [tuple(int(i) for i in facet)
-                                    for facet in raw_facets if len(facet) == 3]
-                except Exception:
-                    if phase_timings is not None:
-                        phase_timings["tessellation_sec"] += time.perf_counter() - phase_start
-                    continue
-                if phase_timings is not None:
-                    phase_timings["tessellation_sec"] += time.perf_counter() - phase_start
-                delta = len(finer_facets) - len(old_facets)
-                if not finer_points or not finer_facets or delta < 0 or delta > remaining:
-                    continue
-                new_sags = _circle_boundary_sagittas(source, finer_points, finer_facets)
-                if old_sags and len(old_sags) == len(new_sags) and any(
-                    value is not None for value in old_sags
-                ):
-                    comparable = [(old, new) for old, new in zip(old_sags, new_sags)
-                                  if old is not None]
-                    geometric_gain = (all(new is not None and new <= old + 1e-6
-                                          for old, new in comparable)
-                                      and any(new < old - 1e-4
-                                              for old, new in comparable))
-                    if not geometric_gain:
-                        continue
-                elif delta == 0 or (finer_points == old_points and finer_facets == old_facets):
-                    # Geometry could not be checked and did not get denser.
-                    continue
-                accepted = (source, vertices, finer_points, finer_facets, delta)
-                break
-            if accepted is None:
-                if phase_timings is not None:
-                    phase_timings["boundary_unrefined_faces"] += 1
-                continue
-            source, vertices, finer_points, finer_facets, delta = accepted
-            if mark_phase is not None:
-                mark_phase("occ_normals", {**(phase_timings or {}),
-                                           "face_index": face_index})
-            phase_start = time.perf_counter()
-            uv = _verified_tessellation_uv_nodes(source, finer_points, boundary_deflection)
-            association_sec = time.perf_counter() - phase_start
-            finer_normals = _analytic_face_normals(
-                source, vertices, finer_points, finer_facets, uv_nodes=uv,
-            )
-            if phase_timings is not None:
-                phase_timings["uv_association_sec"] += association_sec
-                phase_timings["uv_association_last_attempt_sec"] += association_sec
-                phase_timings["occ_normals_sec"] += time.perf_counter() - phase_start
-                if type(face.Surface).__name__.lower() in {"bsplinesurface", "geombsplinesurface"}:
-                    reused = sum(pair is not None for pair in uv) if uv is not None else 0
-                    phase_timings["uv_reused_vertices"] += reused - old_reused
-                    phase_timings["uv_fallback_vertices"] += (
-                        len(finer_points) - reused - len(old_points) + old_reused)
-                    phase_timings["uv_reused_face_count"] += bool(reused) - bool(old_reused)
-            finer_facets = _orient_facets_to_normals(finer_points, finer_facets,
-                                                       finer_normals)
-            face_meshes[index] = (face_index, face, boundary_deflection,
-                                  finer_points, finer_facets, finer_normals,
-                                  sum(pair is not None for pair in uv) if uv else 0)
-            remaining -= delta
-            if phase_timings is not None:
-                phase_timings["boundary_refined_faces"] += 1
-            improved = True
-        if improved:
-            points, facets, normals = [], [], []
-            for _, _, _, face_points, face_facets, face_normals, _ in face_meshes:
-                offset = len(points)
-                points.extend(face_points)
-                normals.extend(face_normals)
-                facets.extend((a + offset, b + offset, c + offset)
-                              for a, b, c in face_facets)
     return points, facets, normals
 
 
@@ -559,7 +401,7 @@ def _faces_are_tangent_along_edge(
 
 def _discretize_brep_edge(edge: Any, deflection: float) -> list[Vector3]:
     curve_name = type(edge.Curve).__name__.lower()
-    if curve_name in {"line", "geomline"}:
+    if "line" in curve_name:
         points = edge.discretize(Number=2)
     else:
         try:
@@ -836,8 +678,7 @@ def export_step_to_glb(
                    "occ_normals_sec": 0.0, "uv_association_sec": 0.0,
                    "uv_association_last_attempt_sec": 0.0,
                    "uv_reused_face_count": 0, "uv_reused_vertices": 0,
-                   "uv_fallback_vertices": 0, "boundary_refined_faces": 0,
-                   "boundary_unrefined_faces": 0, "brep_edges_sec": 0.0,
+                   "uv_fallback_vertices": 0, "brep_edges_sec": 0.0,
                    "glb_assembly_sec": 0.0, "base64_sec": 0.0}
 
         def mark(phase: str, extra: dict[str, Any] | None = None) -> None:
@@ -893,8 +734,6 @@ def export_step_to_glb(
                 shape,
                 deflection,
                 curved_refinement=curved_refinement,
-                boundary_deflection=0.02,
-                max_triangles=max_triangles,
                 phase_timings=timings if progress is not None else None,
                 mark_phase=mark if progress is not None else None,
             )
@@ -910,9 +749,7 @@ def export_step_to_glb(
                 f"{max_triangles})."
             )
 
-        # The global bounding box can be hundreds of millimetres even when
-        # hole radii are only a few millimetres. Bound the chord error in mm.
-        edge_deflection = 0.02
+        edge_deflection = max(deflection * 0.5, 0.02)
         mark("brep_edges", {"vertex_count": len(points),
                             "triangle_count": len(facets),
                             "deflection_mm": deflection,

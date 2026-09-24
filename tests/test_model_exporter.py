@@ -79,6 +79,54 @@ class Line:
     pass
 
 
+class BSplineCurve:
+    pass
+
+
+def test_bspline_edges_are_discretized_as_curves_not_two_point_lines():
+    class CurvedEdge:
+        Curve = BSplineCurve()
+        Length = 12.
+
+        def __init__(self):
+            self.settings = []
+
+        def discretize(self, **settings):
+            self.settings.append(settings)
+            if settings == {"Number": 2}:
+                return [_Vector(0, 0, 0), _Vector(2, 0, 0)]
+            return [_Vector(0, 0, 0), _Vector(1, 1, 0), _Vector(2, 0, 0)]
+
+    edge = CurvedEdge()
+    points = model_exporter._discretize_brep_edge(edge, .02)
+    assert edge.settings == [{"Deflection": .02}]
+    assert len(points) == 3
+    assert points[1] != tuple((a + b) / 2 for a, b in zip(points[0], points[-1]))
+
+
+def test_circle_edges_obey_small_chord_deflection_without_changing_lines():
+    import math
+
+    class Circle:
+        pass
+
+    class CircularEdge:
+        Curve = Circle()
+        Length = 2 * math.pi * 5
+
+        def discretize(self, **settings):
+            chord_error = settings["Deflection"]
+            sides = math.ceil(math.pi / math.acos(1 - chord_error / 5))
+            return [_Vector(5 * math.cos(i * 2 * math.pi / sides),
+                            5 * math.sin(i * 2 * math.pi / sides), 0)
+                    for i in range(sides + 1)]
+
+    points = model_exporter._discretize_brep_edge(CircularEdge(), .02)
+    assert len(points) > len(model_exporter._discretize_brep_edge(CircularEdge(), .467))
+    midpoint = tuple((a + b) / 2 for a, b in zip(points[0], points[1]))
+    assert 5 - math.dist(midpoint, (0, 0, 0)) <= .021
+
+
 class _Surface:
     def parameter(self, point):
         return (point.x, point.y)
@@ -202,6 +250,121 @@ def test_per_face_tessellation_preserves_face_boundaries_and_targets_curves():
     assert len(normals) == 6
     assert planar.deflections == [0.1]
     assert curved.deflections == pytest.approx([0.065])
+
+
+def test_round_boundary_refinement_is_bounded_and_preserves_occ_normals():
+    import math
+
+    class Circle:
+        pass
+
+    class Face(_TessellatedFace):
+        Edges = [type("Edge", (), {"Curve": Circle()})()]
+
+        def tessellate(self, deflection):
+            self.deflections.append(deflection)
+            sides = math.ceil(math.pi / math.acos(1 - deflection / 5))
+            points = [_Vector(0., 0., 0.)] + [
+                _Vector(5 * math.cos(i * 2 * math.pi / sides),
+                        5 * math.sin(i * 2 * math.pi / sides), 0.)
+                for i in range(sides)]
+            facets = [(0, i + 1, (i + 1) % sides + 1)
+                      for i in range(sides)]
+            return points, facets
+
+    original = Face(Plane())
+    shape = type("Shape", (), {"Faces": [original]})()
+    baseline = _tessellate_brep_faces(shape, .3, curved_refinement=.65)
+    timings = {"tessellation_sec": 0., "occ_normals_sec": 0.}
+    bounded = _tessellate_brep_faces(shape, .3, curved_refinement=.65,
+                                    boundary_deflection=.02,
+                                    max_triangles=len(baseline[1]),
+                                    phase_timings=timings)
+    assert bounded == baseline
+    assert timings["boundary_unrefined_faces"] == 1
+    refined = _tessellate_brep_faces(shape, .3, curved_refinement=.65,
+                                    boundary_deflection=.02,
+                                    max_triangles=1000)
+    assert len(refined[1]) > len(baseline[1])
+    assert all(normal == baseline[2][0] for normal in refined[2])
+    assert refined[0][0] == baseline[0][0]
+
+
+def test_cached_freecad_mesh_uses_cleaned_copy_for_real_contour_gain():
+    import math
+
+    class Circle:
+        Radius = 5.
+        Center = _Vector(0, 0, 0)
+        Axis = _Vector(0, 0, 1)
+
+    class CachedFace(_TessellatedFace):
+        Edges = [type("Edge", (), {"Curve": Circle()})()]
+
+        def __init__(self, *, cached=True):
+            super().__init__(Plane())
+            self.cached = cached
+            self.clean_calls = 0
+
+        def tessellate(self, deflection):
+            self.deflections.append(deflection)
+            sides = 8 if self.cached else max(8, math.ceil(math.pi / math.acos(
+                1 - deflection / 5)))
+            vertices = [_Vector(0, 0, 0)] + [
+                _Vector(5 * math.cos(i * 2 * math.pi / sides),
+                        5 * math.sin(i * 2 * math.pi / sides), 0)
+                for i in range(sides)]
+            return vertices, [(0, i + 1, (i + 1) % sides + 1)
+                              for i in range(sides)]
+
+        def cleaned(self):
+            self.clean_calls += 1
+            return CachedFace(cached=False)
+
+    face = CachedFace()
+    target = type("Shape", (), {"Faces": [face]})()
+    original = _tessellate_brep_faces(target, .3, curved_refinement=.65)
+    improved = _tessellate_brep_faces(target, .3, curved_refinement=.65,
+                                     boundary_deflection=.02, max_triangles=100)
+    assert len(improved[1]) > len(original[1])
+    assert face.clean_calls == 1
+    assert face.deflections == [.3, .3, .02]
+    assert model_exporter._circle_boundary_sagittas(face, improved[0], improved[1])[0] < .05
+
+
+def test_equal_triangle_count_can_contain_better_circle_geometry():
+    import math
+
+    class Circle:
+        Radius = 5.
+        Center = _Vector(0, 0, 0)
+        Axis = _Vector(0, 0, 1)
+
+    class Face(_TessellatedFace):
+        Edges = [type("Edge", (), {"Curve": Circle()})()]
+
+        def tessellate(self, deflection):
+            if deflection > .02:
+                angles = sorted([i * 2 * math.pi / 16 for i in range(16)] +
+                                [i * .0001 for i in range(1, 17)])
+            else:
+                angles = [i * 2 * math.pi / 32 for i in range(32)]
+            vertices = [_Vector(0, 0, 0)] + [
+                _Vector(5 * math.cos(a), 5 * math.sin(a), 0) for a in angles
+            ]
+            return vertices, [(0, i + 1, (i + 1) % 32 + 1)
+                              for i in range(32)]
+
+    face = Face(Plane())
+    shape = type("Shape", (), {"Faces": [face]})()
+    coarse = _tessellate_brep_faces(shape, .3, curved_refinement=.65)
+    finer = _tessellate_brep_faces(shape, .3, curved_refinement=.65,
+                                  boundary_deflection=.02, max_triangles=32)
+    assert len(coarse[1]) == len(finer[1]) == 32
+    old_sag = model_exporter._circle_boundary_sagittas(face, coarse[0], coarse[1])[0]
+    new_sag = model_exporter._circle_boundary_sagittas(face, finer[0], finer[1])[0]
+    assert old_sag > .05 > new_sag
+    assert all(normal == (0., 1., -0.) for normal in finer[2])
 
 
 def test_viewer_progress_does_not_change_glb_geometry_normals_or_edges(tmp_path, monkeypatch):

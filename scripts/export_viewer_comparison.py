@@ -1,4 +1,4 @@
-"""Export matching V1.1-before/after GLBs for local browser visual review.
+"""Export matching GLBs before/after curved-edge refinement for visual review.
 
 Run once for each mode in separate Docker processes. This script never calls
 CAD analysis, the quote engine, or the static preview renderer.
@@ -22,7 +22,7 @@ def main() -> int:
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     if args.mode == "before":
-        from scripts import _viewer_v1_1_before_shading as exporter
+        from scripts import _viewer_before_edge_refinement as exporter
     else:
         from app import model_exporter as exporter
     result = exporter.export_step_to_glb(str(args.step))
