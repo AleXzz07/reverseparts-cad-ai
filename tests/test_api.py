@@ -1526,6 +1526,23 @@ def test_viewer_model_failure_does_not_break_health(monkeypatch):
     assert health_response.json()["status"] == "ok"
 
 
+def test_viewer_timeout_is_http_200_with_application_error(monkeypatch):
+    monkeypatch.setattr(
+        api, "generate_safe_viewer_model",
+        lambda *args, **kwargs: {
+            "available": False, "model_base64": None, "format": None,
+            "warnings": ["3D model export skipped or failed: export timed out after 30 seconds."],
+        },
+    )
+    response = client.post(
+        "/viewer-model",
+        files={"file": ("part.step", b"STEP", "application/step")},
+    )
+    assert response.status_code == 200
+    assert response.json()["available"] is False
+    assert "timed out after 30 seconds" in response.json()["warnings"][0]
+
+
 def test_viewer_model_disabled_returns_controlled_fallback(monkeypatch):
     monkeypatch.setenv("VIEWER_MODEL_ENABLED", "false")
 

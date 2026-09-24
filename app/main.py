@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
@@ -54,6 +56,7 @@ app = FastAPI(
     description="Backend for verifiable STEP/STP CAD analysis.",
     version="0.1.0",
 )
+VIEWER_LOGGER = logging.getLogger("uvicorn.error")
 FRONTEND_INDEX = Path(__file__).resolve().parents[1] / "frontend" / "index.html"
 FRONTEND_VENDOR = FRONTEND_INDEX.parent / "vendor"
 DEFAULT_CORS_ALLOW_ORIGINS = (
@@ -365,24 +368,43 @@ async def viewer_model(
             status_code=400,
             detail="Only .stp and .step files are accepted.",
         )
+    request_started = time.monotonic()
     file_bytes = await file.read()
+    upload_read_sec = round(time.monotonic() - request_started, 4)
     if not file_bytes:
         raise HTTPException(status_code=400, detail="Uploaded CAD file is empty.")
 
     step_path: str | None = None
+    phase = "write_upload"
     try:
         suffix = Path(filename).suffix.lower() or ".step"
         with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as step_file:
             step_file.write(file_bytes)
             step_path = step_file.name
-        return ViewerModelResponse(
-            **await run_in_threadpool(
+        upload_write_sec = round(time.monotonic() - request_started - upload_read_sec, 4)
+        phase = "worker"
+        payload = await run_in_threadpool(
                 generate_safe_viewer_model,
                 step_path,
                 complexity_score=complexity_score,
             )
-        )
+        phase = "response_validation"
+        response = ViewerModelResponse(**payload)
+        VIEWER_LOGGER.info("viewer_model_http %s", json.dumps({
+            "http_status": 200, "available": response.available,
+            "upload_size_bytes": len(file_bytes),
+            "upload_read_sec": upload_read_sec,
+            "upload_write_sec": upload_write_sec,
+            "api_pre_serialization_sec": round(time.monotonic() - request_started, 4),
+        }, separators=(",", ":")))
+        return response
     except Exception as exc:
+        VIEWER_LOGGER.info("viewer_model_http %s", json.dumps({
+            "http_status": 200, "available": False,
+            "upload_size_bytes": len(file_bytes), "phase": phase,
+            "error_type": type(exc).__name__,
+            "api_pre_serialization_sec": round(time.monotonic() - request_started, 4),
+        }, separators=(",", ":")))
         return ViewerModelResponse(
             available=False,
             warnings=[f"3D model export skipped or failed: {exc}"],

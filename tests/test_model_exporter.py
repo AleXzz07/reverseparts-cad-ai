@@ -204,6 +204,43 @@ def test_per_face_tessellation_preserves_face_boundaries_and_targets_curves():
     assert curved.deflections == pytest.approx([0.065])
 
 
+def test_viewer_progress_does_not_change_glb_geometry_normals_or_edges(tmp_path, monkeypatch):
+    step = tmp_path / "part.step"
+    step.write_text("fixture", encoding="utf-8")
+
+    class Bounds:
+        XLength = YLength = ZLength = 10
+
+    class Shape:
+        BoundBox = Bounds()
+        Faces = [_TessellatedFace(Plane())]
+        Edges = []
+
+        def read(self, _path):
+            pass
+
+        def isNull(self):
+            return False
+
+    monkeypatch.setattr(model_exporter, "_configure_freecad_path", lambda: None)
+    original_import = model_exporter.importlib.import_module
+    monkeypatch.setattr(model_exporter.importlib, "import_module",
+                        lambda name: (type("Part", (), {"Shape": Shape})
+                                      if name == "Part" else None)
+                        if name in {"Part", "FreeCAD"} else original_import(name))
+    baseline = model_exporter.export_step_to_glb(str(step))
+    phases = []
+    observed = model_exporter.export_step_to_glb(
+        str(step), progress=lambda phase, data: phases.append((phase, dict(data))),
+    )
+    assert baseline["available"] and baseline == observed
+    assert {phase for phase, _ in phases} >= {
+        "step_load", "tessellation", "occ_normals", "brep_edges",
+        "glb_assembly", "base64_encoding", "export_completed",
+    }
+    assert phases[-1][1]["occ_normals_sec"] >= 0
+
+
 def test_real_freecad_box_edges_come_from_brep_not_triangle_diagonals():
     try:
         import Part

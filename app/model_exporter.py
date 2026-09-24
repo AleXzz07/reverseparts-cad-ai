@@ -6,8 +6,9 @@ import json
 import math
 import os
 import struct
+import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 
 GLB_MAGIC = 0x46546C67
@@ -184,6 +185,8 @@ def _tessellate_brep_faces(
     deflection: float,
     *,
     curved_refinement: float,
+    phase_timings: dict[str, float] | None = None,
+    mark_phase: Callable[[str, dict[str, float]], None] | None = None,
 ) -> tuple[list[Vector3], list[Triangle], list[Vector3]]:
     """Tessellate per CAD face and retain its analytic normal field.
 
@@ -196,10 +199,14 @@ def _tessellate_brep_faces(
     points: list[Vector3] = []
     facets: list[Triangle] = []
     normals: list[Vector3] = []
-    for face in shape.Faces:
+    for face_index, face in enumerate(shape.Faces, start=1):
         face_deflection = deflection
         if not _is_planar_face(face):
             face_deflection *= curved_refinement
+        if mark_phase is not None:
+            mark_phase("tessellation", {**(phase_timings or {}),
+                                        "face_index": face_index})
+        phase_start = time.perf_counter()
         source_vertices, raw_facets = face.tessellate(face_deflection)
         if not isinstance(source_vertices, list):
             source_vertices = list(source_vertices)
@@ -210,15 +217,25 @@ def _tessellate_brep_faces(
             if len(facet) == 3
         ]
         if not face_points or not face_facets:
+            if phase_timings is not None:
+                phase_timings["tessellation_sec"] += time.perf_counter() - phase_start
             continue
+        if phase_timings is not None:
+            phase_timings["tessellation_sec"] += time.perf_counter() - phase_start
         offset = len(points)
         points.extend(face_points)
+        if mark_phase is not None:
+            mark_phase("occ_normals", {**(phase_timings or {}),
+                                       "face_index": face_index})
+        phase_start = time.perf_counter()
         face_normals = _analytic_face_normals(
             face,
             source_vertices,
             face_points,
             face_facets,
         )
+        if phase_timings is not None:
+            phase_timings["occ_normals_sec"] += time.perf_counter() - phase_start
         normals.extend(face_normals)
         face_facets = _orient_facets_to_normals(face_points, face_facets, face_normals)
         facets.extend(
@@ -521,17 +538,36 @@ def _env_float(name: str, default: float) -> float:
         return default
 
 
-def export_step_to_glb(step_path: str) -> dict[str, Any]:
+def export_step_to_glb(
+    step_path: str,
+    *,
+    progress: Callable[[str, dict[str, Any]], None] | None = None,
+) -> dict[str, Any]:
     source = Path(step_path)
     if not source.is_file():
         return _unavailable("STEP file does not exist.")
 
     try:
+        timings = {"freecad_import_sec": 0.0, "step_load_sec": 0.0,
+                   "tessellation_sec": 0.0,
+                   "occ_normals_sec": 0.0, "brep_edges_sec": 0.0,
+                   "glb_assembly_sec": 0.0, "base64_sec": 0.0}
+
+        def mark(phase: str, extra: dict[str, Any] | None = None) -> None:
+            if progress is not None:
+                progress(phase, {**timings, **(extra or {})})
+
+        mark("freecad_import")
+        phase_start = time.perf_counter()
         _configure_freecad_path()
         importlib.import_module("FreeCAD")
         Part = importlib.import_module("Part")
         shape = Part.Shape()
+        timings["freecad_import_sec"] = time.perf_counter() - phase_start
+        mark("step_load")
+        phase_start = time.perf_counter()
         shape.read(str(source))
+        timings["step_load_sec"] = time.perf_counter() - phase_start
         if shape.isNull():
             raise ValueError("FreeCAD imported an empty shape.")
 
@@ -557,14 +593,21 @@ def export_step_to_glb(step_path: str) -> dict[str, Any]:
             ),
         )
         deflection = max(diagonal / tessellation_ratio, 0.04)
+        mark("shape_loaded", {"face_count": len(shape.Faces),
+                              "edge_count": len(shape.Edges),
+                              "diagonal_mm": round(diagonal, 6)})
         points: list[Vector3] = []
         facets: list[Triangle] = []
         normals: list[Vector3] = []
-        for _ in range(5):
+        for attempt in range(5):
+            mark("tessellation", {"attempt": attempt + 1,
+                                  "deflection_mm": deflection})
             points, facets, normals = _tessellate_brep_faces(
                 shape,
                 deflection,
                 curved_refinement=curved_refinement,
+                phase_timings=timings if progress is not None else None,
+                mark_phase=mark if progress is not None else None,
             )
             if len(facets) <= max_triangles:
                 break
@@ -579,22 +622,38 @@ def export_step_to_glb(step_path: str) -> dict[str, Any]:
             )
 
         edge_deflection = max(deflection * 0.5, 0.02)
+        mark("brep_edges", {"vertex_count": len(points),
+                            "triangle_count": len(facets),
+                            "deflection_mm": deflection,
+                            "attempt": attempt + 1})
+        phase_start = time.perf_counter()
         edge_segments = _extract_brep_edge_segments(
             shape,
             deflection=edge_deflection,
             diagonal=diagonal,
         )
+        timings["brep_edges_sec"] = time.perf_counter() - phase_start
+        mark("glb_assembly", {"edge_segment_count": len(edge_segments)})
+        phase_start = time.perf_counter()
         glb = _build_glb(
             points,
             facets,
             normals=normals,
             edge_segments=edge_segments,
         )
+        timings["glb_assembly_sec"] = time.perf_counter() - phase_start
+        mark("base64_encoding", {"glb_size_bytes": len(glb)})
+        phase_start = time.perf_counter()
+        encoded = base64.b64encode(glb).decode("ascii")
+        timings["base64_sec"] = time.perf_counter() - phase_start
+        mark("export_completed")
         return {
             "available": True,
-            "model_base64": base64.b64encode(glb).decode("ascii"),
+            "model_base64": encoded,
             "format": "glb",
             "warnings": [],
         }
     except Exception as exc:  # pragma: no cover - depends on FreeCAD host
+        if progress is not None:
+            progress("export_failed", {"error_type": type(exc).__name__})
         return _unavailable(str(exc))
