@@ -585,6 +585,46 @@ def _polyline_signature(
     return min(quantized, reverse)
 
 
+def _topology_edge_faces(shape: Any) -> list[list[Any]] | None:
+    """Match each shape edge to face edges by OCC topology identity.
+
+    ``hashCode`` is only a bucket key: a collision is never accepted without
+    ``isSame``. Repeated seam edges within one face count as one ancestor.
+    Return None if this FreeCAD wrapper cannot provide a trustworthy map, so
+    the original per-edge ancestor query remains available.
+    """
+    faces, edges = shape.Faces, shape.Edges
+
+    def key(edge: Any) -> int:
+        try:
+            return edge.hashCode()
+        except TypeError:
+            return edge.hashCode(2147483647)
+
+    try:
+        buckets: dict[int, list[tuple[Any, int]]] = {}
+        for face_index, face in enumerate(faces):
+            for edge in face.Edges:
+                buckets.setdefault(key(edge), []).append((edge, face_index))
+        result = []
+        for edge in edges:
+            matching = []
+            seen: set[int] = set()
+            candidates = buckets.get(key(edge))
+            if not candidates:
+                return None
+            for candidate, face_index in candidates:
+                if face_index not in seen and edge.isSame(candidate):
+                    seen.add(face_index)
+                    matching.append(faces[face_index])
+            if not matching:
+                return None
+            result.append(matching)
+        return result
+    except (AttributeError, TypeError, ValueError):
+        return None
+
+
 def _extract_brep_edge_segments(
     shape: Any,
     *,
@@ -596,16 +636,20 @@ def _extract_brep_edge_segments(
     if not shape.Faces:
         return []
     face_type = type(shape.Faces[0])
+    topology_faces = _topology_edge_faces(shape)
     signature_tolerance = max(diagonal * 1e-8, 1e-6)
     seen: set[tuple[tuple[int, int, int], ...]] = set()
     segments: list[LineSegment] = []
-    for edge in shape.Edges:
+    for edge_index, edge in enumerate(shape.Edges):
         if bool(getattr(edge, "Degenerated", False)):
             continue
-        try:
-            adjacent_faces = list(shape.ancestorsOfType(edge, face_type))
-        except Exception:
-            adjacent_faces = []
+        if topology_faces is not None:
+            adjacent_faces = topology_faces[edge_index]
+        else:
+            try:
+                adjacent_faces = list(shape.ancestorsOfType(edge, face_type))
+            except Exception:
+                adjacent_faces = []
         try:
             if any(edge.isSeam(face) for face in adjacent_faces):
                 continue
