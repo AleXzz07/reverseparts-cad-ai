@@ -625,11 +625,88 @@ def _topology_edge_faces(shape: Any) -> list[list[Any]] | None:
         return None
 
 
+# Keep the unvalidated paths off until the real FreeCAD parity and timing
+# gates pass. The isolated snapshots measure each optimization separately.
+_BREP_TANGENCY_FASTPATHS = (
+    frozenset({"cylinder_plane_circle", "plane_plane"})
+    if os.getenv("VIEWER_BREP_TANGENCY_FASTPATHS", "").strip().lower() == "combined"
+    else frozenset()
+)
+
+
+def _cylinder_plane_circle_non_tangent(edge: Any, faces: list[Any]) -> bool:
+    """A positive-radius cylinder and a plane cannot touch along a circle.
+
+    This is called only with a topology-verified pair of distinct faces.
+    Return False on missing/degenerate geometry so OCC makes the decision.
+    """
+    if len(faces) != 2:
+        return False
+    try:
+        surfaces = [face.Surface for face in faces]
+        surface_names = [type(surface).__name__ for surface in surfaces]
+        curve = edge.Curve
+        if set(surface_names) != {"Cylinder", "Plane"} or type(curve).__name__ != "Circle":
+            return False
+        cylinder_radius = float(surfaces[surface_names.index("Cylinder")].Radius)
+        circle_radius = float(curve.Radius)
+        length = float(edge.Length)
+        return (math.isfinite(cylinder_radius) and cylinder_radius > 0
+                and math.isfinite(circle_radius) and circle_radius > 0
+                and math.isfinite(length) and length > 0
+                and not faces[0].isSame(faces[1]))
+    except (AttributeError, TypeError, ValueError, OverflowError):
+        return False
+
+
+def _plane_pair_cached_tangency(
+    faces: list[Any],
+    normals_by_face: dict[int, tuple[Any, Vector3 | None]],
+    *,
+    tangent_dot_threshold: float = 0.995,
+) -> bool | None:
+    """Reuse the OCC-oriented normal of each *same face object* in the map.
+
+    normalAt includes the face's orientation and placement. A mathematical
+    plane has the same geometric normal at every (u,v); absolute dot preserves
+    the original treatment of reversed faces. Cache failures trigger OCC.
+    """
+    if len(faces) != 2:
+        return None
+    try:
+        if any(type(face.Surface).__name__ != "Plane" for face in faces):
+            return None
+        if faces[0].isSame(faces[1]):
+            return None
+        normals: list[Vector3] = []
+        for face in faces:
+            identity = id(face)  # _topology_edge_faces returns shape.Faces objects.
+            cached = normals_by_face.get(identity)
+            if cached is None or cached[0] is not face:
+                try:
+                    value = _vector(face.normalAt(0.0, 0.0))
+                    length_sq = _dot(value, value)
+                    normal = (_normalize(value) if length_sq > 0 and
+                              math.isfinite(length_sq) else None)
+                except Exception:
+                    normal = None
+                normals_by_face[identity] = (face, normal)
+            else:
+                normal = cached[1]
+            if normal is None:
+                return None
+            normals.append(normal)
+        return abs(_dot(normals[0], normals[1])) >= tangent_dot_threshold
+    except (AttributeError, TypeError, ValueError):
+        return None
+
+
 def _extract_brep_edge_segments(
     shape: Any,
     *,
     deflection: float,
     diagonal: float,
+    fastpath_stats: dict[str, float | int] | None = None,
 ) -> list[LineSegment]:
     """Extract visible technical edges from B-Rep topology, never triangles."""
 
@@ -640,6 +717,11 @@ def _extract_brep_edge_segments(
     signature_tolerance = max(diagonal * 1e-8, 1e-6)
     seen: set[tuple[tuple[int, int, int], ...]] = set()
     segments: list[LineSegment] = []
+    plane_normals: dict[int, tuple[Any, Vector3 | None]] = {}
+    stats: dict[str, float | int] = {
+        "fastpath_circle_hits": 0, "fastpath_plane_hits": 0,
+        "tangency_occ_calls": 0, "tangency_sec": 0.0,
+    }
     for edge_index, edge in enumerate(shape.Edges):
         if bool(getattr(edge, "Degenerated", False)):
             continue
@@ -656,7 +738,25 @@ def _extract_brep_edge_segments(
         except Exception:
             # An uncertain seam remains visible rather than being discarded.
             pass
-        if _faces_are_tangent_along_edge(edge, adjacent_faces):
+        tangency_started = time.perf_counter() if fastpath_stats is not None else 0.0
+        decision: bool | None = None
+        # An ancestor lookup does not certify the shared edge identity. If
+        # _topology_edge_faces could not verify hashCode + isSame, use OCC.
+        if topology_faces is not None:
+            if "cylinder_plane_circle" in _BREP_TANGENCY_FASTPATHS and (
+                    _cylinder_plane_circle_non_tangent(edge, adjacent_faces)):
+                decision = False
+                stats["fastpath_circle_hits"] += 1
+            elif "plane_plane" in _BREP_TANGENCY_FASTPATHS:
+                decision = _plane_pair_cached_tangency(adjacent_faces, plane_normals)
+                if decision is not None:
+                    stats["fastpath_plane_hits"] += 1
+        if decision is None:
+            stats["tangency_occ_calls"] += 1
+            decision = _faces_are_tangent_along_edge(edge, adjacent_faces)
+        if fastpath_stats is not None:
+            stats["tangency_sec"] += time.perf_counter() - tangency_started
+        if decision:
             continue
         points = _discretize_brep_edge(edge, deflection)
         if len(points) < 2:
@@ -666,6 +766,8 @@ def _extract_brep_edge_segments(
             continue
         seen.add(signature)
         segments.extend(zip(points, points[1:]))
+    if fastpath_stats is not None:
+        fastpath_stats.update(stats)
     return segments
 
 
@@ -966,6 +1068,7 @@ def export_step_to_glb(
             shape,
             deflection=edge_deflection,
             diagonal=diagonal,
+            fastpath_stats=timings if progress is not None else None,
         )
         timings["brep_edges_sec"] = time.perf_counter() - phase_start
         mark("glb_assembly", {"edge_segment_count": len(edge_segments)})
