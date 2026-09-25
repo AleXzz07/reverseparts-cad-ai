@@ -472,11 +472,13 @@
       position: absolute;
       top: 10px;
       left: 10px;
+      right: 148px;
       display: flex;
       flex-wrap: wrap;
       gap: 5px;
       z-index: 3;
     }
+    .viewer-toolbar[hidden] { display: none; }
     .viewer-tool {
       min-height: 31px;
       padding: 5px 9px;
@@ -489,6 +491,28 @@
       backdrop-filter: blur(8px);
     }
     .viewer-tool:hover { border-color: var(--accent); color: var(--accent-dark); }
+    .viewer-projection {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-height: 31px;
+      padding: 2px 8px;
+      border: 1px solid rgba(121,143,166,.45);
+      border-radius: 7px;
+      background: rgba(255,255,255,.9);
+      color: #31445a;
+      font-size: 11px;
+      font-weight: 650;
+      box-shadow: 0 3px 10px rgba(20,33,51,.08);
+    }
+    .viewer-projection select {
+      min-height: 26px;
+      border: 0;
+      background: transparent;
+      color: inherit;
+      font: inherit;
+      cursor: pointer;
+    }
     .viewer-fullscreen {
       position: absolute;
       top: 10px;
@@ -499,9 +523,52 @@
       gap: 6px;
     }
     .viewer-fullscreen svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; }
-    .viewer-frame:fullscreen .viewer-toolbar, .viewer-frame.viewer-expanded .viewer-toolbar {
+    .viewer-navcube {
+      position: absolute;
       top: 52px;
       right: 10px;
+      width: 128px;
+      height: 128px;
+      z-index: 4;
+      border: 1px solid rgba(121,143,166,.45);
+      border-radius: 10px;
+      background: rgba(255,255,255,.94);
+      box-shadow: 0 3px 10px rgba(20,33,51,.08);
+      touch-action: none;
+    }
+    .viewer-navcube[hidden] { display: none; }
+    .viewer-navcube > svg { display: block; width: 100%; height: 100%; }
+    .viewer-navcube [data-nav-view] { cursor: pointer; }
+    .viewer-navcube .nav-face polygon { fill: #f6f8fb; stroke: #52677d; stroke-width: 1.4; }
+    .viewer-navcube .nav-face:hover polygon, .viewer-navcube .nav-face:focus-visible polygon { fill: #cce4fc; }
+    .viewer-navcube text { fill: #23364d; font: 700 8px Inter, "Segoe UI", sans-serif; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+    .viewer-navcube .nav-edge .outline { stroke: #52677d; stroke-width: 3; stroke-linecap: round; }
+    .viewer-navcube .nav-edge .hit { stroke: transparent; stroke-width: 15; stroke-linecap: round; }
+    .viewer-navcube .nav-edge:hover .outline, .viewer-navcube .nav-edge:focus-visible .outline { stroke: var(--accent); stroke-width: 6; }
+    .viewer-navcube .nav-corner .mark { fill: #94b5d1; stroke: #52677d; stroke-width: 1; }
+    .viewer-navcube .nav-corner .hit { fill: transparent; }
+    .viewer-navcube .nav-corner:hover .mark, .viewer-navcube .nav-corner:focus-visible .mark { fill: var(--accent); }
+    .viewer-navcube .nav-caption-bg { fill: rgba(255,255,255,.96); pointer-events: none; }
+    .viewer-navcube .nav-caption { fill: #31445a; font-size: 8px; pointer-events: none; }
+    .viewer-orientation {
+      position: absolute;
+      bottom: 12px;
+      left: 12px;
+      width: 84px;
+      height: 84px;
+      z-index: 4;
+      border: 1px solid rgba(121,143,166,.45);
+      border-radius: 9px;
+      background: rgba(255,255,255,.9);
+      pointer-events: none;
+    }
+    .viewer-orientation[hidden] { display: none; }
+    .viewer-orientation svg { display: block; width: 100%; height: 100%; }
+    .viewer-orientation line { stroke-width: 2.6; stroke-linecap: round; }
+    .viewer-orientation text { font: 700 11px Inter, "Segoe UI", sans-serif; text-anchor: middle; dominant-baseline: central; }
+    .viewer-frame:fullscreen .viewer-toolbar, .viewer-frame.viewer-expanded .viewer-toolbar {
+      top: 52px;
+      right: 148px;
     }
     .viewer-help {
       position: absolute;
@@ -673,7 +740,7 @@
       .mode-switch { width: 100%; }
       .mode-button { flex: 1; }
       .viewer-frame { min-height: 300px; aspect-ratio: 4 / 3; }
-      .viewer-toolbar { top: 52px; right: 10px; }
+      .viewer-toolbar { top: 52px; right: 148px; }
       .viewer-help { display: none; }
       .pdf-view-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .technical-sections { padding-left: 12px; padding-right: 12px; }
@@ -784,11 +851,23 @@
                 <button class="viewer-tool" type="button" data-viewer-view="front">Frontale</button>
                 <button class="viewer-tool" type="button" data-viewer-view="right">Destra</button>
                 <button class="viewer-tool" type="button" data-viewer-action="fit">Adatta</button>
+                <label class="viewer-projection" for="viewer-projection">Proiezione
+                  <select id="viewer-projection">
+                    <option value="perspective" selected>Prospettica</option>
+                    <option value="orthographic">Ortografica</option>
+                  </select>
+                </label>
               </div>
               <button class="viewer-tool viewer-fullscreen" id="viewer-fullscreen" type="button" aria-label="Schermo intero" aria-pressed="false">
                 <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 2H2v5m11-5h5v5M2 13v5h5m11-5v5h-5"/></svg>
                 <span>Schermo intero</span>
               </button>
+              <div class="viewer-navcube" id="viewer-navcube-shell" hidden>
+                <svg id="viewer-navcube" viewBox="0 0 136 136" role="group" aria-label="Dado di navigazione: seleziona facce, spigoli o angoli"></svg>
+              </div>
+              <div class="viewer-orientation" id="viewer-orientation" hidden>
+                <svg id="viewer-axes" viewBox="0 0 84 84" role="img" aria-label="Orientamento degli assi X, Y e Z"></svg>
+              </div>
               <div class="viewer-help" id="viewer-help" hidden>Ruota: trascina · Zoom: rotella · Pan: tasto destro</div>
             </div>
             <div class="viewer-actions">
@@ -987,14 +1066,19 @@
     let manualWeldSequence = 1;
     const maxPdfViews = 4;
     let pdfCapturedViews = [];
+    const viewerPerspectiveFov = 34;
     const viewerState = {
       renderer: null,
       scene: null,
       camera: null,
+      projection: "perspective",
       controls: null,
       model: null,
       radius: 1,
       ready: false,
+      navItems: null,
+      axesItems: null,
+      navQuaternion: null,
       viewportAspect: null,
       resizeObserver: null,
       animationFrame: null,
@@ -1026,6 +1110,96 @@
       document.getElementById("viewer-status").textContent = message;
     }
 
+    function createViewerControls(camera, canvas) {
+      // THREE.OrbitControls clamps the polar angle to (0, PI). Rotating the
+      // camera and its up vector together crosses either pole continuously.
+      const pointers = new Map();
+      const controls = {
+        object: camera,
+        target: new THREE.Vector3(),
+        minDistance: .01,
+        maxDistance: 100000,
+        update() { this.object.lookAt(this.target); },
+        rotate(dx, dy) {
+          const view = this.object.position.clone().sub(this.target);
+          if (view.lengthSq() < 1e-12) return;
+          const amount = 2 * Math.PI / Math.max(1, Math.min(canvas.clientWidth, canvas.clientHeight));
+          const right = new THREE.Vector3(1, 0, 0).applyQuaternion(this.object.quaternion);
+          const up = new THREE.Vector3(0, 1, 0).applyQuaternion(this.object.quaternion);
+          const rotation = new THREE.Quaternion().setFromAxisAngle(up, -dx * amount)
+            .multiply(new THREE.Quaternion().setFromAxisAngle(right, -dy * amount));
+          view.applyQuaternion(rotation);
+          this.object.up.applyQuaternion(rotation).normalize();
+          this.object.position.copy(this.target).add(view);
+          this.update();
+        },
+        pan(dx, dy) {
+          const view = this.object.position.clone().sub(this.target);
+          const height = this.object.isOrthographicCamera
+            ? (this.object.top - this.object.bottom) / this.object.zoom
+            : 2 * view.length() * Math.tan(THREE.MathUtils.degToRad(this.object.fov) / 2) / this.object.zoom;
+          const units = height / Math.max(canvas.clientHeight, 1);
+          const move = new THREE.Vector3(-dx * units, dy * units, 0)
+            .applyQuaternion(this.object.quaternion);
+          this.object.position.add(move);
+          this.target.add(move);
+          this.update();
+        },
+        zoomBy(factor) {
+          if (this.object.isOrthographicCamera) {
+            this.object.zoom = THREE.MathUtils.clamp(this.object.zoom * factor, .01, 1000);
+            this.object.updateProjectionMatrix();
+          } else {
+            const view = this.object.position.clone().sub(this.target);
+            view.setLength(THREE.MathUtils.clamp(view.length() / factor,
+              this.minDistance, this.maxDistance));
+            this.object.position.copy(this.target).add(view);
+            this.update();
+          }
+        },
+      };
+      canvas.addEventListener("contextmenu", event => event.preventDefault());
+      canvas.addEventListener("pointerdown", event => {
+        if (!viewerState.ready) return;
+        event.preventDefault();
+        pointers.set(event.pointerId, {x: event.clientX, y: event.clientY,
+          pan: event.button === 2 || event.ctrlKey || event.metaKey || event.shiftKey});
+        canvas.setPointerCapture?.(event.pointerId);
+      });
+      canvas.addEventListener("pointermove", event => {
+        const previous = pointers.get(event.pointerId);
+        if (!previous || !viewerState.ready) return;
+        event.preventDefault();
+        const next = {x: event.clientX, y: event.clientY, pan: previous.pan};
+        const other = event.pointerType === "touch" && pointers.size === 2
+          ? [...pointers.entries()].find(([id]) => id !== event.pointerId)?.[1] : null;
+        if (other) {
+          controls.pan((next.x - previous.x) / 2, (next.y - previous.y) / 2);
+          const before = Math.hypot(previous.x - other.x, previous.y - other.y);
+          const after = Math.hypot(next.x - other.x, next.y - other.y);
+          if (before > 2 && after > 2) controls.zoomBy(after / before);
+        } else if (pointers.size === 1) {
+          if (previous.pan) controls.pan(next.x - previous.x, next.y - previous.y);
+          else controls.rotate(next.x - previous.x, next.y - previous.y);
+        }
+        pointers.set(event.pointerId, next);
+      });
+      const endPointer = event => {
+        pointers.delete(event.pointerId);
+        if (canvas.hasPointerCapture?.(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+      };
+      canvas.addEventListener("pointerup", endPointer);
+      canvas.addEventListener("pointercancel", endPointer);
+      canvas.addEventListener("lostpointercapture", event => pointers.delete(event.pointerId));
+      canvas.addEventListener("wheel", event => {
+        if (!viewerState.ready) return;
+        event.preventDefault();
+        const delta = event.deltaY * (event.deltaMode === 1 ? 16 : 1);
+        controls.zoomBy(Math.exp(-THREE.MathUtils.clamp(delta, -500, 500) * .001));
+      }, {passive: false});
+      return controls;
+    }
+
     function resizeViewer() {
       if (!viewerState.renderer || !viewerState.camera) return;
       if (document.getElementById("viewer-pane").hidden) return;
@@ -1035,16 +1209,64 @@
       const nextAspect = width / height;
       if (viewerState.ready && viewerState.viewportAspect) {
         const scale = Math.min(1, viewerState.viewportAspect) / Math.min(1, nextAspect);
-        if (Math.abs(scale - 1) > 1e-6) {
+        if (viewerState.camera.isOrthographicCamera) {
+          const halfHeight = (viewerState.camera.top - viewerState.camera.bottom) * .5 * scale;
+          setOrthographicFrustum(viewerState.camera, halfHeight, nextAspect);
+        } else if (Math.abs(scale - 1) > 1e-6) {
           const target = viewerState.controls.target;
           viewerState.camera.position.sub(target).multiplyScalar(scale).add(target);
           viewerState.controls.update();
         }
       }
       viewerState.renderer.setSize(width, height, false);
-      viewerState.camera.aspect = nextAspect;
+      if (viewerState.camera.isPerspectiveCamera) viewerState.camera.aspect = nextAspect;
       viewerState.camera.updateProjectionMatrix();
       viewerState.viewportAspect = nextAspect;
+    }
+
+    function setOrthographicFrustum(camera, halfHeight, aspect) {
+      camera.top = halfHeight;
+      camera.bottom = -halfHeight;
+      camera.left = -halfHeight * aspect;
+      camera.right = halfHeight * aspect;
+      camera.updateProjectionMatrix();
+    }
+
+    function setViewerProjection(projection) {
+      if (projection !== "perspective" && projection !== "orthographic") return;
+      if (projection === viewerState.projection) return;
+      if (!viewerState.camera) return; // The model still loads only on request.
+      viewerState.projection = projection;
+
+      const oldCamera = viewerState.camera;
+      const target = viewerState.controls.target;
+      const offset = oldCamera.position.clone().sub(target);
+      const distance = Math.max(offset.length(), .01);
+      const aspect = viewerState.viewportAspect || oldCamera.aspect || 1;
+      const tangent = Math.tan(THREE.MathUtils.degToRad(viewerPerspectiveFov) / 2);
+      let camera;
+      if (projection === "orthographic") {
+        const halfHeight = distance * tangent / oldCamera.zoom;
+        camera = new THREE.OrthographicCamera(
+          -halfHeight * aspect, halfHeight * aspect, halfHeight, -halfHeight,
+          oldCamera.near, oldCamera.far,
+        );
+        camera.position.copy(oldCamera.position);
+      } else {
+        const halfHeight = (oldCamera.top - oldCamera.bottom) / (2 * oldCamera.zoom);
+        const newDistance = halfHeight / tangent;
+        camera = new THREE.PerspectiveCamera(
+          viewerPerspectiveFov, aspect,
+          Math.min(oldCamera.near, Math.max(.0001, newDistance * .01)),
+          Math.max(oldCamera.far, newDistance + viewerState.radius * 4),
+        );
+        camera.position.copy(target).add(offset.multiplyScalar(newDistance / distance));
+      }
+      camera.up.copy(oldCamera.up);
+      camera.quaternion.copy(oldCamera.quaternion);
+      viewerState.camera = camera;
+      viewerState.controls.object = camera;
+      viewerState.controls.update();
     }
 
     function syncViewerFullscreen() {
@@ -1094,7 +1316,7 @@
 
     function ensureViewer() {
       if (viewerState.renderer) return true;
-      if (!window.THREE || !THREE.GLTFLoader || !THREE.OrbitControls) {
+      if (!window.THREE || !THREE.GLTFLoader) {
         setViewerStatus("Componenti 3D non disponibili nel browser.");
         return false;
       }
@@ -1112,13 +1334,8 @@
       renderer.toneMappingExposure = 0.9;
 
       const scene = new THREE.Scene();
-      const camera = new THREE.PerspectiveCamera(34, 1, 0.01, 100000);
-      const controls = new THREE.OrbitControls(camera, canvas);
-      controls.enableDamping = true;
-      controls.dampingFactor = 0.08;
-      controls.screenSpacePanning = true;
-      controls.minDistance = 0.01;
-      controls.maxDistance = 100000;
+      const camera = new THREE.PerspectiveCamera(viewerPerspectiveFov, 1, 0.01, 100000);
+      const controls = createViewerControls(camera, canvas);
 
       scene.add(new THREE.AmbientLight(0xffffff, 0.46));
       scene.add(new THREE.HemisphereLight(0xf5f9ff, 0x647384, 0.64));
@@ -1136,6 +1353,8 @@
       viewerState.scene = scene;
       viewerState.camera = camera;
       viewerState.controls = controls;
+      initViewerNavCube();
+      initViewerAxes();
       resizeViewer();
       window.addEventListener("resize", resizeViewer);
       if (window.ResizeObserver) {
@@ -1145,7 +1364,8 @@
       const animate = () => {
         viewerState.animationFrame = window.requestAnimationFrame(animate);
         controls.update();
-        renderer.render(scene, camera);
+        renderViewerNavCube();
+        renderer.render(scene, viewerState.camera);
       };
       animate();
       return true;
@@ -1161,29 +1381,254 @@
       });
       viewerState.model = null;
       viewerState.ready = false;
+      viewerState.navQuaternion = null;
+      document.getElementById("viewer-navcube-shell").hidden = true;
+      document.getElementById("viewer-orientation").hidden = true;
+    }
+
+    function setViewerDirection(direction) {
+      if (!viewerState.ready) return;
+      direction.normalize();
+      const up = new THREE.Vector3(0, 1, 0);
+      const vertical = up.dot(direction);
+      if (Math.abs(vertical) > .999) up.set(0, 0, vertical > 0 ? -1 : 1);
+      else up.addScaledVector(direction, -vertical).normalize();
+      const camera = viewerState.camera;
+      const fov = THREE.MathUtils.degToRad(viewerPerspectiveFov);
+      const aspect = Math.max(viewerState.viewportAspect || camera.aspect || 1, .01);
+      const distance = Math.max(viewerState.radius * 2.35,
+        viewerState.radius / Math.tan(fov / 2) * 1.18 / Math.min(1, aspect));
+      camera.up.copy(up);
+      camera.position.copy(direction).multiplyScalar(distance);
+      if (camera.isOrthographicCamera) {
+        camera.zoom = 1;
+        setOrthographicFrustum(camera,
+          viewerState.radius * 1.18 / Math.min(1, aspect), aspect);
+      }
+      camera.near = Math.max(viewerState.radius / 1000, 0.001);
+      camera.far = Math.max(viewerState.radius * 100, 1000);
+      camera.updateProjectionMatrix();
+      viewerState.controls.target.set(0, 0, 0);
+      viewerState.controls.update();
+      renderViewerNavCube();
     }
 
     function setViewerView(viewName = "isometric") {
-      if (!viewerState.ready) return;
       const directions = {
         isometric: new THREE.Vector3(1, .82, 1),
-        top: new THREE.Vector3(0, 1, .001),
+        top: new THREE.Vector3(0, 1, 0),
+        bottom: new THREE.Vector3(0, -1, 0),
         front: new THREE.Vector3(0, 0, 1),
+        rear: new THREE.Vector3(0, 0, -1),
         right: new THREE.Vector3(1, 0, 0),
+        left: new THREE.Vector3(-1, 0, 0),
       };
-      const direction = (directions[viewName] || directions.isometric).normalize();
-      const fov = THREE.MathUtils.degToRad(viewerState.camera.fov);
-      const aspect = Math.max(viewerState.camera.aspect, .01);
-      const distance = Math.max(viewerState.radius * 2.35,
-        viewerState.radius / Math.tan(fov / 2) * 1.18 / Math.min(1, aspect));
-      viewerState.camera.up.set(0, 1, 0);
-      if (viewName === "top") viewerState.camera.up.set(0, 0, -1);
-      viewerState.camera.position.copy(direction.multiplyScalar(distance));
-      viewerState.camera.near = Math.max(viewerState.radius / 1000, 0.001);
-      viewerState.camera.far = Math.max(viewerState.radius * 100, 1000);
-      viewerState.camera.updateProjectionMatrix();
-      viewerState.controls.target.set(0, 0, 0);
-      viewerState.controls.update();
+      setViewerDirection((directions[viewName] || directions.isometric).clone());
+    }
+
+    function initViewerNavCube() {
+      const svg = document.getElementById("viewer-navcube");
+      const namespace = "http://www.w3.org/2000/svg";
+      const element = (tag, attributes = {}) => {
+        const node = document.createElementNS(namespace, tag);
+        Object.entries(attributes).forEach(([key, value]) => node.setAttribute(key, String(value)));
+        return node;
+      };
+      const faceLayer = element("g");
+      const edgeLayer = element("g");
+      const cornerLayer = element("g");
+      svg.append(faceLayer, edgeLayer, cornerLayer);
+      const faces = [];
+      const edges = [];
+      const corners = [];
+      const namedFaces = {
+        "1,0,0": ["right", "Destra"], "-1,0,0": ["left", "Sinistra"],
+        "0,1,0": ["top", "Alto"], "0,-1,0": ["bottom", "Basso"],
+        "0,0,1": ["front", "Frontale"], "0,0,-1": ["rear", "Posteriore"],
+      };
+      const captionBackground = element("rect", {
+        class: "nav-caption-bg", x: 3, y: 117, width: 130, height: 16, rx: 4,
+      });
+      const caption = element("text", {class: "nav-caption", x: 68, y: 126});
+      caption.textContent = "Seleziona una vista";
+      const makeTarget = (group, label, direction, action) => {
+        group.setAttribute("role", "button");
+        group.setAttribute("tabindex", "0");
+        group.setAttribute("aria-label", `Vista ${label}`);
+        group.dataset.navView = label;
+        const title = element("title");
+        title.textContent = `Vista ${label}`;
+        group.append(title);
+        group.addEventListener("click", event => {
+          event.stopPropagation();
+          if (viewerState.ready) action(direction);
+        });
+        group.addEventListener("keydown", event => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            if (viewerState.ready) action(direction);
+          }
+        });
+        group.addEventListener("pointerenter", () => { caption.textContent = label; });
+        group.addEventListener("pointerleave", () => { caption.textContent = "Seleziona una vista"; });
+        group.addEventListener("focus", () => { caption.textContent = label; });
+        group.addEventListener("blur", () => { caption.textContent = "Seleziona una vista"; });
+      };
+      for (let axis = 0; axis < 3; axis += 1) {
+        const others = [0, 1, 2].filter(item => item !== axis);
+        for (const sign of [-1, 1]) {
+          const normal = [0, 0, 0];
+          normal[axis] = sign;
+          const [key, label] = namedFaces[normal.join(",")];
+          const group = element("g", {class: "nav-face"});
+          const polygon = element("polygon");
+          const textNode = element("text");
+          textNode.textContent = label.toUpperCase();
+          group.append(polygon, textNode);
+          makeTarget(group, label, key, setViewerView);
+          faceLayer.append(group);
+          const cornersOnFace = [[-1,-1],[1,-1],[1,1],[-1,1]].map(([first, second]) => {
+            const vertex = normal.slice();
+            vertex[others[0]] = first;
+            vertex[others[1]] = second;
+            return vertex;
+          });
+          faces.push({group, polygon, textNode, normal, vertices: cornersOnFace});
+        }
+      }
+      for (let axis = 0; axis < 3; axis += 1) {
+        const others = [0, 1, 2].filter(item => item !== axis);
+        for (const first of [-1, 1]) for (const second of [-1, 1]) {
+          const center = [0, 0, 0];
+          center[others[0]] = first;
+          center[others[1]] = second;
+          const names = others.map(index => namedFaces[
+            [0,1,2].map(item => item === index ? center[item] : 0).join(",")][1]);
+          const label = names.join(" / ");
+          const group = element("g", {class: "nav-edge"});
+          const outline = element("line", {class: "outline"});
+          const hit = element("line", {class: "hit"});
+          group.append(outline, hit);
+          makeTarget(group, label, center, value =>
+            setViewerDirection(new THREE.Vector3(...value)));
+          edgeLayer.append(group);
+          const ends = [-1, 1].map(sign => {
+            const vertex = center.slice();
+            vertex[axis] = sign;
+            return vertex;
+          });
+          edges.push({group, outline, hit, center, ends, others});
+        }
+      }
+      for (const x of [-1, 1]) for (const y of [-1, 1]) for (const z of [-1, 1]) {
+        const vertex = [x, y, z];
+        const label = vertex.map((sign, axis) => namedFaces[
+          [0,1,2].map(item => item === axis ? sign : 0).join(",")][1]).join(" / ");
+        const group = element("g", {class: "nav-corner"});
+        const mark = element("circle", {class: "mark", r: 4});
+        const hit = element("circle", {class: "hit", r: 10});
+        group.append(mark, hit);
+        makeTarget(group, label, vertex, value =>
+          setViewerDirection(new THREE.Vector3(...value)));
+        cornerLayer.append(group);
+        corners.push({group, mark, hit, vertex});
+      }
+      svg.append(captionBackground, caption);
+      viewerState.navItems = {faces, edges, corners, faceLayer, edgeLayer, cornerLayer};
+    }
+
+    function initViewerAxes() {
+      const svg = document.getElementById("viewer-axes");
+      const namespace = "http://www.w3.org/2000/svg";
+      viewerState.axesItems = [
+        ["X", [1, 0, 0], "#d94545"],
+        ["Y", [0, 1, 0], "#279050"],
+        ["Z", [0, 0, 1], "#2969d5"],
+      ].map(([label, vector, color]) => {
+        const group = document.createElementNS(namespace, "g");
+        const line = document.createElementNS(namespace, "line");
+        const tip = document.createElementNS(namespace, "circle");
+        const text = document.createElementNS(namespace, "text");
+        line.setAttribute("x1", "42");
+        line.setAttribute("y1", "42");
+        line.setAttribute("stroke", color);
+        tip.setAttribute("r", "3");
+        tip.setAttribute("fill", color);
+        text.setAttribute("fill", color);
+        text.textContent = label;
+        group.append(line, tip, text);
+        svg.append(group);
+        return {group, line, tip, text, vector};
+      });
+    }
+
+    function renderViewerNavCube() {
+      if (!viewerState.ready || !viewerState.navItems) return;
+      const inverse = viewerState.camera.quaternion.clone().invert();
+      if (viewerState.navQuaternion && 1 - Math.abs(viewerState.navQuaternion.dot(inverse)) < 1e-10) return;
+      viewerState.navQuaternion = inverse.clone();
+      const {faces, edges, corners, faceLayer} = viewerState.navItems;
+      const projected = coordinates => {
+        const point = new THREE.Vector3(...coordinates).applyQuaternion(inverse);
+        return {x: 68 + point.x * 28, y: 67 - point.y * 28, depth: point.z};
+      };
+      const visibleNormal = normal => new THREE.Vector3(...normal)
+        .applyQuaternion(inverse).z > 1e-5;
+      faces.sort((a, b) => projected(a.normal).depth - projected(b.normal).depth);
+      faces.forEach(face => {
+        const visible = visibleNormal(face.normal);
+        face.group.style.display = visible ? "" : "none";
+        if (!visible) return;
+        const points = face.vertices.map(projected);
+        face.polygon.setAttribute("points", points.map(point => `${point.x},${point.y}`).join(" "));
+        face.textNode.setAttribute("x", String(points.reduce((sum, point) => sum + point.x, 0) / 4));
+        face.textNode.setAttribute("y", String(points.reduce((sum, point) => sum + point.y, 0) / 4));
+        faceLayer.append(face.group);
+      });
+      edges.forEach(edge => {
+        const visible = edge.others.some(index => {
+          const normal = [0, 0, 0];
+          normal[index] = edge.center[index];
+          return visibleNormal(normal);
+        });
+        edge.group.style.display = visible ? "" : "none";
+        if (!visible) return;
+        const [start, end] = edge.ends.map(projected);
+        [edge.outline, edge.hit].forEach(line => {
+          line.setAttribute("x1", String(start.x)); line.setAttribute("y1", String(start.y));
+          line.setAttribute("x2", String(end.x)); line.setAttribute("y2", String(end.y));
+        });
+      });
+      corners.forEach(corner => {
+        const visible = corner.vertex.some((sign, index) => {
+          const normal = [0, 0, 0];
+          normal[index] = sign;
+          return visibleNormal(normal);
+        });
+        corner.group.style.display = visible ? "" : "none";
+        if (!visible) return;
+        const point = projected(corner.vertex);
+        [corner.mark, corner.hit].forEach(circle => {
+          circle.setAttribute("cx", String(point.x));
+          circle.setAttribute("cy", String(point.y));
+        });
+      });
+      const axisSvg = document.getElementById("viewer-axes");
+      viewerState.axesItems.sort((first, second) =>
+        new THREE.Vector3(...first.vector).applyQuaternion(inverse).z
+        - new THREE.Vector3(...second.vector).applyQuaternion(inverse).z);
+      viewerState.axesItems.forEach(axis => {
+        const direction = new THREE.Vector3(...axis.vector).applyQuaternion(inverse);
+        const x = 42 + direction.x * 23;
+        const y = 42 - direction.y * 23;
+        axis.line.setAttribute("x2", String(x));
+        axis.line.setAttribute("y2", String(y));
+        axis.tip.setAttribute("cx", String(x));
+        axis.tip.setAttribute("cy", String(y));
+        axis.text.setAttribute("x", String(x + (Math.abs(direction.x) > .3 ? Math.sign(direction.x) * 8 : 8)));
+        axis.text.setAttribute("y", String(y + (Math.abs(direction.y) > .3 ? -Math.sign(direction.y) * 8 : 9)));
+        axisSvg.append(axis.group);
+      });
     }
 
     function base64ToArrayBuffer(encoded) {
@@ -1250,6 +1695,8 @@
       viewerState.radius = Math.max(sphere.radius, .01);
       viewerState.ready = true;
       setViewerView("isometric");
+      document.getElementById("viewer-navcube-shell").hidden = false;
+      document.getElementById("viewer-orientation").hidden = false;
       document.getElementById("viewer-empty").hidden = true;
       document.getElementById("viewer-toolbar").hidden = false;
       document.getElementById("viewer-help").hidden = false;
@@ -2098,6 +2545,9 @@
       button.addEventListener("click", () => setViewerView(button.dataset.viewerView));
     });
     document.querySelector('[data-viewer-action="fit"]').addEventListener("click", () => setViewerView("isometric"));
+    document.getElementById("viewer-projection").addEventListener("change", event => {
+      setViewerProjection(event.target.value);
+    });
     document.getElementById("viewer-fullscreen").addEventListener("click", toggleViewerFullscreen);
     document.addEventListener("fullscreenchange", syncViewerFullscreen);
     document.addEventListener("keydown", event => {
