@@ -440,6 +440,17 @@
       background: #e8edf2;
     }
     .viewer-frame.viewer-expanded { height: 100vh; height: 100dvh; }
+    #flat-canvas { width: 100%; height: 100%; display: block; touch-action: none; }
+    .flat-actions { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:10px; }
+    .dxf-upload-button { display:inline-flex; align-items:center; gap:8px; min-height:42px; border:1px solid #8eaccf; box-shadow:0 2px 6px rgba(17,65,120,.1); }
+    .dxf-upload-button.needs-flat { background:#1765cf; border-color:#1765cf; color:white; }
+    .dxf-upload-button:hover { border-color:#1765cf; }
+    .dxf-upload-button:focus-visible { outline:3px solid #89b7f4; outline-offset:2px; }
+    .dxf-upload-button svg { width:17px; height:17px; flex:none; }
+    .dxf-help { margin:8px 0 0; color:var(--muted); font-size:12px; line-height:1.45; }
+    .flat-frame .viewer-toolbar { top: 10px; right: 148px; }
+    .flat-frame:fullscreen .viewer-toolbar, .flat-frame.viewer-expanded .viewer-toolbar { top: 52px; }
+    .flat-notice { padding:12px; color:var(--muted); }
     body.viewer-expanded { overflow: hidden; }
     #viewer-canvas { width: 100%; height: 100%; display: block; touch-action: none; }
     .viewer-empty {
@@ -832,6 +843,7 @@
             </div>
             <div class="mode-switch" role="tablist" aria-label="Tipo di visualizzazione">
               <button class="mode-button active" id="viewer-tab" type="button" role="tab" aria-selected="true" aria-controls="viewer-pane">Modello 3D</button>
+              <button class="mode-button" id="flat-tab" type="button" role="tab" aria-selected="false" aria-controls="flat-pane">Sviluppo piano</button>
               <button class="mode-button" id="preview-tab" type="button" role="tab" aria-selected="false" aria-controls="preview-pane">Viste statiche</button>
             </div>
           </div>
@@ -886,6 +898,36 @@
                 <div class="pdf-views-empty" id="pdf-views-empty">Muovi il modello e salva fino a quattro angolazioni. Se non ne scegli nessuna, il PDF userà le viste statiche disponibili.</div>
               </div>
             </div>
+          </div>
+          <div class="visual-pane" id="flat-pane" role="tabpanel" aria-labelledby="flat-tab" hidden>
+            <div class="viewer-frame flat-frame" id="flat-frame">
+              <canvas id="flat-canvas" aria-label="Sviluppo piano DXF estruso in 3D" hidden></canvas>
+              <div class="viewer-empty" id="flat-empty"><div class="viewer-empty-card"><strong>Sviluppo piano non disponibile</strong><span>Carica un DXF verificabile per vedere il grezzo 3D.</span></div></div>
+              <div class="viewer-toolbar" id="flat-toolbar" hidden>
+                <button class="viewer-tool" type="button" data-flat-view="isometric">Isometrica</button>
+                <button class="viewer-tool" type="button" data-flat-view="top">Alto</button>
+                <button class="viewer-tool" type="button" data-flat-view="front">Frontale</button>
+                <button class="viewer-tool" type="button" data-flat-view="right">Destra</button>
+                <button class="viewer-tool" type="button" data-flat-view="fit">Adatta</button>
+                <label class="viewer-projection" for="flat-projection">Proiezione
+                  <select id="flat-projection">
+                    <option value="perspective" selected>Prospettica</option>
+                    <option value="orthographic">Ortografica</option>
+                  </select>
+                </label>
+              </div>
+              <button class="viewer-tool viewer-fullscreen" id="flat-fullscreen" type="button" aria-label="Schermo intero" aria-pressed="false" hidden>
+                <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 2H2v5m11-5h5v5M2 13v5h5m11-5v5h-5"/></svg><span>Schermo intero</span>
+              </button>
+              <div class="viewer-navcube" id="flat-navcube-shell" hidden>
+                <svg id="flat-navcube" viewBox="0 0 136 136" role="group" aria-label="Dado di navigazione sviluppo piano: seleziona facce, spigoli o angoli"></svg>
+              </div>
+              <div class="viewer-orientation" id="flat-orientation" hidden>
+                <svg id="flat-axes" viewBox="0 0 84 84" role="img" aria-label="Orientamento degli assi X, Y e Z dello sviluppo piano"></svg>
+              </div>
+              <div class="viewer-help" id="flat-help" hidden>Ruota: trascina · Zoom: rotella · Pan: tasto destro</div>
+            </div>
+            <div class="flat-actions"><span id="flat-status">Sviluppo 3D disponibile dopo verifica DXF.</span></div>
           </div>
           <div class="visual-pane" id="preview-pane" role="tabpanel" aria-labelledby="preview-tab" hidden>
             <section class="preview-section">
@@ -950,6 +992,13 @@
           <details class="technical-detail" open>
             <summary>Sviluppo piano e grezzo</summary>
             <div class="technical-detail-body">
+              <div class="quote-applicability" id="flat-workflow-message"></div>
+              <p id="flat-provenance" class="technical-note"></p>
+              <div class="flat-actions"><button class="secondary dxf-upload-button" id="flat-dxf-trigger" type="button" aria-controls="flat-dxf-file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V3m-5 5 5-5 5 5M4 16v4h16v-4"/></svg><span id="flat-dxf-label">Carica DXF (opzionale)</span></button>
+                <input id="flat-dxf-file" type="file" accept=".dxf" hidden>
+                <button class="secondary" id="flat-dxf-remove" type="button" hidden>Rimuovi DXF</button>
+                <span id="flat-dxf-status" role="status"></span></div>
+              <p class="dxf-help">Usa un DXF dello sviluppo piano per verificare o completare il costing.</p>
               <dl id="flat-pattern-data"></dl>
               <p class="technical-note">Le dimensioni stimate non sostituiscono uno sviluppo CAD validato. Per geometrie complesse il sistema mostra soltanto i valori calcolabili con sicurezza.</p>
             </div>
@@ -970,6 +1019,7 @@
   <script src="/vendor/three.min.js"></script>
   <script src="/vendor/GLTFLoader.js"></script>
   <script src="/vendor/OrbitControls.js"></script>
+  <script src="/vendor/flat_viewer.js"></script>
   <script>
     function apiUrl(path) {
       const base = String(window.REVERSEPARTS_API_BASE_URL || "").replace(/\/+$/, "");
@@ -1046,6 +1096,9 @@
     let defaults = null;
     let lastResult = null;
     let lastCadFile = null;
+    let originalStepResult = null;
+    let activeDxfFile = null;
+    let dxfRequestId = 0;
     const newAnalysisId = () => window.crypto?.randomUUID?.()
       || `analysis-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     const analysisSessionId = (() => {
@@ -1096,18 +1149,66 @@
 
     function showVisualPane(mode) {
       const showViewer = mode === "viewer";
+      const showFlat = mode === "flat";
       if (!showViewer) exitViewerFullscreen();
+      if (!showFlat) window.ReversePartsFlatViewer.exitFullscreen();
       document.getElementById("viewer-pane").hidden = !showViewer;
-      document.getElementById("preview-pane").hidden = showViewer;
+      document.getElementById("flat-pane").hidden = !showFlat;
+      document.getElementById("preview-pane").hidden = mode !== "preview";
       document.getElementById("viewer-tab").classList.toggle("active", showViewer);
-      document.getElementById("preview-tab").classList.toggle("active", !showViewer);
+      document.getElementById("flat-tab").classList.toggle("active", showFlat);
+      document.getElementById("preview-tab").classList.toggle("active", mode === "preview");
       document.getElementById("viewer-tab").setAttribute("aria-selected", String(showViewer));
-      document.getElementById("preview-tab").setAttribute("aria-selected", String(!showViewer));
+      document.getElementById("flat-tab").setAttribute("aria-selected", String(showFlat));
+      document.getElementById("preview-tab").setAttribute("aria-selected", String(mode === "preview"));
       if (showViewer && viewerState.renderer) resizeViewer();
+      if (showFlat) window.ReversePartsFlatViewer.resize();
     }
 
     function setViewerStatus(message) {
       document.getElementById("viewer-status").textContent = message;
+    }
+
+    function renderFlatWorkflow(analysis, quote) {
+      const flat = analysis.flat_pattern || {};
+      const info = lastResult?.dxf_validation;
+      const mode = lastResult?.workflow_mode;
+      const hasStepFlat = finalFlatIsValid(originalStepResult?.analysis?.flat_pattern || flat) && mode !== 'validated_dxf_flat';
+      const display = document.getElementById('flat-workflow-message');
+      if (mode === 'validated_dxf_flat' && info?.passed) {
+        display.textContent = 'STEP + DXF associati. Sviluppo piano verificato con i controlli disponibili; costing laser disponibile.';
+      } else if (hasStepFlat && !activeDxfFile) {
+        display.textContent = 'ReverseParts ha ricostruito e verificato lo sviluppo piano dal modello STEP.';
+      } else if (hasStepFlat && info?.passed) {
+        display.textContent = 'Sviluppo validato dal modello STEP. Il DXF fornito risulta compatibile.';
+      } else if (info && !info.passed) {
+        display.textContent = 'DXF non verificato: costing laser sospeso. Sostituisci o rimuovi il DXF per ripristinare lo sviluppo STEP eventualmente validato.';
+      } else {
+        display.textContent = 'Analisi 3D completata — sviluppo piano non validato. ReverseParts ha riconosciuto la geometria, ma non può ricostruire con sufficiente affidabilità lo sviluppo originale dal solo STEP. Carica un DXF per verificarlo.';
+      }
+      document.getElementById('flat-provenance').textContent = info && !info.passed
+        ? `DXF ${info.status}: ${info.warnings?.join('; ') || 'verifica non superata'}`
+        : mode === 'validated_dxf_flat'
+        ? '✓ STEP + DXF associati · ✓ sviluppo piano verificato · Costing laser: DXF fornito · Piegatura: modello STEP'
+        : hasStepFlat ? 'Costing laser: sviluppo STEP · Piegatura: modello STEP'
+        : `✓ Spessore: ${number(analysis.detected_thickness_mm, 'mm')} · ✓ Pieghe: ${analysis.bends?.count ?? 0} · ✓ Aperture: ${analysis.holes?.physical_openings_total ?? 0} · ⚠ sviluppo piano non validato · ⚠ costing laser non disponibile dal solo STEP.`;
+      document.getElementById('flat-dxf-remove').hidden = !activeDxfFile;
+      document.getElementById('flat-dxf-label').textContent = activeDxfFile
+        ? 'Sostituisci DXF' : hasStepFlat ? 'Carica DXF (opzionale)' : 'Carica DXF per completare lo sviluppo piano';
+      document.getElementById('flat-dxf-trigger').classList.toggle('needs-flat',!hasStepFlat);
+      document.querySelector('#flat-empty span').textContent = hasStepFlat && !lastResult?.flat_preview
+        ? 'Lo sviluppo STEP è validato nei valori, ma non fornisce un contorno 2D da estrudere. Carica un DXF compatibile per la vista piatta 3D.'
+        : 'Carica un DXF verificabile per vedere il grezzo 3D.';
+      if ((!flat.blank_dimensions_mm || flat.blank_dimensions_mm.x == null || flat.blank_dimensions_mm.y == null) && !hasStepFlat) {
+        document.querySelectorAll('#flat-pattern-data dd').forEach(node => {
+          if (node.previousElementSibling?.textContent === 'Dimensioni grezzo')
+            node.textContent = 'Non disponibili — sviluppo non validato';
+        });
+      }
+      if (!quote?.estimated_internal_cost_eur?.laser && !hasStepFlat)
+        document.getElementById('flat-dxf-status').textContent = info
+          ? `DXF ${info.status}: ${info.warnings?.join('; ') || 'controlli superati'}`
+          : 'Costing laser non disponibile dal solo STEP.';
     }
 
     function createViewerControls(camera, canvas) {
@@ -1973,6 +2074,7 @@
       const manufacturability = analysis.manufacturability || {};
       const coordinateReference = analysis.coordinate_reference || {};
       const flatPattern = analysis.flat_pattern || {};
+      const unavailableFlat = 'Non disponibili — sviluppo non validato';
       const center = geometry.center_of_mass_mm;
       const boundingCenter = geometry.bounding_box_center_mm;
       const centerText = center
@@ -2078,12 +2180,12 @@
       document.getElementById("flat-pattern-data").innerHTML = rows([
         ["Stato sviluppo", flatStatus],
         ["Metodo", flatPattern.method || "-"],
-        ["Dimensioni grezzo", flatDimensionsText(flatPattern.blank_dimensions_mm)],
-        ["Area netta sviluppata", number(flatPattern.net_developed_area_mm2, "mm²")],
-        ["Area aperture", number(flatPattern.opening_area_mm2, "mm²")],
-        ["Area lorda grezzo", number(flatPattern.gross_blank_area_mm2, "mm²")],
-        ["Perimetro esterno sviluppato", number(flatPattern.outer_perimeter_mm, "mm")],
-        ["Peso grezzo", number(blankWeight, "kg")],
+        ["Dimensioni grezzo", flatPattern.blank_dimensions_mm ? flatDimensionsText(flatPattern.blank_dimensions_mm) : unavailableFlat],
+        ["Area netta sviluppata", flatPattern.net_developed_area_mm2 == null ? unavailableFlat : number(flatPattern.net_developed_area_mm2, "mm²")],
+        ["Area aperture", flatPattern.opening_area_mm2 == null ? unavailableFlat : number(flatPattern.opening_area_mm2, "mm²")],
+        ["Area lorda grezzo", flatPattern.gross_blank_area_mm2 == null ? unavailableFlat : number(flatPattern.gross_blank_area_mm2, "mm²")],
+        ["Perimetro esterno sviluppato", flatPattern.outer_perimeter_mm == null ? unavailableFlat : number(flatPattern.outer_perimeter_mm, "mm")],
+        ["Peso grezzo", blankWeight == null ? unavailableFlat : number(blankWeight, "kg")],
         ["Lunghezza totale pieghe", number(flatPattern.total_bend_length_mm, "mm")],
         ["Sviluppo totale zone di piega", number(flatPattern.total_bend_allowance_mm, "mm")],
         ["Fattore K", number(flatPattern.k_factor)],
@@ -2100,6 +2202,7 @@
         ["Confidence", confidenceText(flatPattern.confidence)],
         ["Nota stato", flatStatusNote(flatPattern.status)]
       ]);
+      renderFlatWorkflow(analysis, quote);
 
       document.getElementById("manufacturability-data").innerHTML = rows([
         ["Diametro circolare minimo", number(holes.min_circular_diameter_mm, "mm")],
@@ -2403,7 +2506,7 @@
       renderWeldSection(analysis, quote.welding_quote || {}, resetWelds);
       const viewerEnabled = defaults?.viewer_model_enabled !== false;
       document.getElementById("load-viewer-button").disabled = !viewerEnabled;
-      setViewerStatus(
+      if (!viewerState.ready) setViewerStatus(
         viewerEnabled
           ? "Modello 3D disponibile su richiesta."
           : "Vista 3D disabilitata sul server: imposta VIEWER_MODEL_ENABLED=true su Render."
@@ -2448,10 +2551,12 @@
         ["Confidence taglio", confidenceText(analysis.cutting?.confidence)]
       ]);
       document.getElementById("quote-data").innerHTML = rows([
-        ["Tempo laser", number(times.laser_cutting, "min")],
+        ["Tempo laser", times.laser_cutting == null && applicability.status !== 'not_applicable'
+          ? 'Richiede sviluppo validato o DXF' : number(times.laser_cutting, "min")],
         ["Tempo piegatura", number(bending.bending_time_total_min, "min")],
         ["Costo materiale", money(costs.material)],
-        ["Costo laser", money(costs.laser)],
+        ["Costo laser", costs.laser == null && applicability.status !== 'not_applicable'
+          ? 'Richiede sviluppo validato o DXF' : money(costs.laser)],
         ["Costo piegatura", money(costs.bending)],
         ["Costo setup", money(costs.setup)],
         ["Costo interno totale", money(costs.total)],
@@ -2500,6 +2605,7 @@
     }
 
     async function initialize() {
+      window.ReversePartsFlatViewer.initialize();
       buildInputs(parameterGroups.material, "material-params");
       buildInputs(parameterGroups.laser, "laser-params");
       buildInputs(parameterGroups.bending, "bending-params");
@@ -2540,7 +2646,67 @@
     });
     document.getElementById("material").addEventListener("change", () => defaults && loadDefaults());
     document.getElementById("viewer-tab").addEventListener("click", () => showVisualPane("viewer"));
+    document.getElementById("flat-tab").addEventListener("click", () => showVisualPane("flat"));
     document.getElementById("preview-tab").addEventListener("click", () => showVisualPane("preview"));
+    document.getElementById('flat-dxf-trigger').addEventListener('click',()=>document.getElementById('flat-dxf-file').click());
+    document.getElementById('flat-dxf-file').addEventListener('change', async event => {
+      const file=event.target.files[0];
+      if (!file || !originalStepResult || !lastCadFile) {
+        if(file)setStatus('Analizza prima il file STEP.', 'error');
+        return;
+      }
+      const token=++dxfRequestId;
+      const formData=new FormData();
+      formData.append('file',file);
+      formData.append('step_file',lastCadFile);
+      formData.append('analysis_json',JSON.stringify(originalStepResult.analysis));
+      formData.append('receipt',originalStepResult.analysis_receipt);
+      formData.append('material',document.getElementById('material').value);
+      formData.append('quantity',document.getElementById('quantity').value);
+      const pricingKeys=[...parameterGroups.laser,...parameterGroups.bending,...parameterGroups.general].map(p=>p[0]);
+      formData.append('pricing_overrides',JSON.stringify(collectOverrides(pricingKeys)));
+      formData.append('material_overrides',JSON.stringify(collectOverrides(parameterGroups.material.map(p=>p[0]))));
+      formData.append('welds_json',JSON.stringify(weldConfigurations.filter(w=>w.review_status!=='pending')));
+      document.getElementById('flat-dxf-status').textContent='Verifica DXF in corso...';
+      let completed=false;
+      try {
+        const response=await fetchApi('/attach-flat-dxf',{method:'POST',body:formData});
+        const data=await response.json();
+        if(token!==dxfRequestId)return;
+        activeDxfFile=file;
+        const previous=lastResult;
+        lastResult={...originalStepResult,...data,preview:previous.preview,viewer_model:previous.viewer_model};
+        window.ReversePartsFlatViewer.render(data.flat_preview);
+        renderResult(lastResult,false);
+        document.getElementById('flat-dxf-status').textContent=data.dxf_validation.passed
+          ? 'DXF verificato e associato allo STEP.'
+          : `DXF ${data.dxf_validation.status}: ${data.dxf_validation.warnings.join('; ')}`;
+        if(data.dxf_validation.passed)showVisualPane('flat');
+        completed=true;
+      } catch(error) {
+        if(token===dxfRequestId){
+          document.getElementById('flat-dxf-status').textContent=error?.status===409
+            ? 'DXF non verificato — analisi non associabile.'
+            : `DXF non verificato — ${error.message || 'verifica non riuscita.'}`;
+          event.target.value='';
+          setStatus(error.message || 'Verifica DXF non riuscita.','error');
+        }
+      } finally {
+        if(token===dxfRequestId && !completed && document.getElementById('flat-dxf-status').textContent==='Verifica DXF in corso...')
+          document.getElementById('flat-dxf-status').textContent='DXF non verificato — verifica non riuscita.';
+      }
+    });
+    document.getElementById('flat-dxf-remove').addEventListener('click',()=>{
+      ++dxfRequestId;
+      activeDxfFile=null;
+      document.getElementById('flat-dxf-file').value='';
+      window.ReversePartsFlatViewer.clear();
+      if(originalStepResult){
+        const current=lastResult;
+        lastResult={...originalStepResult,preview:current.preview,viewer_model:current.viewer_model};
+        renderResult(lastResult,false);
+      }
+    });
     document.querySelectorAll("[data-viewer-view]").forEach(button => {
       button.addEventListener("click", () => setViewerView(button.dataset.viewerView));
     });
@@ -2662,6 +2828,11 @@
       const requestController = new AbortController();
       activeAnalysisId = requestAnalysisId;
       activeAnalysisController = requestController;
+      ++dxfRequestId;
+      activeDxfFile=null;
+      originalStepResult=null;
+      document.getElementById('flat-dxf-file').value='';
+      window.ReversePartsFlatViewer.clear();
       lastCadFile = file;
       disposeViewerModel();
       resetPdfViews();
@@ -2703,6 +2874,7 @@
         const payload = await response.json();
         if (activeAnalysisId !== requestAnalysisId) return;
         lastResult = payload;
+        originalStepResult = payload;
         renderResult(lastResult);
         clearStatus();
       } catch (error) {

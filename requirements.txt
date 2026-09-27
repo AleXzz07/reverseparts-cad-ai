@@ -5,3 +5,5 @@ pydantic==2.10.4
 pytest==8.3.4
 httpx==0.28.1
 reportlab==4.2.5
+ezdxf==1.4.4
+pyparsing>=3.0,<4

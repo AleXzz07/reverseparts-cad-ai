@@ -285,6 +285,7 @@ class WeldConfiguration(BaseModel):
 class CadAnalysisResponse(BaseModel):
     part_name: str = ""
     source_file: str = ""
+    step_sha256: str | None = None
     raw_bounding_box_mm: Dimensions = Field(default_factory=Dimensions)
     effective_dimensions_mm: Dimensions = Field(default_factory=Dimensions)
     volume_cm3: float | None = None
@@ -364,6 +365,7 @@ class ViewerModelResponse(BaseModel):
 
 class AnalyzeAndQuoteResponse(BaseModel):
     analysis: dict[str, Any]
+    analysis_receipt: str | None = None
     quote: dict[str, Any]
     preview: PreviewResponse = Field(default_factory=PreviewResponse)
     viewer_model: ViewerModelResponse = Field(default_factory=ViewerModelResponse)

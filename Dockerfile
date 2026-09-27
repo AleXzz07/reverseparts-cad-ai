@@ -2,7 +2,7 @@ FROM ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
-ENV PYTHONPATH=/usr/lib/freecad/lib:/usr/lib/freecad/Mod:/usr/lib/freecad/Ext:/usr/lib/python3/dist-packages
+ENV PYTHONPATH=/usr/lib/freecad/lib:/usr/lib/freecad/Mod:/usr/lib/freecad/Ext:/usr/local/lib/python3.10/dist-packages:/usr/lib/python3/dist-packages
 ENV REVERSEPARTS_RUNNING_IN_DOCKER=1
 
 RUN apt-get update \

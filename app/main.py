@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import logging
 import os
 import tempfile
@@ -32,6 +33,9 @@ from .model_service import (
     ViewerModelSettings,
 )
 from .pdf_report import generate_quote_pdf
+from .step_dxf_service import attach_supplied_dxf
+from .step_dxf_receipt import analysis_receipt, valid_analysis_receipt
+from .dxf_workflow import LIMITS as DXF_LIMITS
 from .preview_service import (
     generate_safe_step_preview,
     not_generated_preview,
@@ -255,6 +259,7 @@ async def _analyze_uploaded_cad(
         ) from exc
     if result.raw_bounding_box_mm.x is None and result.warnings:
         raise HTTPException(status_code=422, detail=result.warnings)
+    result.step_sha256 = hashlib.sha256(file_bytes).hexdigest()
     return result
 
 
@@ -332,6 +337,55 @@ def quote(request: QuoteRequest) -> dict[str, Any]:
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post('/attach-flat-dxf')
+async def attach_flat_dxf(
+    file: UploadFile = File(...),
+    step_file: UploadFile = File(...),
+    analysis_json: str = Form(...),
+    receipt: str = Form(...),
+    material: str = Form(...),
+    quantity: int = Form(default=1),
+    pricing_overrides: str | None = Form(default=None),
+    material_overrides: str | None = Form(default=None),
+    welds_json: str | None = Form(default=None),
+) -> dict[str, Any]:
+    """Check exact STEP upload identity by SHA only; never rerun FreeCAD."""
+    if not (file.filename or '').lower().endswith('.dxf'):
+        raise HTTPException(status_code=400,detail='Caricare un file .dxf')
+    if not any((step_file.filename or '').lower().endswith(x) for x in VALID_STEP_SUFFIXES):
+        raise HTTPException(status_code=400,detail='File STEP associato mancante')
+    dxf_bytes=await file.read(DXF_LIMITS.max_bytes+1)
+    step_bytes=await step_file.read(32_000_001)
+    if len(dxf_bytes)>DXF_LIMITS.max_bytes:
+        raise HTTPException(status_code=400,detail='DXF troppo grande')
+    if len(step_bytes)>32_000_000 or not step_bytes:
+        raise HTTPException(status_code=400,detail='STEP non disponibile per associazione')
+    try:
+        analysis=CadAnalysisResponse.model_validate_json(analysis_json).model_dump()
+    except Exception as exc:
+        raise HTTPException(status_code=400,detail='Analisi STEP non valida') from exc
+    if not valid_analysis_receipt(analysis, receipt):
+        raise HTTPException(status_code=409,detail='Analisi STEP non riconosciuta; ripetere analisi')
+    if not analysis.get('step_sha256') or hashlib.sha256(step_bytes).hexdigest()!=analysis['step_sha256']:
+        raise HTTPException(status_code=409,detail='DXF non associabile allo STEP analizzato')
+    quantity=_validate_quantity(quantity)
+    _material_config_or_400(material)
+    try:
+        parsed_welds=json.loads(welds_json) if welds_json else None
+        if parsed_welds is not None and not isinstance(parsed_welds,list):
+            raise ValueError('welds_json must be a list')
+    except (ValueError,TypeError) as exc:
+        raise HTTPException(status_code=400,detail='Configurazione saldature non valida') from exc
+    try:
+        return await run_in_threadpool(attach_supplied_dxf,analysis=analysis,
+            dxf_bytes=dxf_bytes,quantity=quantity,material=material,
+            pricing_overrides=_json_overrides_or_400(pricing_overrides,'pricing_overrides'),
+            material_overrides=_json_overrides_or_400(material_overrides,'material_overrides'),
+            welds=parsed_welds)
+    except ValueError as exc:
+        raise HTTPException(status_code=400,detail=str(exc)) from exc
 
 
 @app.post("/quote-pdf")
@@ -522,6 +576,7 @@ async def analyze_and_quote(
     )
     return AnalyzeAndQuoteResponse(
         analysis=analysis_payload,
+        analysis_receipt=analysis_receipt(analysis_payload),
         quote=quote_payload,
         preview=preview_payload,
         viewer_model=viewer_model_payload,
